@@ -159,6 +159,29 @@ docker run -d --name avtobot --restart unless-stopped \
 
 ---
 
+## 📊 SIG'IM (qancha foydalanuvchi ko'taradi?)
+
+Cheklov: `MAX_CONCURRENT_WORKERS` — **bir vaqtda posting yuritayotgan** userlar soni
+(ro'yxatdan o'tganlar soni cheklanmagan; to'xtatilgan userlar resurs iste'mol qilmaydi).
+
+Asosiy cheklov — RAM: har faol user = 1 ta Telethon client (~20–25 MB).
+
+| Server RAM | Tavsiya: faol userlar | `.env` qiymati |
+|---|---|---|
+| 1 GB | 20–30 | `MAX_CONCURRENT_WORKERS=25` |
+| 2 GB | 50 | `MAX_CONCURRENT_WORKERS=50` |
+| 4 GB | 100–120 | `MAX_CONCURRENT_WORKERS=100` |
+| 8 GB | 200–250 | `MAX_CONCURRENT_WORKERS=200` |
+
+Maslahat: past qiymatdan boshlang, `http://host:8080/health` da
+`memory.percent` 75% dan oshmasa asta oshiring. `MAX_CLIENT_POOL` ni
+`MAX_CONCURRENT_WORKERS` bilan teng qiling.
+
+200+ faol userda bitta umumiy `API_ID` Telegram uchun shubhali bo'lishi
+mumkin — katta hajmda bir nechta API_ID ga bo'lish tavsiya etiladi.
+
+---
+
 ## 📊 MONITORING
 
 Health server: `http://<host>:8080/health`
