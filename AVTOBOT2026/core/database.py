@@ -639,3 +639,26 @@ async def get_all_users() -> list[dict]:
     ) as cur:
         rows = await cur.fetchall()
         return [dict(r) for r in rows]
+        
+
+# ─────────────────────────────────────────────────────────────────────────
+# MUDDAT TEKSHIRUVI
+# ─────────────────────────────────────────────────────────────────────────
+async def is_tariff_expired(uid: int) -> bool:
+    """
+    Foydalanuvchi muddati tugaganmi?
+
+    Returns:
+        True  — muddat tugagan
+        False — muddat bor yoki cheksiz
+    """
+    user = await get_user(uid)
+    if not user:
+        return False
+
+    expires = user.get("tariff_expires_at")
+    if not expires:
+        return False  # muddatsiz = cheksiz
+
+    from core.utils import is_expired
+    return is_expired(expires)
