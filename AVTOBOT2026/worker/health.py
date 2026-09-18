@@ -13,7 +13,7 @@ import time
 
 from aiohttp import web
 
-from config.config import HEALTH_HOST, HEALTH_PORT
+from config.config import HEALTH_HOST, HEALTH_PORT, HEALTH_TOKEN
 from core.logger import log
 
 
@@ -142,6 +142,16 @@ class HealthServer:
     # HANDLER
     # ─────────────────────────────────────────────────────────────
     async def _handle_health(self, request: web.Request) -> web.Response:
+        # Token himoyasi (HEALTH_TOKEN berilgan bo'lsa)
+        # So'rov: /health?token=... yoki Authorization: Bearer <token>
+        if HEALTH_TOKEN:
+            bearer = request.headers.get("Authorization", "")
+            query_token = request.query.get("token", "")
+            if bearer != f"Bearer {HEALTH_TOKEN}" and query_token != HEALTH_TOKEN:
+                return web.json_response(
+                    {"error": "unauthorized"}, status=401
+                )
+
         uptime = int(time.time() - START_TIME)
         worker_stats = self._worker_stats_fn() if self._worker_stats_fn else None
         pool_stats = self._pool_stats_fn() if self._pool_stats_fn else None

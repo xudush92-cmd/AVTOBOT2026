@@ -9,6 +9,8 @@ Funksiyalar:
 
 from __future__ import annotations
 
+import contextlib
+
 from telegram import Update
 from telegram.ext import ContextTypes
 
@@ -100,7 +102,7 @@ async def on_referral_counted(uid: int) -> None:
     info = await db.get_user_info(uid)
     name = info.get("name") or "Yangi foydalanuvchi"
 
-    with __import__("contextlib").suppress(Exception):
+    with contextlib.suppress(Exception):
         await application.bot.send_message(
             referrer,
             T.REFERRAL_NEW.format(name=name, total=total),

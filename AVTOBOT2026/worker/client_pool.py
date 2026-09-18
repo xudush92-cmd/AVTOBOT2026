@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import time
 
 from telethon import TelegramClient
 from telethon.errors import (
@@ -46,7 +47,7 @@ class PooledClient:
         self.uid = uid
         self.session_str = session_str
         self.in_use = False
-        self.created_at = __import__("time").time()
+        self.created_at = time.time()
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -73,6 +74,20 @@ class ClientPool:
         self.max_clients = max_clients
         self._pool: dict[int, PooledClient] = {}
         self._lock = asyncio.Lock()
+        # Har bir uid uchun alohida lock — ulanish boshqa userlarni
+        # bloklamasligi uchun (global lock ostida tarmoqqa ulanilmaydi)
+        self._uid_locks: dict[int, asyncio.Lock] = {}
+
+    def _uid_lock(self, uid: int) -> asyncio.Lock:
+        """Uid bo'yicha lock (ulanish ketma-ketligini ta'minlaydi)."""
+        lock = self._uid_locks.get(uid)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._uid_locks[uid] = lock
+        return lock
+
+    def _drop_uid_lock(self, uid: int) -> None:
+        self._uid_locks.pop(uid, None)
 
     # ─────────────────────────────────────────────────────────────
     # ISHGA TUSHIRISH / TO'XTATISH
@@ -83,10 +98,13 @@ class ClientPool:
     async def stop(self) -> None:
         """Barcha clientlarni yopadi."""
         async with self._lock:
-            for uid, pc in list(self._pool.items()):
-                with contextlib.suppress(Exception):
-                    await pc.client.disconnect()
+            items = list(self._pool.items())
             self._pool.clear()
+            self._uid_locks.clear()
+        # Disconnect global lock TASHQARIDA — boshqa userlarni kutgan o'tirmasin
+        for uid, pc in items:
+            with contextlib.suppress(Exception):
+                await pc.client.disconnect()
         log("🌊 Client pool to'xtatildi")
 
     # ─────────────────────────────────────────────────────────────
@@ -96,40 +114,83 @@ class ClientPool:
         """
         Client'ni olish (yoki mavjudini qaytarish).
 
+        Muhim: tarmoqqa ulanish (connect) global lock TASHQARIDA bajariladi.
+        Aks holda bitta sekin ulanish BARCHA userlarning ishini to'xtatib
+        qo'yadi. Har bir uid o'z lock'iga ega — parallel ulanishlar
+        boshqa userlarga xalaqit bermaydi.
+
         Raises:
-            PoolBusyError       — pool to'la
+            PoolBusyError       — pool to'la yoki client band
             SessionInvalidError — sessiya yaroqsiz
         """
+        # ── 1) TEZ YO'L: ulangan, bo'sh client darhol qaytariladi ──
         async with self._lock:
-            # Mavjudmi?
             existing = self._pool.get(uid)
-            if existing:
-                # Sessiya o'zgarganmi?
-                if existing.session_str != session_str:
-                    with contextlib.suppress(Exception):
-                        await existing.client.disconnect()
+            if (
+                existing
+                and existing.session_str == session_str
+                and existing.client.is_connected()
+            ):
+                if existing.in_use:
+                    raise PoolBusyError(f"uid={uid} allaqachon band")
+                existing.in_use = True
+                return existing.client
+
+        # ── 2) SEKIN YO'L: uid lock ostida (tarmoq operatsiyalari) ──
+        async with self._uid_lock(uid):
+            # Qayta tekshirish — tez yo'ldan keyin holat o'zgarishi mumkin
+            existing = None
+            stale = None
+            async with self._lock:
+                existing = self._pool.get(uid)
+                if existing and existing.session_str != session_str:
+                    # Sessiya yangilangan — eskisini lock tashqarisida yopamiz
+                    stale = existing
                     del self._pool[uid]
-                else:
+                    existing = None
+                if (
+                    existing
+                    and existing.client.is_connected()
+                ):
                     if existing.in_use:
                         raise PoolBusyError(f"uid={uid} allaqachon band")
-                    # Ulanish tekshirish
-                    if not existing.client.is_connected():
-                        try:
-                            await asyncio.wait_for(
-                                existing.client.connect(), timeout=15
-                            )
-                        except Exception:
-                            del self._pool[uid]
-                            raise SessionInvalidError(f"uid={uid} qayta ulanmadi")
                     existing.in_use = True
                     return existing.client
 
-            # Pool to'la?
-            if len(self._pool) >= self.max_clients:
-                raise PoolBusyError(f"Pool to'la ({self.max_clients})")
+            # Eski (sessiyasi o'zgargan) clientni yopish — lock tashqarisida
+            if stale is not None:
+                with contextlib.suppress(Exception):
+                    await stale.client.disconnect()
+                log(f"🌊 Pool: -client {uid} (sessiya yangilandi)")
 
-            # Yangi client yaratamiz
-            client = TelegramClient(StringSession(session_str), self.api_id, self.api_hash)
+            # ── 2a) Mavjud, lekin uzilgan clientni qayta ulash ──
+            if existing is not None:
+                try:
+                    await asyncio.wait_for(
+                        existing.client.connect(), timeout=15
+                    )
+                except Exception:
+                    async with self._lock:
+                        if self._pool.get(uid) is existing:
+                            del self._pool[uid]
+                    with contextlib.suppress(Exception):
+                        await existing.client.disconnect()
+                    raise SessionInvalidError(f"uid={uid} qayta ulanmadi")
+
+                async with self._lock:
+                    if self._pool.get(uid) is not existing:
+                        raise PoolBusyError(f"uid={uid} holati o'zgardi")
+                    existing.in_use = True
+                    return existing.client
+
+            # ── 2b) Yangi client — connect GLOBAL LOCK TASHQARIDA ──
+            async with self._lock:
+                if len(self._pool) >= self.max_clients:
+                    raise PoolBusyError(f"Pool to'la ({self.max_clients})")
+
+            client = TelegramClient(
+                StringSession(session_str), self.api_id, self.api_hash
+            )
             try:
                 await asyncio.wait_for(client.connect(), timeout=20)
                 if not await client.is_user_authorized():
@@ -145,14 +206,34 @@ class ClientPool:
             except Exception as e:
                 with contextlib.suppress(Exception):
                     await client.disconnect()
-                log(f"❌ Pool yangi client xato {uid}: {type(e).__name__}: {e}", "warning")
+                log(
+                    f"❌ Pool yangi client xato {uid}: "
+                    f"{type(e).__name__}: {e}",
+                    "warning",
+                )
                 raise PoolBusyError(f"uid={uid} ulanmadi")
 
-            pc = PooledClient(client, uid, session_str)
-            pc.in_use = True
-            self._pool[uid] = pc
-            log(f"🌊 Pool: +client {uid} (jami {len(self._pool)})")
-            return client
+            # Poolga qaytadan lock ostida qo'shamiz (poyga tekshiruvi bilan)
+            async with self._lock:
+                other = self._pool.get(uid)
+                if other is not None:
+                    # Parallel so'rov allaqachon qo'shib bo'lgan
+                    with contextlib.suppress(Exception):
+                        await client.disconnect()
+                    if other.session_str == session_str and not other.in_use:
+                        other.in_use = True
+                        return other.client
+                    raise PoolBusyError(f"uid={uid} allaqachon band")
+                if len(self._pool) >= self.max_clients:
+                    with contextlib.suppress(Exception):
+                        await client.disconnect()
+                    raise PoolBusyError(f"Pool to'la ({self.max_clients})")
+
+                pc = PooledClient(client, uid, session_str)
+                pc.in_use = True
+                self._pool[uid] = pc
+                log(f"🌊 Pool: +client {uid} (jami {len(self._pool)})")
+                return client
 
     # ─────────────────────────────────────────────────────────────
     # QAYTARISH
@@ -171,10 +252,11 @@ class ClientPool:
         """Client'ni butunlay o'chiradi (sessiya yangilanganda)."""
         async with self._lock:
             pc = self._pool.pop(uid, None)
-            if pc:
-                with contextlib.suppress(Exception):
-                    await pc.client.disconnect()
-                log(f"🌊 Pool: -client {uid} (jami {len(self._pool)})")
+        # Disconnect lock tashqarisida
+        if pc:
+            with contextlib.suppress(Exception):
+                await pc.client.disconnect()
+            log(f"🌊 Pool: -client {uid} (jami {len(self._pool)})")
 
     # ─────────────────────────────────────────────────────────────
     # STATISTIKA

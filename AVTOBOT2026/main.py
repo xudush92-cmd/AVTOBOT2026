@@ -143,6 +143,14 @@ async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     state = Login.user_states.get(uid, {})
     step = state.get("step")
 
+    # ── BLOKLANGAN (hamma narsadan OLDIN — bloklangan user hech
+    #    qanday FSM bosqichini yuritib olmasin) ──
+    if await db.is_blocked(uid):
+        if step:
+            Login.user_states.pop(uid, None)
+        await msg.reply_text(T.BLOCKED, reply_markup=KB.kb_blocked())
+        return
+
     # ── LOGIN FSM (rate limitdan OLDIN) ──
     if step in ("name", "surname", "phone", "code", "password"):
         if time.time() - state.get("ts", 0) > 600:
@@ -240,13 +248,17 @@ async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         )
         return
 
-    # ── MENYU TUGMALARI ──
-    ok = await Menu.route_menu_button(update, text)
-    if ok:
-        return
+    # ── USER FSM (add_group / add_post / set_interval) ──
+    # MENYU TUGMALARIDAN OLDIN tekshiriladi: aks holda post matni
+    # tasodifan tugma matniga teng bo'lib qolsa (masalan "📊 Status")
+    # noto'g'ri ishlov beriladi.
+    if step in ("add_group", "add_post", "set_interval", "set_interval_confirm"):
+        # Bekor qilish so'zi
+        if text.lower() in T.CANCEL_WORDS:
+            Login.user_states.pop(uid, None)
+            await msg.reply_text(T.FSM_CANCELLED, reply_markup=await get_menu(uid))
+            return
 
-    # ── FSM: add_group / add_post / set_interval ──
-    if step in ("add_group", "add_post", "set_interval"):
         if step == "add_group":
             from bot.groups import handle_add_groups
             await handle_add_groups(update, text)
@@ -259,6 +271,17 @@ async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
             from bot.timer import handle_set_interval
             await handle_set_interval(update, text)
             return
+
+        # set_interval_confirm — faqat tugma yoki "bekor"
+        await msg.reply_text(
+            T.USE_MENU_BUTTONS + "\n\n❌ Bekor qilish uchun: bekor"
+        )
+        return
+
+    # ── MENYU TUGMALARI ──
+    ok = await Menu.route_menu_button(update, text)
+    if ok:
+        return
 
     # ── NOMA'LUM ──
     await msg.reply_text(
@@ -315,14 +338,8 @@ async def handle_admin_fsm(update: Update, uid: int, step: str, text: str) -> No
             await msg.reply_text("❌ Xatolik.")
             return
 
-        from bot.groups import check_group_access
+        from bot.groups import add_groups_for
         from core.utils import parse_group_lines
-
-        session = await db.get_session(target)
-        if not session:
-            Login.user_states.pop(uid, None)
-            await msg.reply_text(f"❌ {target} sessiyasi yo'q.")
-            return
 
         groups = parse_group_lines(text)
         if not groups:
@@ -332,25 +349,23 @@ async def handle_admin_fsm(update: Update, uid: int, step: str, text: str) -> No
         Login.user_states.pop(uid, None)
         status = await msg.reply_text(f"⏳ {len(groups)} ta guruh tekshirilmoqda...")
 
-        added, duplicates, errors = [], [], []
-        existing = set(await db.get_chats(target))
+        async def _progress(i, added, duplicates, errors):
+            await status.edit_text(
+                f"⏳ {i}/{len(groups)} tekshirildi...\n"
+                f"✅ {len(added)} | ⚠️ {len(duplicates)} | ❌ {len(errors)}"
+            )
 
-        for g in groups:
-            if g in existing:
-                duplicates.append(g)
-                continue
-            ok, reason = await check_group_access(session, g)
-            if not ok:
-                errors.append(f"{g} ({reason})")
-                continue
-            saved, sr = await db.add_chat(target, g)
-            if saved:
-                added.append(g)
-                existing.add(g)
-            elif sr == "duplicate":
-                duplicates.append(g)
-            else:
-                errors.append(f"{g} (saqlashda xato)")
+        # Butun batch bitta client bilan tekshiriladi
+        added, duplicates, errors, fatal = await add_groups_for(
+            target, groups, progress_fn=_progress
+        )
+
+        if fatal:
+            await status.edit_text(
+                f"❌ {fatal}",
+                reply_markup=KB.kb_user_card(target),
+            )
+            return
 
         await status.edit_text(
             T.groups_added_report(added, duplicates, errors),
@@ -472,22 +487,44 @@ async def handle_admin_fsm(update: Update, uid: int, step: str, text: str) -> No
 # ─────────────────────────────────────────────────────────────────────────
 # STALE LOGIN JANITOR
 # ─────────────────────────────────────────────────────────────────────────
+# Login bosqichlari (client bilan — cleanup_login kerak)
+LOGIN_STEPS = ("name", "surname", "phone", "code", "password")
+# Admin bosqichlari
+ADMIN_FSM_STEPS = (
+    "admin_add_group", "admin_add_post", "admin_set_expire", "admin_broadcast",
+)
+# Foydalanuvchi bosqichlari
+USER_FSM_STEPS = ("add_group", "add_post", "set_interval", "set_interval_confirm")
+
+FSM_TIMEOUT_S = 600  # 10 daqiqa
+
+
 async def expire_stale_logins() -> int:
-    """Muddati o'tgan login jarayonlarini tozalaydi."""
+    """Muddati o'tgan login va FSM jarayonlarini tozalaydi."""
     now = time.time()
-    expired: set[int] = set()
+    expired_login: set[int] = set()   # cleanup_login kerak
+    expired_fsm: set[int] = set()     # faqat user_states.pop
 
     for uid, ctx in list(Login.login_ctx.items()):
-        if now - ctx.started_at > 600:
-            expired.add(uid)
+        if now - ctx.started_at > FSM_TIMEOUT_S:
+            expired_login.add(uid)
 
     for uid, state in list(Login.user_states.items()):
         step = state.get("step")
-        if step in ("name", "surname", "phone", "code", "password"):
-            if now - state.get("ts", 0) > 600:
-                expired.add(uid)
+        if now - state.get("ts", 0) <= FSM_TIMEOUT_S:
+            continue
+        if step in LOGIN_STEPS or step == "admin_code_input":
+            # admin_code_input orqasida ham client bor — cleanup_login
+            expired_login.add(uid)
+        elif step in ADMIN_FSM_STEPS or step in USER_FSM_STEPS:
+            expired_fsm.add(uid)
 
-    for uid in expired:
+    # Eskirgan SMS urinish yozuvlari (xotira tozalash)
+    from bot.login import prune_sms_attempts
+    pruned_sms = prune_sms_attempts()
+
+    # Login jarayonlari — clientni ham yopish
+    for uid in expired_login:
         with contextlib.suppress(Exception):
             await Login.cleanup_login(uid)
         with contextlib.suppress(Exception):
@@ -497,9 +534,23 @@ async def expire_stale_logins() -> int:
                 reply_markup=KB.kb_login(),
             )
 
-    if expired:
-        log(f"🧹 Stale login: {len(expired)} ta tozalandi")
-    return len(expired)
+    # Oddiy FSM jarayonlari — holatni tozalash
+    for uid in expired_fsm:
+        with contextlib.suppress(Exception):
+            Login.user_states.pop(uid, None)
+        with contextlib.suppress(Exception):
+            await application.bot.send_message(
+                uid,
+                T.FSM_TIMEOUT,
+                reply_markup=await get_menu(uid),
+            )
+
+    if expired_login or expired_fsm or pruned_sms:
+        log(
+            f"🧹 Janitor: login={len(expired_login)}, "
+            f"fsm={len(expired_fsm)}, sms_yozuv={pruned_sms}"
+        )
+    return len(expired_login) + len(expired_fsm)
 
 
 async def login_janitor_loop(stop: asyncio.Event) -> None:
@@ -656,7 +707,6 @@ async def main() -> None:
     worker_manager.setup_signals()
 
     # 5. Bog'lanishlar
-    Worker.set_deps(client_pool, None)
     Menu.set_worker_manager(worker_manager)
 
     # 6. Health server

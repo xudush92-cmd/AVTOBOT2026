@@ -114,6 +114,28 @@ def reset_sms_attempts(uid: int) -> None:
     sms_attempts.pop(uid, None)
 
 
+def prune_sms_attempts(max_age_s: float | None = None) -> int:
+    """
+    Eskirgan SMS urinish yozuvlarini tozalash (janitor uchun).
+
+    Xotira sizib qolmasligi uchun: oxirgi urinishi oyna (cooldown)
+    dan eski bo'lgan barcha yozuvlar o'chiriladi.
+
+    Returns:
+        O'chirilgan yozuvlar soni
+    """
+    if max_age_s is None:
+        max_age_s = SMS_COOLDOWN_MIN * 60
+    now = time.time()
+    stale = [
+        uid for uid, ts_list in sms_attempts.items()
+        if not ts_list or all(t < now - max_age_s for t in ts_list)
+    ]
+    for uid in stale:
+        sms_attempts.pop(uid, None)
+    return len(stale)
+
+
 # ─────────────────────────────────────────────────────────────────────────
 # NUMPAD YUBORISH / YANGILASH
 # ─────────────────────────────────────────────────────────────────────────

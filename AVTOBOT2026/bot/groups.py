@@ -30,60 +30,178 @@ from bot import texts as T
 from config.config import API_HASH, API_ID
 from core import database as db
 from core.logger import log
-from core.utils import parse_group_lines, truncate
+from core.utils import parse_group_lines
+
+from telethon import TelegramClient
+from telethon.errors import (
+    ChannelPrivateError,
+    FloodWaitError,
+    PeerIdInvalidError,
+    UsernameInvalidError,
+    UsernameNotOccupiedError,
+)
+from telethon.sessions import StringSession
+from telethon.tl.types import (
+    Channel,
+    ChannelParticipantAdmin,
+    ChannelParticipantCreator,
+)
 
 
 # ─────────────────────────────────────────────────────────────────────────
 # GURUHNI TEKSHIRISH (Telegram orqali)
 # ─────────────────────────────────────────────────────────────────────────
-async def check_group_access(session_str: str, group: str) -> tuple[bool, str]:
+async def verify_group(client: TelegramClient, group: str) -> tuple[bool, str]:
     """
-    Guruhga kirish imkonini tekshiradi.
+    Bitta guruhga kirish va YOZISH imkonini tekshiradi.
+
+    Muhim: mavjud client bilan ishlaydi — har bir guruh uchun yangi
+    client ochilmaydi (bulk qo'shishda FloodWait va sekinlik oldini oladi).
 
     Returns:
-        (True, 'ok')           — muvaffaqiyat
-        (False, 'not_found')   — topilmadi
-        (False, 'private')     — yopiq
-        (False, 'invalid')     — noto'g'ri format
-        (False, 'flood')       — FloodWait
-        (False, 'error')       — boshqa xatolik
+        (True, 'ok')            — muvaffaqiyat
+        (False, 'topilmadi')    — topilmadi
+        (False, 'yopiq')        — private
+        (False, "yozish huquqi yo'q") — kanal, admin emas
+        (False, 'yozish taqiqlangan') — mute/ban
+        (False, "noto'g'ri format")
+        (False, 'flood')        — FloodWait
+        (False, 'xato')         — boshqa xatolik
     """
-    client = TelegramClient(StringSession(session_str), API_ID, API_HASH)
     try:
-        await asyncio.wait_for(client.connect(), timeout=20)
-
-        if not await client.is_user_authorized():
-            return False, "invalid"
-
-        # Entity'ni olish
-        if group.startswith("@"):
-            entity = await client.get_entity(group)
-        elif group.lstrip("-").isdigit():
-            entity = await client.get_entity(int(group))
-        elif group.startswith("https://t.me/") or group.startswith("t.me/"):
-            entity = await client.get_entity(group)
+        s = group.strip()
+        if s.lstrip("-").isdigit():
+            entity = await client.get_entity(int(s))
         else:
-            entity = await client.get_entity(group)
+            entity = await client.get_entity(s)
 
-        # Yozish huquqini tekshirish
-        try:
-            await client.get_permissions(entity, "me")
-        except Exception:
-            pass
+        # ── Yozish huquqini tekshirish ──
+        if isinstance(entity, Channel) and entity.broadcast:
+            # Kanal: faqat admin/creator post qila oladi
+            perms = await client.get_permissions(entity, "me")
+            role = getattr(perms, "participant", perms)
+            if not isinstance(
+                role, (ChannelParticipantAdmin, ChannelParticipantCreator)
+            ):
+                return False, "yozish huquqi yo'q (kanal, admin emas)"
+        else:
+            # Guruh: ban/mute tekshirish (bo'lsa)
+            try:
+                perms = await client.get_permissions(entity, "me")
+                role = getattr(perms, "participant", perms)
+                banned = getattr(role, "banned_rights", None)
+                if banned is not None and getattr(
+                    banned, "send_messages", False
+                ):
+                    return False, "yozish taqiqlangan"
+            except Exception:
+                pass  # huquqni aniqlab bo'lmadi — worker baribir kuzatadi
 
         return True, "ok"
 
     except (UsernameNotOccupiedError, UsernameInvalidError, PeerIdInvalidError):
-        return False, "not_found"
+        return False, "topilmadi"
     except ChannelPrivateError:
-        return False, "private"
+        return False, "yopiq"
     except FloodWaitError:
         return False, "flood"
     except ValueError:
-        return False, "invalid"
+        return False, "noto'g'ri format"
+    except Exception as e:
+        log(f"verify_group {group}: {type(e).__name__}: {e}", "warning")
+        return False, "xato"
+
+
+async def add_groups_for(
+    uid: int,
+    groups: list[str],
+    progress_fn=None,
+) -> tuple[list[str], list[str], list[str], str | None]:
+    """
+    Guruhlarni tekshirib, foydalanuvchiga qo'shadi.
+
+    BUTUN BATCH uchun bitta Telethon client ishlatiladi — 50 ta guruh
+    qo'shish 50 marta connect bo'lmaydi (tezkor, FloodWait xavfi past).
+
+    Args:
+        uid: foydalanuvchi id
+        groups: guruhlar ro'yxati
+        progress_fn: har 5 guruhda chaqiriladi (i, added, duplicates, errors)
+
+    Returns:
+        (added, duplicates, errors, fatal)
+        fatal != None — jarayon umuman boshlanmagan (sessiya yo'q va h.k.)
+    """
+    session = await db.get_session(uid)
+    if not session:
+        return [], [], [], "Sessiya topilmadi. Qaytadan 🔑 Login qiling."
+
+    added: list[str] = []
+    duplicates: list[str] = []
+    errors: list[str] = []
+    existing = set(await db.get_chats(uid))
+
+    client = TelegramClient(StringSession(session), API_ID, API_HASH)
+    try:
+        await asyncio.wait_for(client.connect(), timeout=20)
+        if not await client.is_user_authorized():
+            return [], [], [], "Sessiya yaroqsiz. Qaytadan 🔑 Login qiling."
+
+        for i, group in enumerate(groups, 1):
+            # Takroriy?
+            if group in existing:
+                duplicates.append(group)
+                continue
+
+            # Telegram'da tekshirish
+            ok, reason = await verify_group(client, group)
+
+            if not ok:
+                errors.append(f"{group} ({reason})")
+                if reason == "flood":
+                    # Flood — biroz kutamiz
+                    await asyncio.sleep(3)
+                continue
+
+            # Bazaga qo'shish
+            saved, save_reason = await db.add_chat(uid, group)
+            if saved:
+                added.append(group)
+                existing.add(group)
+            elif save_reason == "duplicate":
+                duplicates.append(group)
+            else:
+                errors.append(f"{group} (saqlashda xato)")
+
+            # Har 5 guruhda progress
+            if progress_fn and i % 5 == 0:
+                with contextlib.suppress(Exception):
+                    await progress_fn(i, added, duplicates, errors)
+    finally:
+        with contextlib.suppress(Exception):
+            await client.disconnect()
+
+    return added, duplicates, errors, None
+
+
+async def check_group_access(session_str: str, group: str) -> tuple[bool, str]:
+    """
+    Bitta guruhni yangi client bilan tekshiradi.
+
+    ⚠️ Ko'p guruh tekshirish uchun add_groups_for() ni ishlating —
+    u bitta client bilan batch qilib tekshiradi (tezkor va xavfsizroq).
+    """
+    client = TelegramClient(StringSession(session_str), API_ID, API_HASH)
+    try:
+        await asyncio.wait_for(client.connect(), timeout=20)
+        if not await client.is_user_authorized():
+            return False, "yaroqsiz sessiya"
+        return await verify_group(client, group)
+    except FloodWaitError:
+        return False, "flood"
     except Exception as e:
         log(f"check_group_access {group}: {type(e).__name__}: {e}", "warning")
-        return False, "error"
+        return False, "xato"
     finally:
         with contextlib.suppress(Exception):
             await client.disconnect()
@@ -97,12 +215,13 @@ async def show_groups(update: Update) -> None:
     uid = update.effective_user.id
     chats = await db.get_chats(uid)
 
+    user = await db.get_user(uid)
+    running = bool(user and user.get("running")) if user else False
+
     if not chats:
         await update.message.reply_text(
             T.GROUPS_EMPTY,
-            reply_markup=KB.kb_main(
-                running=await db.get_user(uid) and (await db.get_user(uid)).get("running"),
-            ),
+            reply_markup=KB.kb_main(running=running),
         )
         return
 
@@ -114,12 +233,14 @@ async def show_groups(update: Update) -> None:
 # ─────────────────────────────────────────────────────────────────────────
 async def begin_add_groups(update: Update) -> None:
     """➕ Guruh qo'shish tugmasi bosilganda."""
+    import time
+
     uid = update.effective_user.id
     from bot.login import user_states
 
-    user_states[uid] = {"step": "add_group", "ts": __import__("time").time()}
+    user_states[uid] = {"step": "add_group", "ts": time.time()}
     await update.message.reply_text(T.ASK_ADD_GROUP)
-  
+
 
 # ─────────────────────────────────────────────────────────────────────────
 # GURUH QO'SHISH — BULK
@@ -127,21 +248,12 @@ async def begin_add_groups(update: Update) -> None:
 async def handle_add_groups(update: Update, text: str) -> None:
     """
     Foydalanuvchi bir yoki bir nechta guruh yuboradi.
-    Har birini tekshirib, natijani ko'rsatamiz.
+    Butun batch bitta client bilan tekshiriladi.
     """
     from bot.login import user_states
 
     uid = update.effective_user.id
     user_states.pop(uid, None)
-
-    # Sessiyani olish
-    session = await db.get_session(uid)
-    if not session:
-        await update.message.reply_text(
-            "❌ Sessiya topilmadi. Qaytadan 🔑 Login qiling.",
-            reply_markup=KB.kb_login(),
-        )
-        return
 
     # Qatorlarni ajratish
     groups = parse_group_lines(text)
@@ -157,51 +269,26 @@ async def handle_add_groups(update: Update, text: str) -> None:
         "Bu bir necha daqiqa olishi mumkin."
     )
 
-    added: list[str] = []
-    duplicates: list[str] = []
-    errors: list[str] = []
-    existing = set(await db.get_chats(uid))
+    async def _progress(
+        i: int, added: list[str], duplicates: list[str], errors: list[str]
+    ) -> None:
+        await msg.edit_text(
+            f"⏳ {i}/{len(groups)} tekshirildi...\n"
+            f"✅ {len(added)} | ⚠️ {len(duplicates)} | ❌ {len(errors)}"
+        )
 
-    # Har bir guruhni tekshirish
-    for i, group in enumerate(groups, 1):
-        # Takroriy?
-        if group in existing:
-            duplicates.append(group)
-            continue
+    added, duplicates, errors, fatal = await add_groups_for(
+        uid, groups, progress_fn=_progress
+    )
 
-        # Telegram'da tekshirish
-        ok, reason = await check_group_access(session, group)
-
-        if not ok:
-            if reason == "flood":
-                errors.append(f"{group} (FloodWait)")
-                # Flood — biroz kutamiz
-                await asyncio.sleep(3)
-            elif reason == "not_found":
-                errors.append(f"{group} (topilmadi)")
-            elif reason == "private":
-                errors.append(f"{group} (yopiq)")
-            else:
-                errors.append(f"{group} (xato)")
-            continue
-
-        # Bazaga qo'shish
-        saved, save_reason = await db.add_chat(uid, group)
-        if saved:
-            added.append(group)
-            existing.add(group)
-        elif save_reason == "duplicate":
-            duplicates.append(group)
-        else:
-            errors.append(f"{group} (saqlashda xato)")
-
-        # Har 5 guruhda progress yangilash
-        if i % 5 == 0:
-            with contextlib.suppress(Exception):
-                await msg.edit_text(
-                    f"⏳ {i}/{len(groups)} tekshirildi...\n"
-                    f"✅ {len(added)} | ⚠️ {len(duplicates)} | ❌ {len(errors)}"
-                )
+    # Fatal — sessiya muammosi
+    if fatal:
+        with contextlib.suppress(Exception):
+            await msg.edit_text(
+                f"❌ {fatal}",
+                reply_markup=KB.kb_login(),
+            )
+        return
 
     # Yakuniy natija
     report = T.groups_added_report(added, duplicates, errors)
