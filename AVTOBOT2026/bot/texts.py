@@ -339,7 +339,8 @@ ASK_ADD_GROUP = (
     "@guruh1\n"
     "@guruh2\n"
     "https://t.me/guruh3\n"
-    "-1001234567890"
+    "-1001234567890\n\n"
+    "❌ Bekor qilish uchun: bekor"
 )
 
 def groups_added_report(
@@ -378,7 +379,8 @@ ASK_ADD_POST = (
     "• Faqat matn (formatlash bilan)\n"
     "• Rasm + caption (formatlash bilan)\n"
     "• Faqat rasm\n\n"
-    "Bold, italic, link va barcha formatlash saqlanadi."
+    "Bold, italic, link va barcha formatlash saqlanadi.\n\n"
+    "❌ Bekor qilish uchun: bekor"
 )
 
 POST_ADDED = (
@@ -418,7 +420,8 @@ def ask_interval(current: int) -> str:
         f"⏰ VAQT\n\n"
         f"Hozirgi: {current} daqiqa\n\n"
         f"Yangi qiymatni kiriting (daqiqada):\n"
-        f"Kamida {MIN_INTERVAL_MIN} daqiqa."
+        f"Kamida {MIN_INTERVAL_MIN} daqiqa.\n\n"
+        f"❌ Bekor qilish uchun: bekor"
     )
 
 def interval_invalid_min() -> str:
@@ -503,3 +506,25 @@ GROUP_AUTO_REMOVED = (
 )
 
 USE_MENU_BUTTONS = "⚠️ Iltimos, menyudagi tugmalardan foydalaning."
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# FSM (QADAM-BAQAM JARAYONLAR)
+# ─────────────────────────────────────────────────────────────────────────
+# Guruh/post/interval kiritishni bekor qilish so'zlari (katta-kichik
+# harf ahamiyatsiz)
+CANCEL_WORDS = (
+    "bekor",
+    "bekor qilish",
+    "cancel",
+    "otmena",
+    "отмена",
+    "❌ bekor qilish",
+)
+
+FSM_CANCELLED = "❌ Bekor qilindi."
+
+FSM_TIMEOUT = (
+    "⌛ Vaqt tugadi — jarayon bekor qilindi (10 daqiqa o'zgarishsiz).\n\n"
+    "Qaytadan boshlashingiz mumkin."
+)

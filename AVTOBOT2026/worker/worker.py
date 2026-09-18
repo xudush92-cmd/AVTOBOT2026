@@ -40,6 +40,8 @@ from config.config import (
     JITTER_S,
     MAX_GROUP_FAILS,
     MIN_INTERVAL_MIN,
+    PHOTO_SEND_TIMEOUT_S,
+    POST_SEND_TIMEOUT_S,
     SEND_DELAY_S,
     START_JITTER_S,
     SUPER_ADMIN,
@@ -260,9 +262,16 @@ async def posting_loop(uid: int, stop: asyncio.Event) -> None:
                     if stop.is_set():
                         break
 
+                    # Rasmli post yuklash uzoq davom etishi mumkin —
+                    # katta timeout (aks holda guruh noto'ris o'chirib tashlanadi)
+                    send_timeout = (
+                        PHOTO_SEND_TIMEOUT_S if post.get("photo")
+                        else POST_SEND_TIMEOUT_S
+                    )
+
                     try:
                         await asyncio.wait_for(
-                            send_post(client, chat, post), timeout=20
+                            send_post(client, chat, post), timeout=send_timeout
                         )
                         ok += 1
                         group_fails[chat] = 0
@@ -386,6 +395,58 @@ class WorkerManager:
         self._worker_factory = None
 
     # ─────────────────────────────────────────────────────────────
+    # O'LIK TASKLARNI TOZALASH
+    # ─────────────────────────────────────────────────────────────
+    def _register_task(self, uid: int, task: asyncio.Task, stop_event: asyncio.Event) -> None:
+        """
+        Task tugaganda avtomatik ro'yxatdan olib tashlaydi.
+
+        Aks holda o'z-o'zidan tugagan workerlar (masalan, sessiya yo'q
+        sababli) dictda qolib ketadi va LIMIT to'lib qoladi.
+        """
+        def _on_done(t: asyncio.Task) -> None:
+            info = self._workers.get(uid)
+            if info and info.get("task") is t:
+                self._workers.pop(uid, None)
+            try:
+                if t.cancelled():
+                    return
+                exc = t.exception()
+                if exc is not None:
+                    log(
+                        f"💥 Worker:{uid} xato bilan tugadi: "
+                        f"{type(exc).__name__}: {exc}",
+                        "error",
+                    )
+                elif not stop_event.is_set():
+                    log(
+                        f"⚠️ Worker:{uid} o'z-o'zidan tugadi "
+                        f"(stop signalisiz) — ro'yxatdan o'chirildi",
+                        "warning",
+                    )
+            except Exception:
+                pass
+
+        task.add_done_callback(_on_done)
+
+    def _sweep_done(self) -> int:
+        """
+        Tugagan tasklarni ro'yxatdan o'chirish (himoya sifatida).
+
+        Returns:
+            O'chirilgan yozuvlar soni
+        """
+        dead = [
+            uid for uid, info in self._workers.items()
+            if not info.get("task") or info["task"].done()
+        ]
+        for uid in dead:
+            self._workers.pop(uid, None)
+        if dead:
+            log(f"🧹 {len(dead)} ta o'lik worker yozuvi tozalandi", "warning")
+        return len(dead)
+
+    # ─────────────────────────────────────────────────────────────
     # SOZLASH
     # ─────────────────────────────────────────────────────────────
     def set_worker_factory(self, factory) -> None:
@@ -421,6 +482,9 @@ class WorkerManager:
     # ─────────────────────────────────────────────────────────────
     async def start_worker(self, uid: int) -> bool:
         """Worker'ni ishga tushirish."""
+        # O'lik tasklarni to'lab, limitni to'g'ri hisoblash
+        self._sweep_done()
+
         if self.is_running(uid):
             return False
 
@@ -438,6 +502,7 @@ class WorkerManager:
             name=f"worker-{uid}",
         )
         self._workers[uid] = {"task": task, "stop_event": stop_event}
+        self._register_task(uid, task, stop_event)
         log(f"✅ Worker:{uid} boshlandi (jami {len(self._workers)})")
         return True
 
@@ -489,6 +554,7 @@ class WorkerManager:
     # ─────────────────────────────────────────────────────────────
     def stats(self) -> dict:
         """Workerlarning holati."""
+        self._sweep_done()
         running = sum(
             1 for info in self._workers.values()
             if info["task"] and not info["task"].done()
@@ -501,6 +567,7 @@ class WorkerManager:
 
     def get_running_uids(self) -> list[int]:
         """Ishlayotgan worker uidlari."""
+        self._sweep_done()
         return [
             uid for uid, info in self._workers.items()
             if info["task"] and not info["task"].done()

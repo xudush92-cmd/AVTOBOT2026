@@ -56,6 +56,9 @@ ADMIN_CONTACT_PHONE: str = os.getenv("ADMIN_CONTACT_PHONE", "+998938670592")
 # ─────────────────────────────────────────────────────────────────────────
 HEALTH_HOST: str = os.getenv("HEALTH_HOST", "0.0.0.0")
 HEALTH_PORT: int = _int("HEALTH_PORT", 8080)
+# Bo'sh bo'lsa — himoyasiz (ochiq tarmoqda to'ldirish tavsiya etiladi!)
+# So'rov: /health?token=... yoki Authorization: Bearer <token>
+HEALTH_TOKEN: str = os.getenv("HEALTH_TOKEN", "")
 
 # ─────────────────────────────────────────────────────────────────────────
 # ISHCHI LIMITLARI
@@ -68,6 +71,8 @@ MAX_CLIENT_POOL: int = _int("MAX_CLIENT_POOL", 50)
 # ─────────────────────────────────────────────────────────────────────────
 MIN_INTERVAL_MIN: int = 5          # minimal interval (5 daqiqa)
 SEND_DELAY_S: int = 5              # guruhlar orasidagi pauza (soniya)
+POST_SEND_TIMEOUT_S: int = 20      # bitta matnli post timeout (soniya)
+PHOTO_SEND_TIMEOUT_S: int = 120    # rasmli post timeout (upload uzoq!)
 JITTER_S: int = 300                # tasodifiy qo'shimcha vaqt (5 daqiqagacha)
 START_JITTER_S: int = 60           # worker birinchi start (1 daqiqagacha)
 MAX_GROUP_FAILS: int = 3           # guruh necha xato qilsa o'chiriladi
@@ -112,6 +117,11 @@ LOG_FILE: Path = LOGS_DIR / "avtobot.log"
 DATA_DIR.mkdir(exist_ok=True)
 MEDIA_DIR.mkdir(exist_ok=True)
 LOGS_DIR.mkdir(exist_ok=True)
+
+# ─────────────────────────────────────────────────────────────────────────
+# BROADCAST (ommaviy xabar)
+# ─────────────────────────────────────────────────────────────────────────
+BROADCAST_DELAY_S: float = 0.05    # xabarlar orasidagi pauza (flood oldini oladi)
 
 # ─────────────────────────────────────────────────────────────────────────
 # MUDDAT TUGMALARI (admin uchun tez tugmalar)

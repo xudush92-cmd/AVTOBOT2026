@@ -14,11 +14,12 @@ import contextlib
 import time
 
 from telegram import Update
+from telegram.error import RetryAfter
 from telegram.ext import ContextTypes
 
 from bot import keyboards as KB
 from bot import texts as T
-from config.config import SUPER_ADMIN
+from config.config import BROADCAST_DELAY_S, SUPER_ADMIN
 from core import database as db
 from core.logger import log
 
@@ -139,11 +140,47 @@ async def handle_broadcast_callback(update: Update, uid: int, data: str) -> None
 # ─────────────────────────────────────────────────────────────────────────
 # YUBORISH — ASOSIY
 # ─────────────────────────────────────────────────────────────────────────
+async def _send_one(target: int, text: str, photo: str | None) -> bool:
+    """
+    Bitta foydalanuvchiga xabar yuboradi.
+
+    RetryAfter (FloodWait) bo'lsa — Telegram aytgan vaqtcha kutib
+    BIR MARTA qayta urinadi.
+
+    Returns:
+        True  — yuborildi
+        False — yuborilmadi
+    """
+    for attempt in (1, 2):
+        try:
+            if photo:
+                await application.bot.send_photo(
+                    chat_id=target,
+                    photo=photo,
+                    caption=text or None,
+                )
+            else:
+                await application.bot.send_message(
+                    chat_id=target,
+                    text=text,
+                )
+            return True
+        except RetryAfter as e:
+            retry_s = float(getattr(e, "retry_after", 5) or 5)
+            log(f"broadcast FloodWait {target}: {retry_s}s kutish", "warning")
+            if attempt == 2:
+                return False
+            await asyncio.sleep(retry_s + 1.0)
+    return False
+
+
 async def run_broadcast(admin_uid: int, text: str, photo: str | None) -> None:
     """
     Barcha foydalanuvchilarga xabar yuboradi.
 
-    Xatolar yig‘iladi, oxirida hisobot yuboriladi.
+    Har bir xabardan keyin qisqa pauza (BROADCAST_DELAY_S) — Telegram
+    flood limitlariga urilmaslik uchun. Xatolar yig‘ilib, oxirida
+    hisobot yuboriladi.
     """
     users = await db.get_all_users()
     if not users:
@@ -165,7 +202,6 @@ async def run_broadcast(admin_uid: int, text: str, photo: str | None) -> None:
         f"❌ Xato: 0",
     )
 
-    # Har 20 ta foydalanuvchida progress yangilash
     for i, u in enumerate(users, 1):
         target = u.get("uid")
         if not target:
@@ -176,18 +212,10 @@ async def run_broadcast(admin_uid: int, text: str, photo: str | None) -> None:
             continue
 
         try:
-            if photo:
-                await application.bot.send_photo(
-                    chat_id=target,
-                    photo=photo,
-                    caption=text or None,
-                )
+            if await _send_one(target, text, photo):
+                sent += 1
             else:
-                await application.bot.send_message(
-                    chat_id=target,
-                    text=text,
-                )
-            sent += 1
+                failed += 1
         except Exception as e:
             err = type(e).__name__
             if "blocked" in err.lower() or "Forbidden" in err or "deactivated" in err.lower():
@@ -196,7 +224,10 @@ async def run_broadcast(admin_uid: int, text: str, photo: str | None) -> None:
                 failed += 1
             log(f"broadcast xato {target}: {err}", "warning")
 
-        # Har 20 tadan keyin yangilash
+        # Har xabardan keyin qisqa pauza — flood oldini olish
+        await asyncio.sleep(BROADCAST_DELAY_S)
+
+        # Har 20 tadan keyin progress yangilash
         if i % 20 == 0:
             with contextlib.suppress(Exception):
                 await start_msg.edit_text(
@@ -206,7 +237,7 @@ async def run_broadcast(admin_uid: int, text: str, photo: str | None) -> None:
                     f"🚫 Bloklagan: {blocked}\n"
                     f"❌ Xato: {failed}"
                 )
-            # Flood oldini olish
+            # Qo'shimcha nafas
             await asyncio.sleep(1)
 
     # Yakuniy hisobot
