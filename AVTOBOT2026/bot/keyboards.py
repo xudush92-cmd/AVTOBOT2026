@@ -214,13 +214,20 @@ def kb_admin_back() -> InlineKeyboardMarkup:
 # ─────────────────────────────────────────────────────────────────────────
 # ADMIN — FOYDALANUVCHI KARTASI
 # ─────────────────────────────────────────────────────────────────────────
-def kb_user_card(uid: int, running: bool = False, blocked: bool = False) -> InlineKeyboardMarkup:
+def kb_user_card(
+    uid: int,
+    running: bool = False,
+    blocked: bool = False,
+    has_session: bool | None = None,
+) -> InlineKeyboardMarkup:
     """
     Foydalanuvchi kartasi uchun tugmalar.
 
     uid — foydalanuvchi ID
     running — posting ishlayaptimi
     blocked — bloklanganmi
+    has_session — True bo'lsa faqat o'chirish, False bo'lsa faqat ochish;
+                  None eski chaqiruvlar bilan moslik uchun ikkisini ko'rsatadi
     """
     rows = []
 
@@ -234,11 +241,28 @@ def kb_user_card(uid: int, running: bool = False, blocked: bool = False) -> Inli
             InlineKeyboardButton("▶️ Start", callback_data=f"uc:start:{uid}")
         ])
 
-    # Sessiya
-    rows.append([
-        InlineKeyboardButton("🔑 Sessiya ochish", callback_data=f"uc:sess:{uid}"),
-        InlineKeyboardButton("🚪 Sessiya o'chirish", callback_data=f"uc:logout:{uid}"),
-    ])
+    # Sessiya: mavjud sessiya ustiga tasodifan yana kod so'ralmasin.
+    if has_session is True:
+        rows.append([
+            InlineKeyboardButton(
+                "🚪 Sessiya o'chirish", callback_data=f"uc:logout:{uid}"
+            )
+        ])
+    elif has_session is False:
+        rows.append([
+            InlineKeyboardButton(
+                "🔑 Sessiya ochish", callback_data=f"uc:sess:{uid}"
+            )
+        ])
+    else:
+        rows.append([
+            InlineKeyboardButton(
+                "🔑 Sessiya ochish", callback_data=f"uc:sess:{uid}"
+            ),
+            InlineKeyboardButton(
+                "🚪 Sessiya o'chirish", callback_data=f"uc:logout:{uid}"
+            ),
+        ])
 
     # Guruh / Post
     rows.append([

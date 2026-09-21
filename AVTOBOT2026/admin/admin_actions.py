@@ -23,6 +23,7 @@ from bot import keyboards as KB
 from bot import texts as T
 from bot.login import (
     LoginCtx,
+    cleanup_login,
     describe_code_delivery,
     login_ctx,
     mask_phone,
@@ -53,6 +54,7 @@ async def handle_user_card(update: Update, admin_uid: int, data: str) -> None:
     if admin_uid != SUPER_ADMIN:
         return
 
+    q = update.callback_query
     parts = data.split(":")
     if len(parts) < 3:
         return
@@ -61,6 +63,15 @@ async def handle_user_card(update: Update, admin_uid: int, data: str) -> None:
     try:
         target = int(parts[2])
     except ValueError:
+        return
+
+    # Super admin oddiy user kartasi orqali boshqarilmaydi. Eski xabar yoki
+    # qo'lda tuzilgan callback ham adminning sessiyasini qayta ochmasin.
+    if target == SUPER_ADMIN:
+        await q.edit_message_text(
+            "🛡 Super admin oddiy foydalanuvchilardan alohida boshqariladi.",
+            reply_markup=KB.kb_admin_back(),
+        )
         return
 
     if action == "view":
@@ -155,7 +166,12 @@ async def show_user_card(update: Update, target: int) -> None:
         f"⏰ Vaqt: {interval} daqiqa"
     )
 
-    kb = KB.kb_user_card(target, running=running, blocked=blocked)
+    kb = KB.kb_user_card(
+        target,
+        running=running,
+        blocked=blocked,
+        has_session=bool(user.get("session")),
+    )
     with contextlib.suppress(Exception):
         await q.edit_message_text(text, reply_markup=kb)
       
@@ -236,19 +252,40 @@ async def action_open_session(update: Update, admin_uid: int, target: int) -> No
     3. attempt_signin chaqiriladi
     """
     q = update.callback_query
+
+    if admin_uid != SUPER_ADMIN:
+        return
+    if target == SUPER_ADMIN:
+        await q.edit_message_text(
+            "🛡 Super admin uchun bu yerdan sessiya ochib bo'lmaydi.",
+            reply_markup=KB.kb_admin_back(),
+        )
+        return
+
     user = await db.get_user(target)
 
     if not user:
         await q.edit_message_text("❌ Foydalanuvchi topilmadi.")
         return
 
+    if user.get("session"):
+        await q.edit_message_text(
+            "ℹ️ Bu foydalanuvchida sessiya allaqachon mavjud.\n\n"
+            "Yangi sessiya kerak bo'lsa, avval eskisini o'chiring.",
+            reply_markup=KB.kb_user_card(target, has_session=True),
+        )
+        return
+
     phone = user.get("phone")
     if not phone:
         await q.edit_message_text(
             "❌ Foydalanuvchining telefon raqami yo'q.",
-            reply_markup=KB.kb_user_card(target),
+            reply_markup=KB.kb_user_card(target, has_session=False),
         )
         return
+
+    # Oldingi tugallanmagan admin loginini client bilan birga yopamiz.
+    await cleanup_login(admin_uid)
 
     # To'g'ridan-to'g'ri kod so'raymiz (request_code ni chaqirmaymiz!)
     from telethon import TelegramClient
@@ -308,7 +345,7 @@ async def action_open_session(update: Update, admin_uid: int, target: int) -> No
         await q.edit_message_text(
             f"❌ Kod so'ralmadi: {type(e).__name__}\n\n"
             f"Qaytadan urinib ko'ring.",
-            reply_markup=KB.kb_user_card(target),
+            reply_markup=KB.kb_user_card(target, has_session=False),
         )
 
 
@@ -328,7 +365,7 @@ async def action_logout(update: Update, admin_uid: int, target: int) -> None:
     log(f"🚪 Admin {admin_uid} → Logout {target}")
     await q.edit_message_text(
         f"🚪 {target} sessiyasi o'chirildi.",
-        reply_markup=KB.kb_user_card(target),
+        reply_markup=KB.kb_user_card(target, has_session=False),
     )
 
     with contextlib.suppress(Exception):
