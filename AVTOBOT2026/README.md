@@ -66,6 +66,18 @@ Ammo Telegram AWS/data-center IP manzilini xavfli deb baholasa, so'rovga
 muvaffaqiyatli javob berib, kodni amalda yetkazmasligi ham mumkin. Buni bot
 SMSga majburlab o'tkaza olmaydi.
 
+Bot API/IP reputatsiyasini himoyalash uchun login oqimi qat'iy cheklangan:
+
+- yangi foydalanuvchi uchun **admin tasdig'i kod so'rovidan oldin** keladi;
+- har bir foydalanuvchi ko'pi bilan **3 marta/soat** login boshlashi mumkin;
+- muddati o'tgan kodni faqat **bir marta** qayta so'rash mumkin;
+- tugallanmagan login 5 daqiqada yopiladi.
+
+Shuning uchun yangi foydalanuvchi ism va telefonini kiritgach tasdiqni
+kutadi. Admin tasdiqlaganidan keyin u yana **🔑 Login** bosib kod yoki QR
+orqali kiradi. `Login`ni qayta-qayta bosish yetkazishni tezlashtirmaydi va
+Telegram flood/risk cheklovini kuchaytirishi mumkin.
+
 ### Tavsiya etilgan yechim
 
 1. Kod oynasidagi **“📷 Kod kelmadimi? QR Login”** tugmasini bosing.

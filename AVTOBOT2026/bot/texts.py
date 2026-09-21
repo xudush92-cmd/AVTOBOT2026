@@ -16,10 +16,10 @@ WELCOME_SHORT = (
     "🤖 AVTOBOT\n\n"
     "Telegram guruhlaringizga reklama postlarini avtomatik joylashtiruvchi bot.\n\n"
     "📌 Boshlash:\n"
-    "1. 🔑 Login bosing\n"
-    "2. Ism, familiya va telefonni kiriting\n"
-    "3. Telegram tasdiq kodini tugmalar orqali kiriting\n"
-    "4. Admin tasdiqlashini kuting\n\n"
+    "1. 🔑 Login bosib ism, familiya va telefonni kiriting\n"
+    "2. Admin tasdiqlashini kuting\n"
+    "3. Tasdiqdan keyin yana 🔑 Login bosing\n"
+    "4. Telegram kodini tugmalar orqali kiriting\n\n"
     f"📱 Yordam: {ADMIN_CONTACT_PHONE}"
 )
 
@@ -224,6 +224,13 @@ PASSWORD_WRONG = "❌ Noto'g'ri parol. Qaytadan kiriting:"
 # ─────────────────────────────────────────────────────────────────────────
 # LOGIN YAKUNLANGANDA
 # ─────────────────────────────────────────────────────────────────────────
+REGISTRATION_PENDING = (
+    "✅ Ro'yxatdan o'tish so'rovingiz qabul qilindi!\n\n"
+    "⏳ Avval admin sizni tasdiqlaydi. Shundan keyin 🔑 Login bosib "
+    "Telegram kodini so'raysiz.\n\n"
+    f"📞 Tezroq tasdiqlanish uchun: {ADMIN_CONTACT_PHONE}"
+)
+
 LOGIN_SUCCESS_PENDING = (
     "✅ Login muvaffaqiyatli!\n\n"
     "⏳ So'rovingiz admin tasdiqini kutmoqda.\n\n"

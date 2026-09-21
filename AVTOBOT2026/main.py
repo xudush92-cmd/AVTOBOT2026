@@ -38,6 +38,7 @@ from config.config import (
     API_HASH,
     API_ID,
     BOT_TOKEN,
+    LOGIN_TIMEOUT_S,
     MAX_CLIENT_POOL,
     MAX_CONCURRENT_WORKERS,
     SUPER_ADMIN,
@@ -145,7 +146,7 @@ async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
     # ── LOGIN FSM (rate limitdan OLDIN) ──
     if step in ("name", "surname", "phone", "code", "qr", "password"):
-        if time.time() - state.get("ts", 0) > 600:
+        if time.time() - state.get("ts", 0) > LOGIN_TIMEOUT_S:
             await Login.cleanup_login(uid)
             await msg.reply_text(T.CODE_TIMEOUT, reply_markup=KB.kb_login())
             return
@@ -481,13 +482,13 @@ async def expire_stale_logins() -> int:
     expired: set[int] = set()
 
     for uid, ctx in list(Login.login_ctx.items()):
-        if now - ctx.started_at > 600:
+        if now - ctx.started_at > LOGIN_TIMEOUT_S:
             expired.add(uid)
 
     for uid, state in list(Login.user_states.items()):
         step = state.get("step")
         if step in ("name", "surname", "phone", "code", "qr", "password"):
-            if now - state.get("ts", 0) > 600:
+            if now - state.get("ts", 0) > LOGIN_TIMEOUT_S:
                 expired.add(uid)
 
     for uid in expired:

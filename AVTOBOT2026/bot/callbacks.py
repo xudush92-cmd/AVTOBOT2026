@@ -382,12 +382,13 @@ async def handle_admin_approve(update: Update, uid: int, data: str) -> None:
         log(f"✅ Tasdiqlandi: {target}")
         await q.edit_message_text(f"✅ Tasdiqlandi: {target}")
 
-        # Foydalanuvchiga xabar
+        # Yangi oqimda hali sessiya yo'q: user endi o'zi Login bosadi.
+        # `pending` faqat eski oqim bilan moslik uchun qolgan.
         with contextlib.suppress(Exception):
             await application.bot.send_message(
                 target,
-                T.USER_APPROVED,
-                reply_markup=KB.kb_main(),
+                T.LOGIN_SUCCESS_APPROVED if pending else T.USER_APPROVED,
+                reply_markup=KB.kb_main() if pending else KB.kb_login(),
             )
 
         # Referal hisoblash

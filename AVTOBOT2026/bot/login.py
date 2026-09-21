@@ -515,17 +515,17 @@ async def begin_login(update: Update) -> None:
 
     user = await db.get_user(uid)
 
-    if not user:
+    if user and user.get("awaiting_approval"):
+        await update.message.reply_text(
+            T.LOGIN_ALREADY_PENDING, reply_markup=KB.kb_pending()
+        )
+        return
+
+    # Ishlayotgan 4x40in-bot oqimi: yangi/tasdiqlanmagan user avval
+    # ro'yxatdan o'tadi, lekin Telegram kodi HALI so'ralmaydi.
+    if not user or not user.get("is_admin"):
         user_states[uid] = {"step": "name", "ts": time.time()}
         await update.message.reply_text(T.ASK_NAME)
-        return
-
-    if user.get("awaiting_approval"):
-        await update.message.reply_text(T.LOGIN_ALREADY_PENDING)
-        return
-
-    if not user.get("is_admin"):
-        await update.message.reply_text(T.LOGIN_NOT_APPROVED)
         return
 
     phone = user.get("phone")
@@ -607,8 +607,21 @@ async def handle_phone(update: Update, text: str) -> None:
         )
 
     user_states.pop(uid, None)
-    await update.message.reply_text(T.PHONE_ACCEPTED.format(phone=phone))
-    await request_code(uid, phone)
+
+    # Faqat avvaldan tasdiqlangan user uchun kod so'raymiz. Bu ochiq botda
+    # istalgan odam AWS IP/API_ID orqali auth.sendCode spam qilishini to'xtatadi.
+    if uid == SUPER_ADMIN or await db.is_admin(uid):
+        await update.message.reply_text(T.PHONE_ACCEPTED.format(phone=phone))
+        await request_code(uid, phone)
+        return
+
+    await db.set_awaiting_approval(uid, True)
+    log(f"⏳ Ro'yxatdan o'tish so'rovi: uid={uid} phone={mask_phone(phone)}")
+    await notify_super_for_approval(uid)
+    await update.message.reply_text(
+        T.REGISTRATION_PENDING,
+        reply_markup=KB.kb_pending(),
+    )
   
 
 # ─────────────────────────────────────────────────────────────────────────
