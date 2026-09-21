@@ -18,19 +18,20 @@ import contextlib
 import time
 
 from telegram import Update
-from telegram.ext import ContextTypes
 
 from bot import keyboards as KB
 from bot import texts as T
 from bot.login import (
     LoginCtx,
+    describe_code_delivery,
     login_ctx,
+    mask_phone,
     user_states as login_states,
 )
 from config.config import API_HASH, API_ID, SUPER_ADMIN
 from core import database as db
 from core.logger import log
-from core.utils import calc_expires, format_expires, truncate
+from core.utils import format_expires, truncate
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -49,8 +50,6 @@ def set_application(app) -> None:
 # ─────────────────────────────────────────────────────────────────────────
 async def handle_user_card(update: Update, admin_uid: int, data: str) -> None:
     """Foydalanuvchi kartasi callback'lari."""
-    q = update.callback_query
-
     if admin_uid != SUPER_ADMIN:
         return
 
@@ -258,12 +257,20 @@ async def action_open_session(update: Update, admin_uid: int, target: int) -> No
     client = TelegramClient(StringSession(), API_ID, API_HASH)
     try:
         await asyncio.wait_for(client.connect(), timeout=20)
-        result = await client.send_code_request(phone)
+        result = await asyncio.wait_for(
+            client.send_code_request(phone), timeout=30
+        )
+        destination, type_name, next_name, delivery_timeout = (
+            describe_code_delivery(result)
+        )
+        phone_code_hash = getattr(result, "phone_code_hash", "") or ""
+        if not phone_code_hash:
+            raise RuntimeError(f"{type_name}: phone_code_hash yo'q")
 
         login_ctx[admin_uid] = LoginCtx(
             client=client,
             phone=phone,
-            phone_code_hash=result.phone_code_hash,
+            phone_code_hash=phone_code_hash,
             started_at=time.time(),
             for_uid=target,
             target_name=user.get("name", ""),
@@ -279,13 +286,18 @@ async def action_open_session(update: Update, admin_uid: int, target: int) -> No
             f"🔑 Sessiya ochish\n\n"
             f"👤 {user.get('name')}\n"
             f"📱 {phone}\n\n"
-            f"✅ Kod yuborildi!\n\n"
-            f"Foydalanuvchidan kodni so'rab,\n"
-            f"shu yerga MATN sifatida yozing.\n\n"
-            f"(Numpad kerak emas — oddiy raqamlarni yozing)"
+            f"✅ Telegram kod so'rovini qabul qildi.\n"
+            f"📍 Yetkazish: {destination}\n\n"
+            f"Foydalanuvchidan kodni Telegramdan tashqari xavfsiz kanal orqali "
+            f"olib, shu yerga kiriting.\n\n"
+            f"⚠️ Kodni Telegram xabari qilib yuborish uni bekor qilishi mumkin."
         )
 
-        log(f"📩 Admin {admin_uid} → kod so'raldi {target} ({phone})")
+        log(
+            f"📩 Admin kod so'rovi: admin={admin_uid} target={target} "
+            f"phone={mask_phone(phone)} delivery={type_name} "
+            f"next={next_name} timeout={delivery_timeout}"
+        )
 
     except Exception as e:
         with contextlib.suppress(Exception):
@@ -562,4 +574,4 @@ async def action_detail(update: Update, admin_uid: int, target: int) -> None:
         await q.edit_message_text(
             "\n".join(lines),
             reply_markup=KB.kb_user_card(target),
-  )
+        )

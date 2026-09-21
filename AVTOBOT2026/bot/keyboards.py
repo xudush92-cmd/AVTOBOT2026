@@ -77,7 +77,7 @@ CODE_LENGTH = 5
 
 
 def kb_numpad() -> InlineKeyboardMarkup:
-    """SMS kod kiritish uchun raqamli tugmalar."""
+    """Telegram tasdiq kodini kiritish uchun raqamli tugmalar."""
     rows = [
         [InlineKeyboardButton("1", callback_data="np:1"),
          InlineKeyboardButton("2", callback_data="np:2"),
@@ -91,9 +91,18 @@ def kb_numpad() -> InlineKeyboardMarkup:
         [InlineKeyboardButton("⬅️", callback_data="np:back"),
          InlineKeyboardButton("0", callback_data="np:0"),
          InlineKeyboardButton("✅", callback_data="np:ok")],
+        [InlineKeyboardButton("📷 Kod kelmadimi? QR Login", callback_data="np:qr")],
         [InlineKeyboardButton(T.ACTION_CANCEL, callback_data="np:cancel")],
     ]
     return InlineKeyboardMarkup(rows)
+
+
+def kb_qr_login(url: str) -> InlineKeyboardMarkup:
+    """QR sessiyani Telegramda tasdiqlash va bekor qilish tugmalari."""
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("✅ Telegramda tasdiqlash", url=url)],
+        [InlineKeyboardButton(T.ACTION_CANCEL, callback_data="qr:cancel")],
+    ])
   
 
 # ─────────────────────────────────────────────────────────────────────────

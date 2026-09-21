@@ -5,7 +5,7 @@ Ketma-ketlik:
 1. Ism
 2. Familiya
 3. Telefon
-4. SMS kod (numpad orqali)
+4. Telegram tasdiq kodi (numpad) yoki QR Login
 5. 2FA (bo'lsa)
 6. Sessiya yaratiladi -> adminga xabar
 """
@@ -16,20 +16,25 @@ import asyncio
 import contextlib
 import time
 from dataclasses import dataclass
+from io import BytesIO
 
+import qrcode
 from telethon import TelegramClient
 from telethon.errors import (
+    ApiIdInvalidError,
+    AuthRestartError,
     FloodWaitError,
     PasswordHashInvalidError,
     PhoneCodeExpiredError,
     PhoneCodeInvalidError,
     PhoneNumberBannedError,
+    PhoneNumberFloodError,
     PhoneNumberInvalidError,
+    SendCodeUnavailableError,
     SessionPasswordNeededError,
 )
 from telethon.sessions import StringSession
 from telegram import Update
-from telegram.ext import ContextTypes
 
 from bot import keyboards as KB
 from bot import texts as T
@@ -37,8 +42,6 @@ from config.config import (
     API_HASH,
     API_ID,
     CODE_LENGTH,
-    LOGIN_TIMEOUT_S,
-    MAX_CODE_LENGTH,
     MAX_WRONG_CODE,
     SMS_COOLDOWN_MIN,
     SMS_MAX_ATTEMPTS,
@@ -63,6 +66,9 @@ class LoginCtx:
     resend_count: int = 0
     for_uid: int | None = None
     target_name: str = ""
+    mode: str = "code"
+    wait_task: asyncio.Task | None = None
+    qr_message_id: int | None = None
 
 
 user_states: dict[int, dict] = {}
@@ -78,13 +84,102 @@ def set_application(app) -> None:
     application = app
 
 
+def mask_phone(phone: str) -> str:
+    """Telefon raqamini log uchun xavfsiz ko'rinishga keltiradi."""
+    if len(phone) <= 6:
+        return "***"
+    return f"{phone[:4]}***{phone[-3:]}"
+
+
+def describe_code_delivery(result) -> tuple[str, str, str, int | None]:
+    """
+    Telegramning ``auth.SentCode`` javobini odam o'qiydigan ko'rinishga
+    aylantiradi. Telegram so'rovni qabul qilgani kod haqiqatan yetib
+    borganini kafolatlamaydi, shuning uchun texnik turi ham loglanadi.
+    """
+    result_name = type(result).__name__
+    code_type = getattr(result, "type", None)
+    type_name = type(code_type).__name__ if code_type is not None else result_name
+
+    if type_name == "SentCodeTypeApp":
+        destination = "Telegram ilovasidagi rasmiy «Telegram» (777000) chati"
+    elif type_name in ("SentCodeTypeSms", "SentCodeTypeFirebaseSms"):
+        destination = "SMS xabari"
+    elif type_name == "SentCodeTypeEmailCode":
+        pattern = getattr(code_type, "email_pattern", "")
+        destination = f"login e-pochtasi ({pattern})" if pattern else "login e-pochtasi"
+    elif type_name == "SentCodeTypeCall":
+        destination = "avtomatik telefon qo'ng'irog'i"
+    elif type_name in ("SentCodeTypeFlashCall", "SentCodeTypeMissedCall"):
+        destination = "Telegram ko'rsatgan telefon qo'ng'irog'i"
+    elif type_name == "SentCodeTypeFragmentSms":
+        destination = "Fragment orqali xabar"
+    elif type_name in ("SentCodeTypeSmsPhrase", "SentCodeTypeSmsWord"):
+        destination = "SMS ichidagi so'z/ibora"
+    elif type_name == "SentCodeTypeSetUpEmailRequired":
+        destination = "avval rasmiy Telegram ilovasida login e-pochtasini sozlash"
+    elif result_name == "SentCodePaymentRequired":
+        destination = "Telegram tasdiq kodi uchun to'lov talab qildi"
+    elif result_name == "SentCodeSuccess":
+        destination = "Telegram sessiyani darhol tasdiqladi"
+    else:
+        destination = f"Telegram belgilagan usul ({type_name})"
+
+    next_type = getattr(result, "next_type", None)
+    next_name = type(next_type).__name__ if next_type is not None else "yo'q"
+    timeout = getattr(result, "timeout", None)
+    return destination, type_name, next_name, timeout
+
+
+def make_qr_image(url: str) -> BytesIO:
+    """Telegram login URL uchun PNG QR rasm yaratadi."""
+    qr = qrcode.QRCode(version=None, box_size=8, border=4)
+    qr.add_data(url)
+    qr.make(fit=True)
+    image = qr.make_image(fill_color="black", back_color="white")
+
+    output = BytesIO()
+    output.name = "telegram-login.png"
+    image.save(output, format="PNG")
+    output.seek(0)
+    return output
+
+
+async def _delete_qr_message(uid: int, ctx: LoginCtx) -> None:
+    """Muddati tugagan yoki ishlatilgan QR tokenli xabarni o'chiradi."""
+    message_id = ctx.qr_message_id
+    ctx.qr_message_id = None
+    if message_id and application:
+        with contextlib.suppress(Exception):
+            await application.bot.delete_message(chat_id=uid, message_id=message_id)
+
+
+async def _validate_qr_account(uid: int, ctx: LoginCtx) -> bool:
+    """QR orqali aynan bot bilan gaplashayotgan Telegram user kirganini tekshiradi."""
+    me = await ctx.client.get_me()
+    if not me or int(me.id) != int(uid):
+        return False
+
+    actual_phone = (getattr(me, "phone", "") or "").strip()
+    if actual_phone:
+        ctx.phone = "+" + actual_phone.lstrip("+")
+        await db.set_phone(uid, ctx.phone)
+    return True
+
+
 # ─────────────────────────────────────────────────────────────────────────
 # TOZALASH
 # ─────────────────────────────────────────────────────────────────────────
 async def cleanup_login(uid: int) -> None:
-    """Foydalanuvchi login holatini tozalash."""
+    """Foydalanuvchi login holati, QR taski va clientini tozalash."""
     ctx = login_ctx.pop(uid, None)
     if ctx:
+        task = ctx.wait_task
+        if task and task is not asyncio.current_task() and not task.done():
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await task
+        await _delete_qr_message(uid, ctx)
         with contextlib.suppress(Exception):
             await ctx.client.disconnect()
     user_states.pop(uid, None)
@@ -118,9 +213,11 @@ def reset_sms_attempts(uid: int) -> None:
 # NUMPAD YUBORISH / YANGILASH
 # ─────────────────────────────────────────────────────────────────────────
 async def send_numpad(uid: int, buffer: str = "", hint: str = "") -> None:
-    """SMS kod oynasini yuboradi yoki yangilaydi."""
-    text = T.numpad_text(buffer, hint)
+    """Telegram tasdiq kodi oynasini yuboradi yoki yangilaydi."""
     state = user_states.get(uid, {})
+    if not hint:
+        hint = state.get("code_hint", "")
+    text = T.numpad_text(buffer, hint)
     msg_id = state.get("numpad_msg_id")
 
     if msg_id:
@@ -154,47 +251,111 @@ async def request_code(
     for_uid: int | None = None,
     target_name: str = "",
 ) -> None:
-    """Telegramga kod so'rovini yuboradi."""
+    """Telegramga kod so'rovini yuboradi va yetkazish turini ko'rsatadi."""
     client = TelegramClient(StringSession(), API_ID, API_HASH)
     try:
         await asyncio.wait_for(client.connect(), timeout=20)
-        result = await client.send_code_request(phone)
+        result = await asyncio.wait_for(
+            client.send_code_request(phone), timeout=30
+        )
+
+        destination, type_name, next_name, delivery_timeout = (
+            describe_code_delivery(result)
+        )
+        phone_code_hash = getattr(result, "phone_code_hash", "") or ""
 
         login_ctx[uid] = LoginCtx(
             client=client,
             phone=phone,
-            phone_code_hash=result.phone_code_hash,
+            phone_code_hash=phone_code_hash,
             started_at=time.time(),
             for_uid=for_uid,
             target_name=target_name,
         )
+
+        # Yangi Telegram qatlamlari ayrim holatda sessiyani kodsiz tasdiqlashi
+        # mumkin. Bunday javobda phone_code_hash bo'lmaydi.
+        if type(result).__name__ == "SentCodeSuccess" or (
+            not phone_code_hash and await client.is_user_authorized()
+        ):
+            log(
+                f"✅ Kod talab qilinmadi: uid={uid} "
+                f"phone={mask_phone(phone)} type={type_name}"
+            )
+            await finalize_login(uid)
+            return
+
+        if not phone_code_hash:
+            raise RuntimeError(
+                f"Telegram {type_name} qaytardi, phone_code_hash yo'q"
+            )
+
+        code_length = getattr(getattr(result, "type", None), "length", None)
+        delivery_hint = T.code_hint_sent(destination)
         user_states[uid] = {
             "step": "code",
             "ts": time.time(),
             "code_buffer": "",
+            "code_length": code_length or CODE_LENGTH,
+            "code_hint": delivery_hint,
         }
-        await send_numpad(uid, "", hint=T.CODE_HINT_SENT)
-        log(f"📩 Kod so'raldi: {uid} ({phone})")
+        await send_numpad(uid, "", hint=delivery_hint)
+        log(
+            f"📩 Kod so'rovi qabul qilindi: uid={uid} "
+            f"phone={mask_phone(phone)} delivery={type_name} "
+            f"next={next_name} timeout={delivery_timeout}"
+        )
 
-    except PhoneNumberInvalidError:
+    except PhoneNumberInvalidError as e:
         with contextlib.suppress(Exception):
             await client.disconnect()
         await cleanup_login(uid)
+        log(f"request_code: uid={uid} PhoneNumberInvalidError: {e}", "warning")
         await application.bot.send_message(uid, T.PHONE_INVALID)
 
-    except PhoneNumberBannedError:
+    except PhoneNumberBannedError as e:
         with contextlib.suppress(Exception):
             await client.disconnect()
         await cleanup_login(uid)
-        await application.bot.send_message(uid, "🚫 Bu raqam bloklangan.")
+        log(f"request_code: uid={uid} PhoneNumberBannedError: {e}", "warning")
+        await application.bot.send_message(uid, "🚫 Bu raqam Telegram tomonidan bloklangan.")
+
+    except ApiIdInvalidError as e:
+        with contextlib.suppress(Exception):
+            await client.disconnect()
+        await cleanup_login(uid)
+        log(f"request_code: ApiIdInvalidError: {e}", "error")
+        await application.bot.send_message(uid, T.API_CREDENTIALS_INVALID)
+
+    except (PhoneNumberFloodError, SendCodeUnavailableError, AuthRestartError) as e:
+        with contextlib.suppress(Exception):
+            await client.disconnect()
+        await cleanup_login(uid)
+        log(f"request_code: uid={uid} {type(e).__name__}: {e}", "warning")
+        await application.bot.send_message(
+            uid, T.CODE_UNAVAILABLE, reply_markup=KB.kb_login()
+        )
 
     except FloodWaitError as e:
         with contextlib.suppress(Exception):
             await client.disconnect()
         await cleanup_login(uid)
-        wait_min = max(1, e.seconds // 60)
+        wait_min = max(1, (e.seconds + 59) // 60)
+        log(f"request_code: uid={uid} FloodWait={e.seconds}s", "warning")
         await application.bot.send_message(
-            uid, T.FLOOD_WAIT.format(minutes=wait_min)
+            uid, T.FLOOD_WAIT.format(minutes=wait_min), reply_markup=KB.kb_login()
+        )
+
+    except asyncio.TimeoutError:
+        with contextlib.suppress(Exception):
+            await client.disconnect()
+        await cleanup_login(uid)
+        log(f"request_code: uid={uid} Telegram ulanish timeout", "error")
+        await application.bot.send_message(
+            uid,
+            "❌ VPS Telegram MTProto serveriga vaqtida ulana olmadi. "
+            "AWS Security Group/NAT va chiqish tarmog'ini tekshiring.",
+            reply_markup=KB.kb_login(),
         )
 
     except Exception as e:
@@ -202,8 +363,143 @@ async def request_code(
             await client.disconnect()
         await cleanup_login(uid)
         log(f"request_code xatolik {uid}: {type(e).__name__}: {e}", "error")
-        await application.bot.send_message(uid, T.GENERIC_ERROR)
+        await application.bot.send_message(
+            uid, T.GENERIC_ERROR, reply_markup=KB.kb_login()
+        )
       
+
+# ─────────────────────────────────────────────────────────────────────────
+# QR LOGIN — AWS/VPSDA KOD YETIB KELMAGANDA
+# ─────────────────────────────────────────────────────────────────────────
+async def begin_qr_login(uid: int) -> None:
+    """Mavjud kod loginini bekor qilib, bir martalik QR login yaratadi."""
+    old_ctx = login_ctx.get(uid)
+    state = user_states.get(uid, {})
+    if not old_ctx or state.get("step") != "code":
+        await application.bot.send_message(
+            uid,
+            "⚠️ Avval 🔑 Login bosib, telefon raqamingizni kiriting.",
+            reply_markup=KB.kb_login(),
+        )
+        return
+
+    # Admin boshqa user nomidan ochayotgan sessiyada QRni adminning o'zi
+    # skanerlashi noto'g'ri akkauntni ulab qo'yishi mumkin.
+    if old_ctx.for_uid is not None:
+        await application.bot.send_message(
+            uid, "⚠️ QR Login faqat foydalanuvchining o'zi kirishi uchun."
+        )
+        return
+
+    phone = old_ctx.phone
+    await cleanup_login(uid)
+
+    client = TelegramClient(StringSession(), API_ID, API_HASH)
+    try:
+        await asyncio.wait_for(client.connect(), timeout=20)
+        qr_login = await asyncio.wait_for(client.qr_login(), timeout=20)
+
+        ctx = LoginCtx(
+            client=client,
+            phone=phone,
+            phone_code_hash="",
+            started_at=time.time(),
+            mode="qr",
+        )
+        login_ctx[uid] = ctx
+        user_states[uid] = {"step": "qr", "ts": time.time()}
+
+        image = make_qr_image(qr_login.url)
+        message = await application.bot.send_photo(
+            chat_id=uid,
+            photo=image,
+            caption=T.QR_CAPTION,
+            reply_markup=KB.kb_qr_login(qr_login.url),
+        )
+        ctx.qr_message_id = message.message_id
+        ctx.wait_task = asyncio.create_task(
+            _wait_for_qr_login(uid, ctx, qr_login),
+            name=f"qr-login-{uid}",
+        )
+        log(f"📷 QR Login yaratildi: uid={uid} phone={mask_phone(phone)}")
+
+    except ApiIdInvalidError as e:
+        with contextlib.suppress(Exception):
+            await client.disconnect()
+        await cleanup_login(uid)
+        log(f"qr_login: ApiIdInvalidError: {e}", "error")
+        await application.bot.send_message(
+            uid, T.API_CREDENTIALS_INVALID, reply_markup=KB.kb_login()
+        )
+    except Exception as e:
+        with contextlib.suppress(Exception):
+            await client.disconnect()
+        await cleanup_login(uid)
+        log(f"qr_login yaratish xatosi {uid}: {type(e).__name__}: {e}", "error")
+        await application.bot.send_message(
+            uid, T.QR_ERROR, reply_markup=KB.kb_login()
+        )
+
+
+async def _wait_for_qr_login(uid: int, ctx: LoginCtx, qr_login) -> None:
+    """QR token skanerlanishini kutadi va o'sha user sessiyasini yakunlaydi."""
+    try:
+        await qr_login.wait()
+
+        if not await _validate_qr_account(uid, ctx):
+            log(f"🚫 QR boshqa akkaunt bilan tasdiqlandi: uid={uid}", "warning")
+            await cleanup_login(uid)
+            await application.bot.send_message(
+                uid, T.QR_WRONG_ACCOUNT, reply_markup=KB.kb_login()
+            )
+            return
+
+        await _delete_qr_message(uid, ctx)
+        log(f"✅ QR tasdiqlandi: uid={uid}")
+        await finalize_login(uid)
+
+    except SessionPasswordNeededError:
+        await _delete_qr_message(uid, ctx)
+        if login_ctx.get(uid) is not ctx:
+            return
+        ctx.wait_task = None
+        user_states[uid] = {"step": "password", "ts": time.time()}
+        await application.bot.send_message(uid, T.ASK_PASSWORD)
+
+    except (asyncio.TimeoutError, TimeoutError):
+        if login_ctx.get(uid) is not ctx:
+            return
+        ctx.wait_task = None
+        await cleanup_login(uid)
+        log(f"⏰ QR Login muddati tugadi: uid={uid}", "warning")
+        await application.bot.send_message(
+            uid, T.QR_EXPIRED, reply_markup=KB.kb_login()
+        )
+
+    except asyncio.CancelledError:
+        raise
+
+    except Exception as e:
+        if login_ctx.get(uid) is ctx:
+            ctx.wait_task = None
+            await cleanup_login(uid)
+        log(f"qr_login kutish xatosi {uid}: {type(e).__name__}: {e}", "error")
+        await application.bot.send_message(
+            uid, T.QR_ERROR, reply_markup=KB.kb_login()
+        )
+
+    finally:
+        if login_ctx.get(uid) is ctx and ctx.wait_task is asyncio.current_task():
+            ctx.wait_task = None
+
+
+async def handle_qr_waiting(update: Update) -> None:
+    """QR kutilayotganda yozilgan oddiy xabarga yo'l-yo'riq beradi."""
+    state = user_states.get(update.effective_user.id, {})
+    state["ts"] = time.time()
+    user_states[update.effective_user.id] = state
+    await update.message.reply_text(T.QR_WAITING)
+
 
 # ─────────────────────────────────────────────────────────────────────────
 # LOGINNI BOSHLASH
@@ -316,10 +612,10 @@ async def handle_phone(update: Update, text: str) -> None:
   
 
 # ─────────────────────────────────────────────────────────────────────────
-# SMS KODNI TEKSHIRISH
+# TELEGRAM TASDIQ KODINI TEKSHIRISH
 # ─────────────────────────────────────────────────────────────────────────
 async def attempt_signin(uid: int, code: str) -> None:
-    """SMS kodni Telegramga yuborib tekshiradi."""
+    """Tasdiq kodini Telegramga yuborib tekshiradi."""
     ctx = login_ctx.get(uid)
     if not ctx:
         await cleanup_login(uid)
@@ -392,18 +688,29 @@ async def attempt_signin(uid: int, code: str) -> None:
 
         try:
             result = await asyncio.wait_for(
-                ctx.client.send_code_request(ctx.phone), timeout=20
+                ctx.client.send_code_request(ctx.phone), timeout=30
+            )
+            destination, type_name, next_name, delivery_timeout = (
+                describe_code_delivery(result)
             )
             ctx.phone_code_hash = result.phone_code_hash
             ctx.wrong_count = 0
 
             state = user_states.get(uid, {})
             state["code_buffer"] = ""
+            state["code_length"] = (
+                getattr(getattr(result, "type", None), "length", None)
+                or CODE_LENGTH
+            )
+            state["code_hint"] = T.code_hint_sent(destination)
             state["ts"] = time.time()
             user_states[uid] = state
 
-            await send_numpad(uid, "", hint=T.CODE_HINT_RESENT)
-            log(f"🔁 Kod qayta yuborildi: {uid}")
+            await send_numpad(uid, "", hint=state["code_hint"])
+            log(
+                f"🔁 Kod qayta so'raldi: uid={uid} delivery={type_name} "
+                f"next={next_name} timeout={delivery_timeout}"
+            )
 
         except FloodWaitError as e:
             await cleanup_login(uid)
@@ -458,6 +765,13 @@ async def handle_password(update: Update, text: str) -> None:
             await asyncio.wait_for(ctx.client.connect(), timeout=20)
 
         await ctx.client.sign_in(password=text)
+        if ctx.mode == "qr" and not await _validate_qr_account(uid, ctx):
+            log(f"🚫 QR 2FA boshqa akkaunt bilan tasdiqlandi: uid={uid}", "warning")
+            await cleanup_login(uid)
+            await update.message.reply_text(
+                T.QR_WRONG_ACCOUNT, reply_markup=KB.kb_login()
+            )
+            return
         await finalize_login(uid)
 
     except PasswordHashInvalidError:
@@ -615,7 +929,9 @@ def is_in_login(uid: int) -> bool:
     state = user_states.get(uid)
     if not state:
         return False
-    return state.get("step") in ("name", "surname", "phone", "code", "password")
+    return state.get("step") in (
+        "name", "surname", "phone", "code", "qr", "password"
+    )
 
 
 def get_step(uid: int) -> str | None:

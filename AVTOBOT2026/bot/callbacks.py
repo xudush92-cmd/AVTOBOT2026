@@ -26,20 +26,13 @@ from bot import keyboards as KB
 from bot import texts as T
 from bot.login import (
     attempt_signin,
-    can_resend_sms,
+    begin_qr_login,
     cleanup_login,
-    login_ctx,
-    send_numpad,
     user_states,
 )
-from bot.menu import confirm_start, confirm_stop, show_status
+from bot.menu import confirm_start, confirm_stop
 from bot.posts import delete_post_by_index
-from config.config import (
-    CODE_LENGTH,
-    LOGIN_TIMEOUT_S,
-    MAX_CODE_LENGTH,
-    SMS_MAX_ATTEMPTS,
-)
+from config.config import CODE_LENGTH, LOGIN_TIMEOUT_S, MAX_CODE_LENGTH
 from core import database as db
 from core.logger import log
 
@@ -69,6 +62,11 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         # NUMPAD
         if data.startswith("np:"):
             await handle_numpad(update, uid, data)
+            return
+
+        # QR LOGIN
+        if data == "qr:cancel":
+            await handle_qr_cancel(update, uid)
             return
 
         # START/STOP TASDIQ
@@ -159,7 +157,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 # NUMPAD HANDLER
 # ─────────────────────────────────────────────────────────────────────────
 async def handle_numpad(update: Update, uid: int, data: str) -> None:
-    """SMS kod uchun raqamli tugmalar."""
+    """Telegram tasdiq kodi uchun raqamli tugmalar va QR fallback."""
     q = update.callback_query
     state = user_states.get(uid, {})
 
@@ -192,14 +190,26 @@ async def handle_numpad(update: Update, uid: int, data: str) -> None:
         )
         return
 
+    # AWS/VPS IP sabab kod kelmasa — QR orqali sessiya ochish
+    if action == "qr":
+        with contextlib.suppress(Exception):
+            await q.edit_message_text(T.QR_PREPARING)
+        await begin_qr_login(uid)
+        return
+
+    expected_length = int(state.get("code_length") or CODE_LENGTH)
+    allowed_length = max(MAX_CODE_LENGTH, expected_length)
+
     # O'CHIRISH (backspace)
     if action == "back":
         buffer = buffer[:-1]
 
     # TASDIQLASH (ok)
     elif action == "ok":
-        if len(buffer) < CODE_LENGTH:
-            await q.answer(T.CODE_TOO_SHORT, show_alert=True)
+        if len(buffer) < expected_length:
+            await q.answer(
+                f"Kamida {expected_length} ta raqam kiriting!", show_alert=True
+            )
             return
         with contextlib.suppress(Exception):
             await q.edit_message_text(f"⏳ Kod tekshirilmoqda...\n\n🔢 {buffer}")
@@ -210,8 +220,10 @@ async def handle_numpad(update: Update, uid: int, data: str) -> None:
     else:
         if not action.isdigit():
             return
-        if len(buffer) >= MAX_CODE_LENGTH:
-            await q.answer(T.CODE_TOO_LONG, show_alert=True)
+        if len(buffer) >= allowed_length:
+            await q.answer(
+                f"Maksimal {allowed_length} ta raqam!", show_alert=True
+            )
             return
         buffer += action
 
@@ -221,8 +233,17 @@ async def handle_numpad(update: Update, uid: int, data: str) -> None:
 
     with contextlib.suppress(Exception):
         await q.edit_message_text(
-            T.numpad_text(buffer), reply_markup=KB.kb_numpad()
+            T.numpad_text(buffer, state.get("code_hint", "")),
+            reply_markup=KB.kb_numpad(),
         )
+
+
+async def handle_qr_cancel(update: Update, uid: int) -> None:
+    """QR loginni, kutish taskini va vaqtinchalik clientni bekor qiladi."""
+    await cleanup_login(uid)
+    await application.bot.send_message(
+        uid, T.CODE_CANCELLED, reply_markup=KB.kb_login()
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -363,8 +384,6 @@ async def handle_admin_approve(update: Update, uid: int, data: str) -> None:
 
         # Foydalanuvchiga xabar
         with contextlib.suppress(Exception):
-            info = await db.get_user_info(target)
-            name = info.get("name") or "Foydalanuvchi"
             await application.bot.send_message(
                 target,
                 T.USER_APPROVED,

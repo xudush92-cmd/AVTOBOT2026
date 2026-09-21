@@ -144,7 +144,7 @@ async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     step = state.get("step")
 
     # ── LOGIN FSM (rate limitdan OLDIN) ──
-    if step in ("name", "surname", "phone", "code", "password"):
+    if step in ("name", "surname", "phone", "code", "qr", "password"):
         if time.time() - state.get("ts", 0) > 600:
             await Login.cleanup_login(uid)
             await msg.reply_text(T.CODE_TIMEOUT, reply_markup=KB.kb_login())
@@ -161,6 +161,9 @@ async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
             return
         if step == "code":
             await Login.handle_code(update, text)
+            return
+        if step == "qr":
+            await Login.handle_qr_waiting(update)
             return
         if step == "password":
             await Login.handle_password(update, text)
@@ -483,7 +486,7 @@ async def expire_stale_logins() -> int:
 
     for uid, state in list(Login.user_states.items()):
         step = state.get("step")
-        if step in ("name", "surname", "phone", "code", "password"):
+        if step in ("name", "surname", "phone", "code", "qr", "password"):
             if now - state.get("ts", 0) > 600:
                 expired.add(uid)
 
