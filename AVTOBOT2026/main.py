@@ -48,6 +48,7 @@ from config.config import (
 from core import database as db
 from core.logger import log
 from core.rate_limit import RateLimiter
+from core.utils import is_valid_name, is_valid_phone
 
 # Worker
 from worker import health as Health
@@ -171,8 +172,16 @@ async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
             return
 
     # ── ADMIN FSM ──
-    if step in ("admin_code_input", "admin_add_group", "admin_add_post",
-                "admin_set_expire", "admin_broadcast"):
+    if step in (
+        "admin_new_user_name",
+        "admin_new_user_surname",
+        "admin_new_user_phone",
+        "admin_code_input",
+        "admin_add_group",
+        "admin_add_post",
+        "admin_set_expire",
+        "admin_broadcast",
+    ):
         if uid != SUPER_ADMIN:
             return
         await handle_admin_fsm(update, uid, step, text)
@@ -290,21 +299,99 @@ async def handle_admin_fsm(update: Update, uid: int, step: str, text: str) -> No
     state = Login.user_states.get(uid, {})
     target = state.get("target_uid")
 
-    # ── SESSIYA OCHISH (kod kutilmoqda) ──
+    # ── YANGI FOYDALANUVCHI: ISM ──
+    if step == "admin_new_user_name":
+        name = text.strip()
+        if not is_valid_name(name):
+            await msg.reply_text(
+                T.NAME_TOO_SHORT,
+                reply_markup=KB.kb_admin_add_user_cancel(),
+            )
+            return
+
+        state.update(
+            step="admin_new_user_surname",
+            name=name[:64],
+            ts=time.time(),
+        )
+        Login.user_states[uid] = state
+        await msg.reply_text(
+            T.ADMIN_ADD_USER_SURNAME,
+            reply_markup=KB.kb_admin_add_user_cancel(),
+        )
+        return
+
+    # ── YANGI FOYDALANUVCHI: FAMILIYA ──
+    if step == "admin_new_user_surname":
+        surname = text.strip()
+        if not is_valid_name(surname):
+            await msg.reply_text(
+                T.SURNAME_TOO_SHORT,
+                reply_markup=KB.kb_admin_add_user_cancel(),
+            )
+            return
+
+        full_name = f"{state.get('name', '')} {surname}".strip()[:64]
+        state.update(
+            step="admin_new_user_phone",
+            full_name=full_name,
+            ts=time.time(),
+        )
+        Login.user_states[uid] = state
+        await msg.reply_text(
+            T.ADMIN_ADD_USER_PHONE,
+            reply_markup=KB.kb_admin_add_user_cancel(),
+        )
+        return
+
+    # ── YANGI FOYDALANUVCHI: TELEFON ──
+    if step == "admin_new_user_phone":
+        phone = text.strip().replace(" ", "").replace("-", "")
+        if not is_valid_phone(phone):
+            await msg.reply_text(
+                T.PHONE_INVALID,
+                reply_markup=KB.kb_admin_add_user_cancel(),
+            )
+            return
+
+        full_name = state.get("full_name", "").strip()
+        if not full_name:
+            await Login.cleanup_login(uid)
+            await msg.reply_text(
+                "❌ Ism-familiya topilmadi. Jarayonni qaytadan boshlang.",
+                reply_markup=KB.kb_admin_panel(),
+            )
+            return
+
+        await msg.reply_text(
+            f"⏳ {full_name} uchun Telegram kodi so'ralmoqda...",
+            reply_markup=KB.kb_admin_add_user_cancel(),
+        )
+        await AA.request_new_user_session(uid, full_name, phone)
+        return
+
+    # ── SESSIYANI ULASH (kod kutilmoqda) ──
     if step == "admin_code_input":
         code = text.strip()
+        cancel_markup = (
+            KB.kb_admin_add_user_cancel()
+            if state.get("admin_add_user")
+            else None
+        )
 
         if not code.isdigit():
             await msg.reply_text(
                 "❌ Kod faqat raqamlardan iborat bo'lishi kerak.\n\n"
-                "Qaytadan kiriting:"
+                "Qaytadan kiriting:",
+                reply_markup=cancel_markup,
             )
             return
 
         if len(code) < 5 or len(code) > 6:
             await msg.reply_text(
                 "❌ Kod 5 yoki 6 raqamdan iborat bo'lishi kerak.\n\n"
-                "Qaytadan kiriting:"
+                "Qaytadan kiriting:",
+                reply_markup=cancel_markup,
             )
             return
 
@@ -480,26 +567,52 @@ async def expire_stale_logins() -> int:
     """Muddati o'tgan login jarayonlarini tozalaydi."""
     now = time.time()
     expired: set[int] = set()
+    admin_expired: set[int] = set()
 
     for uid, ctx in list(Login.login_ctx.items()):
         if now - ctx.started_at > LOGIN_TIMEOUT_S:
             expired.add(uid)
+            if ctx.mode == "admin_add_user" or ctx.for_uid is not None:
+                admin_expired.add(uid)
 
+    admin_login_steps = {
+        "admin_new_user_name",
+        "admin_new_user_surname",
+        "admin_new_user_phone",
+        "admin_code_input",
+    }
     for uid, state in list(Login.user_states.items()):
         step = state.get("step")
-        if step in ("name", "surname", "phone", "code", "qr", "password"):
+        if step in (
+            "name",
+            "surname",
+            "phone",
+            "code",
+            "qr",
+            "password",
+            *admin_login_steps,
+        ):
             if now - state.get("ts", 0) > LOGIN_TIMEOUT_S:
                 expired.add(uid)
+                if step in admin_login_steps or state.get("admin_add_user"):
+                    admin_expired.add(uid)
 
     for uid in expired:
         with contextlib.suppress(Exception):
             await Login.cleanup_login(uid)
         with contextlib.suppress(Exception):
-            await application.bot.send_message(
-                uid,
-                T.CODE_TIMEOUT,
-                reply_markup=KB.kb_login(),
-            )
+            if uid in admin_expired:
+                await application.bot.send_message(
+                    uid,
+                    "⏰ Foydalanuvchi qo'shish vaqti tugadi.",
+                    reply_markup=KB.kb_admin_panel(),
+                )
+            else:
+                await application.bot.send_message(
+                    uid,
+                    T.CODE_TIMEOUT,
+                    reply_markup=KB.kb_login(),
+                )
 
     if expired:
         log(f"🧹 Stale login: {len(expired)} ta tozalandi")

@@ -639,6 +639,12 @@ async def attempt_signin(uid: int, code: str) -> None:
         )
         return
 
+    failure_markup = (
+        KB.kb_admin_panel()
+        if ctx.mode == "admin_add_user" or ctx.for_uid is not None
+        else KB.kb_login()
+    )
+
     try:
         if not ctx.client.is_connected():
             await asyncio.wait_for(ctx.client.connect(), timeout=20)
@@ -659,10 +665,50 @@ async def attempt_signin(uid: int, code: str) -> None:
                 )
 
         user_states[uid] = {"step": "password", "ts": time.time()}
-        await application.bot.send_message(uid, T.ASK_PASSWORD)
+        await application.bot.send_message(
+            uid,
+            T.ASK_PASSWORD,
+            reply_markup=(
+                KB.kb_admin_add_user_cancel()
+                if ctx.mode == "admin_add_user"
+                else None
+            ),
+        )
 
     except PhoneCodeInvalidError:
         ctx.wrong_count += 1
+
+        # Admin kodi matn ko'rinishida kiritiladi; uni oddiy user numpad
+        # holatiga o'tkazib yubormaymiz.
+        if ctx.mode == "admin_add_user" or ctx.for_uid is not None:
+            if ctx.wrong_count >= MAX_WRONG_CODE:
+                await cleanup_login(uid)
+                await application.bot.send_message(
+                    uid,
+                    T.CODE_MAX_WRONG.format(count=ctx.wrong_count),
+                    reply_markup=KB.kb_admin_panel(),
+                )
+                return
+
+            user_states[uid] = {
+                "step": "admin_code_input",
+                "ts": time.time(),
+                "target_uid": ctx.for_uid,
+                "admin_add_user": ctx.mode == "admin_add_user",
+            }
+            await application.bot.send_message(
+                uid,
+                T.CODE_HINT_WRONG.format(
+                    count=ctx.wrong_count,
+                    max=MAX_WRONG_CODE,
+                ),
+                reply_markup=(
+                    KB.kb_admin_add_user_cancel()
+                    if ctx.mode == "admin_add_user"
+                    else None
+                ),
+            )
+            return
 
         if ctx.wrong_count >= MAX_WRONG_CODE:
             await cleanup_login(uid)
@@ -695,7 +741,11 @@ async def attempt_signin(uid: int, code: str) -> None:
                 T.SMS_LIMIT_REACHED.format(
                     attempts=SMS_MAX_ATTEMPTS, minutes=wait_min
                 ),
-                reply_markup=KB.kb_login(),
+                reply_markup=(
+                    KB.kb_admin_panel()
+                    if ctx.mode == "admin_add_user" or ctx.for_uid is not None
+                    else KB.kb_login()
+                ),
             )
             return
 
@@ -709,17 +759,33 @@ async def attempt_signin(uid: int, code: str) -> None:
             ctx.phone_code_hash = result.phone_code_hash
             ctx.wrong_count = 0
 
-            state = user_states.get(uid, {})
-            state["code_buffer"] = ""
-            state["code_length"] = (
-                getattr(getattr(result, "type", None), "length", None)
-                or CODE_LENGTH
-            )
-            state["code_hint"] = T.code_hint_sent(destination)
-            state["ts"] = time.time()
-            user_states[uid] = state
-
-            await send_numpad(uid, "", hint=state["code_hint"])
+            if ctx.mode == "admin_add_user" or ctx.for_uid is not None:
+                user_states[uid] = {
+                    "step": "admin_code_input",
+                    "ts": time.time(),
+                    "target_uid": ctx.for_uid,
+                    "admin_add_user": ctx.mode == "admin_add_user",
+                }
+                await application.bot.send_message(
+                    uid,
+                    T.CODE_HINT_RESENT,
+                    reply_markup=(
+                        KB.kb_admin_add_user_cancel()
+                        if ctx.mode == "admin_add_user"
+                        else None
+                    ),
+                )
+            else:
+                state = user_states.get(uid, {})
+                state["code_buffer"] = ""
+                state["code_length"] = (
+                    getattr(getattr(result, "type", None), "length", None)
+                    or CODE_LENGTH
+                )
+                state["code_hint"] = T.code_hint_sent(destination)
+                state["ts"] = time.time()
+                user_states[uid] = state
+                await send_numpad(uid, "", hint=state["code_hint"])
             log(
                 f"🔁 Kod qayta so'raldi: uid={uid} delivery={type_name} "
                 f"next={next_name} timeout={delivery_timeout}"
@@ -731,13 +797,13 @@ async def attempt_signin(uid: int, code: str) -> None:
             await application.bot.send_message(
                 uid,
                 T.FLOOD_WAIT.format(minutes=wait_min),
-                reply_markup=KB.kb_login(),
+                reply_markup=failure_markup,
             )
         except Exception as e:
             await cleanup_login(uid)
             log(f"resend xatolik {uid}: {type(e).__name__}: {e}", "error")
             await application.bot.send_message(
-                uid, T.GENERIC_ERROR, reply_markup=KB.kb_login()
+                uid, T.GENERIC_ERROR, reply_markup=failure_markup
             )
 
     except FloodWaitError as e:
@@ -746,14 +812,14 @@ async def attempt_signin(uid: int, code: str) -> None:
         await application.bot.send_message(
             uid,
             T.FLOOD_WAIT.format(minutes=wait_min),
-            reply_markup=KB.kb_login(),
+            reply_markup=failure_markup,
         )
 
     except Exception as e:
         await cleanup_login(uid)
         log(f"sign_in xatolik {uid}: {type(e).__name__}: {e}", "error")
         await application.bot.send_message(
-            uid, T.GENERIC_ERROR, reply_markup=KB.kb_login()
+            uid, T.GENERIC_ERROR, reply_markup=failure_markup
         )
 
 
@@ -788,27 +854,107 @@ async def handle_password(update: Update, text: str) -> None:
         await finalize_login(uid)
 
     except PasswordHashInvalidError:
-        await update.message.reply_text(T.PASSWORD_WRONG)
+        await update.message.reply_text(
+            T.PASSWORD_WRONG,
+            reply_markup=(
+                KB.kb_admin_add_user_cancel()
+                if ctx.mode == "admin_add_user"
+                else None
+            ),
+        )
 
     except FloodWaitError as e:
         await cleanup_login(uid)
         wait_min = max(1, e.seconds // 60)
         await update.message.reply_text(
             T.FLOOD_WAIT.format(minutes=wait_min),
-            reply_markup=KB.kb_login(),
+            reply_markup=(
+                KB.kb_admin_panel()
+                if ctx.mode == "admin_add_user"
+                else KB.kb_login()
+            ),
         )
 
     except Exception as e:
         await cleanup_login(uid)
         log(f"password xatolik {uid}: {type(e).__name__}: {e}", "error")
         await update.message.reply_text(
-            T.GENERIC_ERROR, reply_markup=KB.kb_login()
+            T.GENERIC_ERROR,
+            reply_markup=(
+                KB.kb_admin_panel()
+                if ctx.mode == "admin_add_user"
+                else KB.kb_login()
+            ),
         )
       
 
 # ─────────────────────────────────────────────────────────────────────────
 # LOGIN YAKUNI
 # ─────────────────────────────────────────────────────────────────────────
+async def _finalize_admin_added_user(uid: int, ctx: LoginCtx) -> None:
+    """Admin wizard orqali ulangan akkauntni haqiqiy Telegram ID bilan saqlaydi."""
+    account = await ctx.client.get_me()
+    target_uid = int(getattr(account, "id", 0) or 0)
+    if not target_uid:
+        raise RuntimeError("Telegram akkaunt ID sini qaytarmadi")
+
+    existing = await db.get_user(target_uid)
+    if target_uid == SUPER_ADMIN or (existing and existing.get("session")):
+        with contextlib.suppress(Exception):
+            await ctx.client.log_out()
+        await cleanup_login(uid)
+
+        if target_uid == SUPER_ADMIN:
+            reason = "Super admin akkauntini oddiy foydalanuvchi qilib qo'shib bo'lmaydi."
+        else:
+            reason = "Bu Telegram akkaunti foydalanuvchilar ro'yxatida allaqachon mavjud."
+        await application.bot.send_message(
+            uid,
+            f"⚠️ {reason}",
+            reply_markup=KB.kb_admin_panel(),
+        )
+        return
+
+    sess_str = ctx.client.session.save()
+    with contextlib.suppress(Exception):
+        await ctx.client.disconnect()
+
+    name = ctx.target_name.strip() or "Foydalanuvchi"
+    username = getattr(account, "username", None) or ""
+    phone = ctx.phone
+
+    login_ctx.pop(uid, None)
+    user_states.pop(uid, None)
+    reset_sms_attempts(uid)
+
+    await db.set_user_info(target_uid, name, username)
+    await db.set_phone(target_uid, phone)
+    await db.set_session(target_uid, sess_str)
+    await db.del_pending(target_uid)
+    await db.set_awaiting_approval(target_uid, False)
+    await db.add_admin(target_uid)
+
+    log(
+        f"✅ Admin yangi user qo'shdi: admin={uid} target={target_uid} "
+        f"phone={mask_phone(phone)}"
+    )
+    await application.bot.send_message(
+        uid,
+        "✅ Foydalanuvchi muvaffaqiyatli qo'shildi!\n\n"
+        f"👤 {name}\n"
+        f"📱 {phone}\n"
+        f"🆔 {target_uid}",
+        reply_markup=KB.kb_admin_panel(),
+    )
+
+    with contextlib.suppress(Exception):
+        await application.bot.send_message(
+            target_uid,
+            "✅ Super admin sizni AVTOBOT tizimiga qo'shdi.",
+            reply_markup=KB.kb_main(),
+        )
+
+
 async def finalize_login(uid: int) -> None:
     """
     Login tugaganda sessiyani saqlash.
@@ -817,6 +963,10 @@ async def finalize_login(uid: int) -> None:
     """
     ctx = login_ctx.get(uid)
     if not ctx:
+        return
+
+    if ctx.mode == "admin_add_user":
+        await _finalize_admin_added_user(uid, ctx)
         return
 
     sess_str = ctx.client.session.save()

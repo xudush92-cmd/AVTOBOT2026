@@ -195,6 +195,11 @@ def kb_admin_approve(uid: int) -> InlineKeyboardMarkup:
 def kb_admin_panel() -> InlineKeyboardMarkup:
     """Super admin paneli tugmalari."""
     return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton(
+                "➕ Foydalanuvchi qo'shish", callback_data="adm:adduser"
+            )
+        ],
         [InlineKeyboardButton("👥 Foydalanuvchilar", callback_data="adm:users")],
         [InlineKeyboardButton("📊 Statistika", callback_data="adm:stats")],
         [InlineKeyboardButton("📢 Xabar yuborish", callback_data="adm:broadcast")],
@@ -208,6 +213,18 @@ def kb_admin_back() -> InlineKeyboardMarkup:
     """Admin panelga qaytish."""
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("⬅️ Orqaga", callback_data="adm:back")]
+    ])
+
+
+def kb_admin_add_user_cancel() -> InlineKeyboardMarkup:
+    """Admin boshlagan foydalanuvchi/sessiya yaratish jarayonini bekor qiladi."""
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton(
+                "❌ Sessiya yaratishni to'xtatish",
+                callback_data="adm:adduser:cancel",
+            )
+        ]
     ])
 
 
@@ -251,13 +268,13 @@ def kb_user_card(
     elif has_session is False:
         rows.append([
             InlineKeyboardButton(
-                "🔑 Sessiya ochish", callback_data=f"uc:sess:{uid}"
+                "🔑 Sessiyani ulash", callback_data=f"uc:sess:{uid}"
             )
         ])
     else:
         rows.append([
             InlineKeyboardButton(
-                "🔑 Sessiya ochish", callback_data=f"uc:sess:{uid}"
+                "🔑 Sessiyani ulash", callback_data=f"uc:sess:{uid}"
             ),
             InlineKeyboardButton(
                 "🚪 Sessiya o'chirish", callback_data=f"uc:logout:{uid}"

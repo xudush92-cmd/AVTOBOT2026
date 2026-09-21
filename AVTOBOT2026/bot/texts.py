@@ -281,6 +281,28 @@ USER_REJECTED = (
 
 
 # ─────────────────────────────────────────────────────────────────────────
+# SUPER ADMIN — FOYDALANUVCHI QO'SHISH
+# ─────────────────────────────────────────────────────────────────────────
+ADMIN_ADD_USER_NAME = (
+    "➕ FOYDALANUVCHI QO'SHISH (1/3)\n\n"
+    "👤 Foydalanuvchining ismini kiriting:"
+)
+
+ADMIN_ADD_USER_SURNAME = (
+    "➕ FOYDALANUVCHI QO'SHISH (2/3)\n\n"
+    "👤 Foydalanuvchining familiyasini kiriting:"
+)
+
+ADMIN_ADD_USER_PHONE = (
+    "➕ FOYDALANUVCHI QO'SHISH (3/3)\n\n"
+    "📱 Foydalanuvchining Telegram telefon raqamini kiriting:\n\n"
+    "Format: +998XXXXXXXXX"
+)
+
+ADMIN_ADD_USER_CANCELLED = "❌ Foydalanuvchi qo'shish bekor qilindi."
+
+
+# ─────────────────────────────────────────────────────────────────────────
 # RATE LIMIT
 # ─────────────────────────────────────────────────────────────────────────
 def rate_limit_text(minutes: int) -> str:

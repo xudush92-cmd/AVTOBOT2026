@@ -25,6 +25,7 @@ from bot.login import (
     LoginCtx,
     cleanup_login,
     describe_code_delivery,
+    finalize_login,
     login_ctx,
     mask_phone,
     user_states as login_states,
@@ -44,6 +45,175 @@ application = None
 def set_application(app) -> None:
     global application
     application = app
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# YANGI FOYDALANUVCHI QO'SHISH
+# ─────────────────────────────────────────────────────────────────────────
+async def begin_add_user(update: Update, admin_uid: int) -> None:
+    """Super admin panelidan yangi Telegram akkauntini qo'shishni boshlaydi."""
+    if admin_uid != SUPER_ADMIN:
+        return
+
+    await cleanup_login(admin_uid)
+    login_states[admin_uid] = {
+        "step": "admin_new_user_name",
+        "ts": time.time(),
+    }
+    await update.callback_query.edit_message_text(
+        T.ADMIN_ADD_USER_NAME,
+        reply_markup=KB.kb_admin_add_user_cancel(),
+    )
+
+
+async def cancel_add_user(update: Update, admin_uid: int) -> None:
+    """Yaratilayotgan Telethon client va admin FSM holatini to'liq yopadi."""
+    if admin_uid != SUPER_ADMIN:
+        return
+
+    state = login_states.get(admin_uid, {})
+    ctx = login_ctx.get(admin_uid)
+    active = (
+        str(state.get("step", "")).startswith("admin_new_user_")
+        or bool(state.get("admin_add_user"))
+        or bool(ctx and ctx.mode == "admin_add_user")
+    )
+    if active:
+        await cleanup_login(admin_uid)
+        text = T.ADMIN_ADD_USER_CANCELLED
+    else:
+        text = "ℹ️ Faol foydalanuvchi qo'shish jarayoni yo'q."
+
+    await update.callback_query.edit_message_text(
+        text,
+        reply_markup=KB.kb_admin_panel(),
+    )
+
+
+async def request_new_user_session(
+    admin_uid: int,
+    full_name: str,
+    phone: str,
+) -> None:
+    """Yangi user telefoni uchun kod so'raydi; UID login tugagach aniqlanadi."""
+    if admin_uid != SUPER_ADMIN:
+        return
+
+    # Adminning o'z raqamiga tasodifan yana kod yuborilishining oldini olamiz.
+    admin_phone = await db.get_phone(SUPER_ADMIN)
+    if admin_phone and admin_phone == phone:
+        login_states.pop(admin_uid, None)
+        await application.bot.send_message(
+            admin_uid,
+            "⚠️ Bu super adminning o'z telefon raqami.\n\n"
+            "Oddiy foydalanuvchi uchun boshqa raqam kiriting.",
+            reply_markup=KB.kb_admin_panel(),
+        )
+        return
+
+    existing = next(
+        (
+            user
+            for user in await db.get_all_users()
+            if user.get("phone") == phone
+        ),
+        None,
+    )
+    if existing:
+        target_uid = int(existing["uid"])
+        login_states.pop(admin_uid, None)
+        await application.bot.send_message(
+            admin_uid,
+            "ℹ️ Bu telefon raqami foydalanuvchilar ro'yxatida mavjud.\n\n"
+            f"👤 {existing.get('name') or 'Noma`lum'}\n"
+            f"🆔 {target_uid}",
+            reply_markup=KB.kb_user_card(
+                target_uid,
+                running=bool(existing.get("running")),
+                blocked=bool(existing.get("is_blocked")),
+                has_session=bool(existing.get("session")),
+            ),
+        )
+        return
+
+    # Eski tugallanmagan yaratish jarayoni/client qolib ketmasin.
+    await cleanup_login(admin_uid)
+
+    from telethon import TelegramClient
+    from telethon.sessions import StringSession
+
+    client = TelegramClient(StringSession(), API_ID, API_HASH)
+    try:
+        await asyncio.wait_for(client.connect(), timeout=20)
+        result = await asyncio.wait_for(
+            client.send_code_request(phone), timeout=30
+        )
+        destination, type_name, next_name, delivery_timeout = (
+            describe_code_delivery(result)
+        )
+        phone_code_hash = getattr(result, "phone_code_hash", "") or ""
+
+        login_ctx[admin_uid] = LoginCtx(
+            client=client,
+            phone=phone,
+            phone_code_hash=phone_code_hash,
+            started_at=time.time(),
+            target_name=full_name,
+            mode="admin_add_user",
+        )
+
+        if type(result).__name__ == "SentCodeSuccess" or (
+            not phone_code_hash and await client.is_user_authorized()
+        ):
+            log(
+                f"✅ Admin user qo'shish kodsiz tasdiqlandi: "
+                f"phone={mask_phone(phone)}"
+            )
+            await finalize_login(admin_uid)
+            return
+
+        if not phone_code_hash:
+            raise RuntimeError(
+                f"Telegram {type_name} qaytardi, phone_code_hash yo'q"
+            )
+
+        login_states[admin_uid] = {
+            "step": "admin_code_input",
+            "ts": time.time(),
+            "admin_add_user": True,
+        }
+        await application.bot.send_message(
+            admin_uid,
+            "➕ FOYDALANUVCHI QO'SHISH\n\n"
+            f"👤 {full_name}\n"
+            f"📱 {phone}\n\n"
+            "✅ Telegram kod so'rovini qabul qildi.\n"
+            f"📍 Yetkazish: {destination}\n\n"
+            "Kelgan kodni kiriting. Jarayonni istalgan payt pastdagi "
+            "tugma bilan to'xtatishingiz mumkin.",
+            reply_markup=KB.kb_admin_add_user_cancel(),
+        )
+        log(
+            f"📩 Admin yangi user kodi: admin={admin_uid} "
+            f"phone={mask_phone(phone)} delivery={type_name} "
+            f"next={next_name} timeout={delivery_timeout}"
+        )
+
+    except Exception as e:
+        with contextlib.suppress(Exception):
+            await client.disconnect()
+        login_ctx.pop(admin_uid, None)
+        login_states.pop(admin_uid, None)
+        log(
+            f"❌ request_new_user_session: {type(e).__name__}: {e}",
+            "error",
+        )
+        await application.bot.send_message(
+            admin_uid,
+            f"❌ Foydalanuvchi qo'shilmadi: {type(e).__name__}\n\n"
+            "Telefon raqamini tekshirib, qaytadan urinib ko'ring.",
+            reply_markup=KB.kb_admin_panel(),
+        )
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -320,7 +490,7 @@ async def action_open_session(update: Update, admin_uid: int, target: int) -> No
         }
 
         await q.edit_message_text(
-            f"🔑 Sessiya ochish\n\n"
+            f"🔑 Sessiyani ulash\n\n"
             f"👤 {user.get('name')}\n"
             f"📱 {phone}\n\n"
             f"✅ Telegram kod so'rovini qabul qildi.\n"

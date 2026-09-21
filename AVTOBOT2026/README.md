@@ -27,6 +27,15 @@ Telegram guruhlariga reklama postlarini avtomatik joylashtiruvchi bot.
 - `Telethon` — foydalanuvchi sessiyasi bilan guruhlarga post yuborish.
 - `SQLite` — user, sessiya, guruh va postlarni saqlash.
 
+### Super admin orqali foydalanuvchi qo'shish
+
+**🖥 Super Admin → ➕ Foydalanuvchi qo'shish** orqali ism, familiya va
+telefon ketma-ket kiritiladi. Telegram login muvaffaqiyatli tugagach,
+foydalanuvchining haqiqiy Telegram ID si avtomatik aniqlanadi va sessiya
+o'sha ID ga saqlanadi — admin hisobiga yozilmaydi. Jarayonning istalgan
+bosqichida **“Sessiya yaratishni to'xtatish”** tugmasi bilan bekor qilish
+mumkin.
+
 ---
 
 ## 🚀 O'RNATISH
