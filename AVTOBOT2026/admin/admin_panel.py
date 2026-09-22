@@ -17,11 +17,9 @@ import time
 from telegram import Update
 
 from bot import keyboards as KB
-from bot import texts as T
 from config.config import SUPER_ADMIN
 from core import database as db
 from core.logger import log
-from core.utils import truncate
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -48,6 +46,16 @@ async def handle_admin_callback(update: Update, uid: int, data: str) -> None:
     # Orqaga — asosiy panel
     if data == "adm:back":
         await show_panel(update)
+        return
+
+    # Yangi foydalanuvchi qo'shish / jarayonni to'xtatish
+    if data == "adm:adduser:cancel":
+        from admin import admin_actions
+        await admin_actions.cancel_add_user(update, uid)
+        return
+    if data == "adm:adduser":
+        from admin import admin_actions
+        await admin_actions.begin_add_user(update, uid)
         return
 
     # Foydalanuvchilar ro'yxati (sahifalash bilan)

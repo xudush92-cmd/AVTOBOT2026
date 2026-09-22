@@ -10,16 +10,13 @@ Tugmalar:
 
 from __future__ import annotations
 
-import contextlib
-
 from telegram import Update
-from telegram.ext import ContextTypes
 
 from bot import keyboards as KB
 from bot import texts as T
 from core import database as db
 from core.logger import log
-from core.utils import format_expires, is_expired
+from core.utils import format_expires
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -215,6 +212,11 @@ async def route_menu_button(update: Update, text: str) -> bool:
         await G.show_groups(update)
         return True
 
+    # 📝 Postlar
+    if text == T.BTN_POSTS:
+        await P.show_posts(update)
+        return True
+
     # ➕ Guruh qo'shish
     if text == T.BTN_ADD_GROUP:
         await G.begin_add_groups(update)
@@ -243,6 +245,16 @@ async def route_menu_button(update: Update, text: str) -> bool:
     # 👥 Referal
     if text == T.BTN_REFERRAL:
         await R.show_referral(update)
+        return True
+
+    # ⬅️ Ichki menyudan asosiy menyuga
+    if text == T.BTN_BACK:
+        uid = update.effective_user.id
+        running = bool(worker_manager and worker_manager.is_running(uid))
+        await update.message.reply_text(
+            "🏠 Asosiy menyu",
+            reply_markup=KB.kb_main(running=running),
+        )
         return True
 
     return False

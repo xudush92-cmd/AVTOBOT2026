@@ -48,26 +48,60 @@ def kb_blocked() -> ReplyKeyboardMarkup:
 # ─────────────────────────────────────────────────────────────────────────
 # ASOSIY MENYU
 # ─────────────────────────────────────────────────────────────────────────
+def kb_super_admin() -> ReplyKeyboardMarkup:
+    """Super admin uchun reklama tugmalarisiz ixcham menyu."""
+    return ReplyKeyboardMarkup(
+        [[KeyboardButton(T.BTN_ADMIN)]],
+        resize_keyboard=True,
+    )
+
+
 def kb_main(running: bool = False, super_admin: bool = False) -> ReplyKeyboardMarkup:
-    """
-    Asosiy menyu (foydalanuvchi uchun).
-
-    running — posting ishlayaptimi
-    super_admin — super admin uchun qo'shimcha tugma
-    """
-    status_text = f"{T.BTN_STATUS} ({'🟢 ON' if running else '🔴 OFF'})"
-
-    rows = [
-        [KeyboardButton(T.BTN_START), KeyboardButton(T.BTN_STOP)],
-        [KeyboardButton(status_text), KeyboardButton(T.BTN_GROUPS)],
-        [KeyboardButton(T.BTN_ADD_GROUP), KeyboardButton(T.BTN_DEL_GROUP)],
-        [KeyboardButton(T.BTN_ADD_POST), KeyboardButton(T.BTN_DEL_POST)],
-        [KeyboardButton(T.BTN_TIMER), KeyboardButton(T.BTN_REFERRAL)],
-    ]
+    """Oddiy foydalanuvchining ixcham asosiy menyusi."""
     if super_admin:
-        rows.append([KeyboardButton(T.BTN_ADMIN)])
+        return kb_super_admin()
 
-    return ReplyKeyboardMarkup(rows, resize_keyboard=True)
+    action = T.BTN_STOP if running else T.BTN_START
+    status_text = f"{T.BTN_STATUS} ({'🟢 ON' if running else '🔴 OFF'})"
+    return ReplyKeyboardMarkup(
+        [
+            [KeyboardButton(action)],
+            [KeyboardButton(status_text), KeyboardButton(T.BTN_GROUPS)],
+            [KeyboardButton(T.BTN_POSTS), KeyboardButton(T.BTN_TIMER)],
+            [KeyboardButton(T.BTN_REFERRAL)],
+        ],
+        resize_keyboard=True,
+    )
+
+
+def kb_groups_menu() -> ReplyKeyboardMarkup:
+    """Guruhlarni ko'rish/qo'shish/o'chirish ichki menyusi."""
+    return ReplyKeyboardMarkup(
+        [
+            [KeyboardButton(T.BTN_ADD_GROUP), KeyboardButton(T.BTN_DEL_GROUP)],
+            [KeyboardButton(T.BTN_BACK)],
+        ],
+        resize_keyboard=True,
+    )
+
+
+def kb_posts_menu() -> ReplyKeyboardMarkup:
+    """Postlarni ko'rish/qo'shish/o'chirish ichki menyusi."""
+    return ReplyKeyboardMarkup(
+        [
+            [KeyboardButton(T.BTN_ADD_POST), KeyboardButton(T.BTN_DEL_POST)],
+            [KeyboardButton(T.BTN_BACK)],
+        ],
+        resize_keyboard=True,
+    )
+
+
+def kb_input_cancel() -> ReplyKeyboardMarkup:
+    """Matn/rasm kiritish bosqichini bekor qilish menyusi."""
+    return ReplyKeyboardMarkup(
+        [[KeyboardButton(T.BTN_BACK)]],
+        resize_keyboard=True,
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -76,8 +110,8 @@ def kb_main(running: bool = False, super_admin: bool = False) -> ReplyKeyboardMa
 CODE_LENGTH = 5
 
 
-def kb_numpad() -> InlineKeyboardMarkup:
-    """SMS kod kiritish uchun raqamli tugmalar."""
+def kb_numpad(admin_add_user: bool = False) -> InlineKeyboardMarkup:
+    """Telegram tasdiq kodi uchun raqamli tugmalar."""
     rows = [
         [InlineKeyboardButton("1", callback_data="np:1"),
          InlineKeyboardButton("2", callback_data="np:2"),
@@ -91,9 +125,32 @@ def kb_numpad() -> InlineKeyboardMarkup:
         [InlineKeyboardButton("⬅️", callback_data="np:back"),
          InlineKeyboardButton("0", callback_data="np:0"),
          InlineKeyboardButton("✅", callback_data="np:ok")],
-        [InlineKeyboardButton(T.ACTION_CANCEL, callback_data="np:cancel")],
     ]
+    if admin_add_user:
+        rows.append([
+            InlineKeyboardButton(
+                T.BTN_ADMIN_ADD_CANCEL,
+                callback_data="np:cancel",
+            )
+        ])
+    else:
+        rows.extend([
+            [
+                InlineKeyboardButton(
+                    "📷 Kod kelmadimi? QR Login", callback_data="np:qr"
+                )
+            ],
+            [InlineKeyboardButton(T.ACTION_CANCEL, callback_data="np:cancel")],
+        ])
     return InlineKeyboardMarkup(rows)
+
+
+def kb_qr_login(url: str) -> InlineKeyboardMarkup:
+    """QR sessiyani Telegramda tasdiqlash va bekor qilish tugmalari."""
+    return InlineKeyboardMarkup([
+        [InlineKeyboardButton("✅ Telegramda tasdiqlash", url=url)],
+        [InlineKeyboardButton(T.ACTION_CANCEL, callback_data="qr:cancel")],
+    ])
   
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -186,6 +243,11 @@ def kb_admin_approve(uid: int) -> InlineKeyboardMarkup:
 def kb_admin_panel() -> InlineKeyboardMarkup:
     """Super admin paneli tugmalari."""
     return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton(
+                "➕ Foydalanuvchi qo'shish", callback_data="adm:adduser"
+            )
+        ],
         [InlineKeyboardButton("👥 Foydalanuvchilar", callback_data="adm:users")],
         [InlineKeyboardButton("📊 Statistika", callback_data="adm:stats")],
         [InlineKeyboardButton("📢 Xabar yuborish", callback_data="adm:broadcast")],
@@ -202,16 +264,35 @@ def kb_admin_back() -> InlineKeyboardMarkup:
     ])
 
 
+def kb_admin_add_user_cancel() -> InlineKeyboardMarkup:
+    """Admin boshlagan foydalanuvchi/sessiya yaratish jarayonini bekor qiladi."""
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton(
+                T.BTN_ADMIN_ADD_CANCEL,
+                callback_data="adm:adduser:cancel",
+            )
+        ]
+    ])
+
+
 # ─────────────────────────────────────────────────────────────────────────
 # ADMIN — FOYDALANUVCHI KARTASI
 # ─────────────────────────────────────────────────────────────────────────
-def kb_user_card(uid: int, running: bool = False, blocked: bool = False) -> InlineKeyboardMarkup:
+def kb_user_card(
+    uid: int,
+    running: bool = False,
+    blocked: bool = False,
+    has_session: bool | None = None,
+) -> InlineKeyboardMarkup:
     """
     Foydalanuvchi kartasi uchun tugmalar.
 
     uid — foydalanuvchi ID
     running — posting ishlayaptimi
     blocked — bloklanganmi
+    has_session — True bo'lsa faqat o'chirish, False bo'lsa faqat ochish;
+                  None eski chaqiruvlar bilan moslik uchun ikkisini ko'rsatadi
     """
     rows = []
 
@@ -220,26 +301,44 @@ def kb_user_card(uid: int, running: bool = False, blocked: bool = False) -> Inli
         rows.append([
             InlineKeyboardButton("⛔ Stop", callback_data=f"uc:stop:{uid}")
         ])
-    else:
+    elif not blocked:
         rows.append([
             InlineKeyboardButton("▶️ Start", callback_data=f"uc:start:{uid}")
         ])
 
-    # Sessiya
+    # Sessiya: mavjud sessiya ustiga tasodifan yana kod so'ralmasin.
+    if has_session is True:
+        rows.append([
+            InlineKeyboardButton(
+                "🚪 Sessiya o'chirish", callback_data=f"uc:logout:{uid}"
+            )
+        ])
+    elif has_session is False:
+        rows.append([
+            InlineKeyboardButton(
+                "🔑 Sessiyani ulash", callback_data=f"uc:sess:{uid}"
+            )
+        ])
+    else:
+        rows.append([
+            InlineKeyboardButton(
+                "🔑 Sessiyani ulash", callback_data=f"uc:sess:{uid}"
+            ),
+            InlineKeyboardButton(
+                "🚪 Sessiya o'chirish", callback_data=f"uc:logout:{uid}"
+            ),
+        ])
+
+    # Guruh / Post boshqaruvi
     rows.append([
-        InlineKeyboardButton("🔑 Sessiya ochish", callback_data=f"uc:sess:{uid}"),
-        InlineKeyboardButton("🚪 Sessiya o'chirish", callback_data=f"uc:logout:{uid}"),
+        InlineKeyboardButton("💬 Guruhlar", callback_data=f"uc:groups:{uid}"),
+        InlineKeyboardButton("📝 Postlar", callback_data=f"uc:posts:{uid}"),
     ])
 
-    # Guruh / Post
+    # Posting oralig'i / tarif muddati
     rows.append([
-        InlineKeyboardButton("➕ Guruh", callback_data=f"uc:addg:{uid}"),
-        InlineKeyboardButton("📝 Post", callback_data=f"uc:addp:{uid}"),
-    ])
-
-    # Muddat
-    rows.append([
-        InlineKeyboardButton("⏰ Muddat", callback_data=f"uc:expire:{uid}")
+        InlineKeyboardButton("⏱ Posting vaqti", callback_data=f"uc:interval:{uid}"),
+        InlineKeyboardButton("⏰ Muddat", callback_data=f"uc:expire:{uid}"),
     ])
 
     # Blok / O'chirish
@@ -261,6 +360,125 @@ def kb_user_card(uid: int, running: bool = False, blocked: bool = False) -> Inli
     ])
 
     return InlineKeyboardMarkup(rows)
+
+
+def kb_admin_groups(
+    uid: int,
+    groups: list[str],
+    page: int = 0,
+    page_size: int = 10,
+) -> InlineKeyboardMarkup:
+    """Admin uchun user guruhlarini sahifalab qo'shish/o'chirish menyusi."""
+    max_page = max(0, (len(groups) - 1) // page_size)
+    page = min(max(page, 0), max_page)
+    start = page * page_size
+    rows = [[
+        InlineKeyboardButton("➕ Guruh qo'shish", callback_data=f"uc:addg:{uid}")
+    ]]
+    for index, group in enumerate(groups[start:start + page_size], start):
+        rows.append([
+            InlineKeyboardButton(
+                f"🗑 {group[:35]}",
+                callback_data=f"uc:delg:{uid}:{index}:{page}",
+            )
+        ])
+    if max_page:
+        nav = []
+        if page > 0:
+            nav.append(
+                InlineKeyboardButton(
+                    "⬅️", callback_data=f"uc:groups:{uid}:{page - 1}"
+                )
+            )
+        nav.append(InlineKeyboardButton(f"{page + 1}/{max_page + 1}", callback_data="noop"))
+        if page < max_page:
+            nav.append(
+                InlineKeyboardButton(
+                    "➡️", callback_data=f"uc:groups:{uid}:{page + 1}"
+                )
+            )
+        rows.append(nav)
+    rows.append([
+        InlineKeyboardButton("⬅️ Foydalanuvchi", callback_data=f"uc:back:{uid}")
+    ])
+    return InlineKeyboardMarkup(rows)
+
+
+def kb_admin_posts(
+    uid: int,
+    posts: list[dict],
+    page: int = 0,
+    page_size: int = 10,
+) -> InlineKeyboardMarkup:
+    """Admin uchun user postlarini sahifalab qo'shish/o'chirish menyusi."""
+    max_page = max(0, (len(posts) - 1) // page_size)
+    page = min(max(page, 0), max_page)
+    start = page * page_size
+    rows = [[
+        InlineKeyboardButton("➕ Post qo'shish", callback_data=f"uc:addp:{uid}")
+    ]]
+    for index, post in enumerate(posts[start:start + page_size], start):
+        text = (post.get("text") or "(rasm)").strip().replace("\n", " ")
+        rows.append([
+            InlineKeyboardButton(
+                f"🗑 {text[:35]}",
+                callback_data=f"uc:delp:{uid}:{index}:{page}",
+            )
+        ])
+    if max_page:
+        nav = []
+        if page > 0:
+            nav.append(
+                InlineKeyboardButton(
+                    "⬅️", callback_data=f"uc:posts:{uid}:{page - 1}"
+                )
+            )
+        nav.append(InlineKeyboardButton(f"{page + 1}/{max_page + 1}", callback_data="noop"))
+        if page < max_page:
+            nav.append(
+                InlineKeyboardButton(
+                    "➡️", callback_data=f"uc:posts:{uid}:{page + 1}"
+                )
+            )
+        rows.append(nav)
+    rows.append([
+        InlineKeyboardButton("⬅️ Foydalanuvchi", callback_data=f"uc:back:{uid}")
+    ])
+    return InlineKeyboardMarkup(rows)
+
+
+def kb_admin_section_back(uid: int, section: str = "back") -> InlineKeyboardMarkup:
+    """Admin matn kiritish holatidan user kartasi/bo'limiga qaytadi."""
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton(
+                "⬅️ Bekor qilish",
+                callback_data=f"uc:{section}:{uid}",
+            )
+        ]
+    ])
+
+
+def kb_admin_interval(uid: int) -> InlineKeyboardMarkup:
+    """Admin foydalanuvchi nomidan posting oralig'ini belgilaydi."""
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("5 daq", callback_data=f"aint:{uid}:5"),
+            InlineKeyboardButton("10 daq", callback_data=f"aint:{uid}:10"),
+            InlineKeyboardButton("15 daq", callback_data=f"aint:{uid}:15"),
+        ],
+        [
+            InlineKeyboardButton("30 daq", callback_data=f"aint:{uid}:30"),
+            InlineKeyboardButton("60 daq", callback_data=f"aint:{uid}:60"),
+            InlineKeyboardButton("120 daq", callback_data=f"aint:{uid}:120"),
+        ],
+        [
+            InlineKeyboardButton(
+                "✏️ Qo'lda kiritish", callback_data=f"aint:{uid}:manual"
+            )
+        ],
+        [InlineKeyboardButton("⬅️ Foydalanuvchi", callback_data=f"uc:back:{uid}")],
+    ])
 
 
 # ─────────────────────────────────────────────────────────────────────────

@@ -75,9 +75,9 @@ MAX_GROUP_FAILS: int = 3           # guruh necha xato qilsa o'chiriladi
 # ─────────────────────────────────────────────────────────────────────────
 # LOGIN SOZLAMALARI
 # ─────────────────────────────────────────────────────────────────────────
-LOGIN_TIMEOUT_S: int = 600         # login jarayoni maksimal (10 daqiqa)
-SMS_MAX_ATTEMPTS: int = 3          # SMS kod qayta so'rash limiti
-SMS_COOLDOWN_MIN: int = 30         # 3 martadan keyin kutish (30 daqiqa)
+LOGIN_TIMEOUT_S: int = 300         # login jarayoni maksimal (5 daqiqa)
+SMS_MAX_ATTEMPTS: int = 1          # muddati o'tgan kodni faqat 1 marta qayta so'rash
+SMS_COOLDOWN_MIN: int = 30         # keyingi qayta so'rovgacha kutish
 CODE_LENGTH: int = 5               # SMS kod uzunligi
 MAX_CODE_LENGTH: int = 6           # maksimal kod uzunligi
 MAX_WRONG_CODE: int = 5            # xato kod kiritish limiti
@@ -97,7 +97,8 @@ RATE_LIMIT_LOGIN: int = 3          # login urinishlari
 RATE_LIMIT_COMMAND: int = 30       # buyruqlar
 RATE_LIMIT_MESSAGE: int = 40       # xabarlar
 RATE_LIMIT_MODIFY: int = 20        # o'zgartirish amallari
-RATE_WINDOW_S: int = 60            # oyna vaqti (60 soniya)
+RATE_WINDOW_S: int = 60            # oddiy amallar oynasi (60 soniya)
+RATE_LIMIT_LOGIN_WINDOW_S: int = 3600  # login: 3 marta / 1 soat
 
 # ─────────────────────────────────────────────────────────────────────────
 # FAYL YO'LLARI

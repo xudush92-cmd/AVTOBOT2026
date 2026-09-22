@@ -6,12 +6,7 @@ Bu fayl orqali botdagi har bir xabar matnini bir joydan boshqarish mumkin.
 
 from __future__ import annotations
 
-from config.config import (
-    ADMIN_CONTACT_PHONE,
-    MIN_INTERVAL_MIN,
-    SMS_MAX_ATTEMPTS,
-    SMS_COOLDOWN_MIN,
-)
+from config.config import ADMIN_CONTACT_PHONE, MIN_INTERVAL_MIN
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -21,10 +16,10 @@ WELCOME_SHORT = (
     "🤖 AVTOBOT\n\n"
     "Telegram guruhlaringizga reklama postlarini avtomatik joylashtiruvchi bot.\n\n"
     "📌 Boshlash:\n"
-    "1. 🔑 Login bosing\n"
-    "2. Ism, familiya va telefonni kiriting\n"
-    "3. SMS kodni tugmalar orqali kiriting\n"
-    "4. Admin tasdiqlashini kuting\n\n"
+    "1. 🔑 Login bosib ism, familiya va telefonni kiriting\n"
+    "2. Admin tasdiqlashini kuting\n"
+    "3. Tasdiqdan keyin yana 🔑 Login bosing\n"
+    "4. Telegram kodini tugmalar orqali kiriting\n\n"
     f"📱 Yordam: {ADMIN_CONTACT_PHONE}"
 )
 
@@ -81,17 +76,18 @@ PHONE_INVALID = (
 )
 
 PHONE_ACCEPTED = (
-    "📱 {phone} raqamiga kod yuborilmoqda...\n\n"
-    "Telegram ilovangizdagi \"Telegram\" rasmiy chatidan kodni ko'ring."
+    "📱 {phone} raqami uchun kod so'ralmoqda...\n\n"
+    "ℹ️ Telethon login kodi odatda SMSga emas, Telegram ilovasidagi "
+    "rasmiy \"Telegram\" (777000) chatiga keladi."
 )
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# LOGIN — SMS KOD
+# LOGIN — TELEGRAM TASDIQ KODI
 # ─────────────────────────────────────────────────────────────────────────
-def numpad_text(buffer: str, hint: str = "") -> str:
-    """SMS kod kiritish oynasi matni."""
-    total = max(5, len(buffer))
+def numpad_text(buffer: str, hint: str = "", code_length: int = 5) -> str:
+    """Telegram tasdiq kodini kiritish oynasi matni."""
+    total = max(5, code_length, len(buffer))
     display = " ".join(
         buffer[i] if i < len(buffer) else "▪" for i in range(total)
     )
@@ -109,10 +105,14 @@ def numpad_text(buffer: str, hint: str = "") -> str:
     return text
 
 
-CODE_HINT_SENT = (
-    "📩 Kod yuborildi!\n"
-    "Telegram ilovangizdan kodni ko'ring va tugmalar orqali kiriting."
-)
+def code_hint_sent(destination: str) -> str:
+    """Telegram qaytargan haqiqiy yetkazish usulini ko'rsatadi."""
+    return (
+        "✅ Telegram kod so'rovini qabul qildi.\n"
+        f"📍 Yetkazish usuli: {destination}\n\n"
+        "Kod 1 daqiqada kelmasa, pastdagi 📷 QR Login tugmasini bosing."
+    )
+
 
 CODE_HINT_WRONG = "❌ Noto'g'ri kod ({count}/{max}). Qaytadan kiriting:"
 
@@ -154,9 +154,58 @@ CODE_TIMEOUT = (
 # SMS QAYTA SO'RASH LIMITI
 # ─────────────────────────────────────────────────────────────────────────
 SMS_LIMIT_REACHED = (
-    "⚠️ SMS kodni {attempts} marta so'radingiz.\n\n"
+    "⚠️ Tasdiq kodini {attempts} marta so'radingiz.\n\n"
     "Iltimos, {minutes} daqiqa kuting va qaytadan urinib ko'ring.\n\n"
     f"📱 Yordam: {ADMIN_CONTACT_PHONE}"
+)
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# LOGIN — QR (AWS/VPS UCHUN FALLBACK)
+# ─────────────────────────────────────────────────────────────────────────
+QR_PREPARING = "⏳ Xavfsiz QR Login tayyorlanmoqda..."
+
+QR_CAPTION = (
+    "📷 TELEGRAM QR LOGIN\n\n"
+    "1. Pastdagi «Telegramda tasdiqlash» tugmasini bosing; yoki\n"
+    "2. QR rasmni boshqa ekranda ochib, Telegram → Settings → Devices → "
+    "Link Desktop Device orqali skaner qiling.\n\n"
+    "⚠️ Tasdiqlasangiz, AVTOBOT guruhlarga sizning akkauntingiz nomidan "
+    "post yuborishi uchun Telegram sessiyasi yaratiladi.\n\n"
+    "⏱ QR qisqa vaqt amal qiladi."
+)
+
+QR_WAITING = (
+    "📷 QR tasdiqlanishi kutilmoqda.\n\n"
+    "Rasmdagi tugmani bosing yoki QR kodni Telegram Devices bo'limidan "
+    "skaner qiling."
+)
+
+QR_EXPIRED = (
+    "⏰ QR kod muddati tugadi.\n\n"
+    "Qaytadan 🔑 Login bosing va yangi QR yarating."
+)
+
+QR_WRONG_ACCOUNT = (
+    "❌ Boshqa Telegram akkaunti tasdiqlandi.\n\n"
+    "Bot bilan gaplashayotgan aynan shu akkaunt orqali QR Login qiling."
+)
+
+QR_ERROR = (
+    "❌ QR Login yakunlanmadi.\n\n"
+    "Qaytadan 🔑 Login bosing yoki birozdan keyin urinib ko'ring."
+)
+
+API_CREDENTIALS_INVALID = (
+    "❌ API_ID yoki API_HASH noto'g'ri.\n\n"
+    "Bu qiymatlar BotFather'dan emas, https://my.telegram.org → "
+    "API development tools bo'limidan olinishi kerak."
+)
+
+CODE_UNAVAILABLE = (
+    "❌ Telegram hozir tasdiq kodini bera olmadi.\n\n"
+    "Ko'p urinish bo'lgan bo'lsa bir necha soat kuting. AWS/VPS IP manzili "
+    "cheklangan bo'lsa, QR Login usulidan foydalaning."
 )
 
 
@@ -175,6 +224,13 @@ PASSWORD_WRONG = "❌ Noto'g'ri parol. Qaytadan kiriting:"
 # ─────────────────────────────────────────────────────────────────────────
 # LOGIN YAKUNLANGANDA
 # ─────────────────────────────────────────────────────────────────────────
+REGISTRATION_PENDING = (
+    "✅ Ro'yxatdan o'tish so'rovingiz qabul qilindi!\n\n"
+    "⏳ Avval admin sizni tasdiqlaydi. Shundan keyin 🔑 Login bosib "
+    "Telegram kodini so'raysiz.\n\n"
+    f"📞 Tezroq tasdiqlanish uchun: {ADMIN_CONTACT_PHONE}"
+)
+
 LOGIN_SUCCESS_PENDING = (
     "✅ Login muvaffaqiyatli!\n\n"
     "⏳ So'rovingiz admin tasdiqini kutmoqda.\n\n"
@@ -225,6 +281,29 @@ USER_REJECTED = (
 
 
 # ─────────────────────────────────────────────────────────────────────────
+# SUPER ADMIN — FOYDALANUVCHI QO'SHISH
+# ─────────────────────────────────────────────────────────────────────────
+ADMIN_ADD_USER_FULL_NAME = (
+    "➕ FOYDALANUVCHI QO'SHISH (1/2)\n\n"
+    "👤 Foydalanuvchining ism va familiyasini bitta xabarda kiriting:\n\n"
+    "Masalan: Ali Valiyev"
+)
+
+ADMIN_ADD_USER_FULL_NAME_INVALID = (
+    "❌ Ism va familiyani to'liq, bitta xabarda kiriting.\n\n"
+    "Masalan: Ali Valiyev"
+)
+
+ADMIN_ADD_USER_PHONE = (
+    "➕ FOYDALANUVCHI QO'SHISH (2/2)\n\n"
+    "📱 Foydalanuvchining Telegram telefon raqamini kiriting:\n\n"
+    "Format: +998XXXXXXXXX"
+)
+
+ADMIN_ADD_USER_CANCELLED = "❌ Foydalanuvchi qo'shish bekor qilindi."
+
+
+# ─────────────────────────────────────────────────────────────────────────
 # RATE LIMIT
 # ─────────────────────────────────────────────────────────────────────────
 def rate_limit_text(minutes: int) -> str:
@@ -241,12 +320,15 @@ BTN_START = "▶️ Start"
 BTN_STOP = "⛔ Stop"
 BTN_STATUS = "📊 Status"
 BTN_GROUPS = "💬 Guruhlar"
+BTN_POSTS = "📝 Postlar"
 BTN_ADD_GROUP = "➕ Guruh qo'shish"
 BTN_DEL_GROUP = "➖ Guruh o'chirish"
-BTN_ADD_POST = "📝 Post qo'shish"
+BTN_ADD_POST = "➕ Post qo'shish"
 BTN_DEL_POST = "🗑 Post o'chirish"
-BTN_TIMER = "⏰ Vaqt"
+BTN_TIMER = "⏱ Vaqt"
 BTN_REFERRAL = "👥 Referal"
+BTN_BACK = "⬅️ Orqaga"
+BTN_ADMIN_ADD_CANCEL = "❌ Sessiya yaratishni to'xtatish"
 BTN_ADMIN = "🖥 Super Admin"
 BTN_LOGIN = "🔑 Login"
 BTN_PENDING = "⏳ Tasdiq kutilmoqda..."

@@ -38,6 +38,7 @@ from config.config import (
     API_HASH,
     API_ID,
     BOT_TOKEN,
+    LOGIN_TIMEOUT_S,
     MAX_CLIENT_POOL,
     MAX_CONCURRENT_WORKERS,
     SUPER_ADMIN,
@@ -47,6 +48,7 @@ from config.config import (
 from core import database as db
 from core.logger import log
 from core.rate_limit import RateLimiter
+from core.utils import is_valid_name, is_valid_phone
 
 # Worker
 from worker import health as Health
@@ -65,6 +67,24 @@ health_server: Health.HealthServer | None = None
 
 
 # ─────────────────────────────────────────────────────────────────────────
+# SUPER ADMIN MENYUSI
+# ─────────────────────────────────────────────────────────────────────────
+async def send_super_admin_panel(message) -> None:
+    """Super admin uchun reklama menyusisiz boshqaruv panelini yuboradi."""
+    stats = await db.get_stats()
+    await message.reply_text(
+        "🖥 SUPER ADMIN PANEL\n\n"
+        f"👥 Foydalanuvchilar: {stats['total_users']} ta\n"
+        f"✅ Tasdiqlangan: {stats['admins']} ta\n"
+        f"⏳ Kutayotgan: {stats['waiting']} ta\n"
+        f"🟢 Faol: {stats['running']} ta\n"
+        f"🚫 Bloklangan: {stats['blocked']} ta\n\n"
+        "Kerakli bo'limni tanlang:",
+        reply_markup=KB.kb_admin_panel(),
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────
 # /start COMMAND
 # ─────────────────────────────────────────────────────────────────────────
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -75,6 +95,17 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not rate_limiter.is_allowed(uid, "command"):
         wait_min = rate_limiter.get_wait_time(uid, "command")
         await update.message.reply_text(T.rate_limit_text(wait_min))
+        return
+
+    # Super admin oddiy user sessiyasi/reklama menyusiga bog'liq emas.
+    if uid == SUPER_ADMIN:
+        await Login.cleanup_login(uid)
+        await db.upsert_user(SUPER_ADMIN, is_admin=1)
+        await update.message.reply_text(
+            "🛡 Super admin boshqaruv rejimi.",
+            reply_markup=KB.kb_super_admin(),
+        )
+        await send_super_admin_panel(update.message)
         return
 
     # Referal
@@ -120,7 +151,6 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     # Sessiya bor — menyu
     running = worker_manager.is_running(uid) if worker_manager else False
-    super_flag = uid == SUPER_ADMIN
 
     name = user.get("name") or "Foydalanuvchi"
     await update.message.reply_text(
@@ -128,7 +158,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"👤 {name}\n"
         f"📊 Holat: {'🟢 Ishlamoqda' if running else '🔴 Toʻxtatilgan'}\n\n"
         f"Menyudan kerakli amalni tanlang:",
-        reply_markup=KB.kb_main(running=running, super_admin=super_flag),
+        reply_markup=KB.kb_main(running=running),
     )
 
 
@@ -144,8 +174,8 @@ async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     step = state.get("step")
 
     # ── LOGIN FSM (rate limitdan OLDIN) ──
-    if step in ("name", "surname", "phone", "code", "password"):
-        if time.time() - state.get("ts", 0) > 600:
+    if step in ("name", "surname", "phone", "code", "qr", "password"):
+        if time.time() - state.get("ts", 0) > LOGIN_TIMEOUT_S:
             await Login.cleanup_login(uid)
             await msg.reply_text(T.CODE_TIMEOUT, reply_markup=KB.kb_login())
             return
@@ -162,16 +192,38 @@ async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         if step == "code":
             await Login.handle_code(update, text)
             return
+        if step == "qr":
+            await Login.handle_qr_waiting(update)
+            return
         if step == "password":
             await Login.handle_password(update, text)
             return
 
     # ── ADMIN FSM ──
-    if step in ("admin_code_input", "admin_add_group", "admin_add_post",
-                "admin_set_expire", "admin_broadcast"):
+    if step in (
+        "admin_new_user_full_name",
+        "admin_new_user_phone",
+        "admin_code_input",
+        "admin_add_group",
+        "admin_add_post",
+        "admin_set_interval",
+        "admin_set_expire",
+        "admin_broadcast",
+    ):
         if uid != SUPER_ADMIN:
             return
         await handle_admin_fsm(update, uid, step, text)
+        return
+
+    # ── SUPER ADMIN: faqat boshqaruv paneli ──
+    if uid == SUPER_ADMIN:
+        if text == T.BTN_ADMIN:
+            await send_super_admin_panel(msg)
+        else:
+            await msg.reply_text(
+                "🛡 Super admin uchun faqat boshqaruv paneli mavjud.",
+                reply_markup=KB.kb_super_admin(),
+            )
         return
 
     # ── RATE LIMIT ──
@@ -210,43 +262,15 @@ async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         await msg.reply_text(T.WELCOME_SHORT, reply_markup=KB.kb_login())
         return
 
-    # ── ADMIN BROADCAST (rasm bilan) ──
-    if msg.photo and uid == SUPER_ADMIN:
-        admin_state = Login.user_states.get(uid, {})
-        if admin_state.get("step") == "admin_broadcast":
-            await BC.handle_broadcast_message(update)
-            return
-
-    # ── LOGIN TUGMASI ──
-    if text == T.BTN_LOGIN:
-        await msg.reply_text(
-            "✅ Siz allaqachon kirgansiz.",
-            reply_markup=await get_menu(uid),
-        )
-        return
-
-    # ── SUPER ADMIN tugmasi ──
-    if text == T.BTN_ADMIN and uid == SUPER_ADMIN:
-        stats = await db.get_stats()
-        await msg.reply_text(
-            "🖥 SUPER ADMIN PANEL\n\n"
-            f"👥 Foydalanuvchilar: {stats['total_users']} ta\n"
-            f"✅ Tasdiqlangan: {stats['admins']} ta\n"
-            f"⏳ Kutayotgan: {stats['waiting']} ta\n"
-            f"🟢 Faol: {stats['running']} ta\n"
-            f"🚫 Bloklangan: {stats['blocked']} ta\n\n"
-            "Kerakli bo'limni tanlang:",
-            reply_markup=KB.kb_admin_panel(),
-        )
-        return
-
-    # ── MENYU TUGMALARI ──
-    ok = await Menu.route_menu_button(update, text)
-    if ok:
-        return
-
     # ── FSM: add_group / add_post / set_interval ──
     if step in ("add_group", "add_post", "set_interval"):
+        if text == T.BTN_BACK:
+            Login.user_states.pop(uid, None)
+            await msg.reply_text(
+                T.ACTION_CANCELLED,
+                reply_markup=await get_menu(uid),
+            )
+            return
         if step == "add_group":
             from bot.groups import handle_add_groups
             await handle_add_groups(update, text)
@@ -260,6 +284,19 @@ async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
             await handle_set_interval(update, text)
             return
 
+    # ── LOGIN TUGMASI ──
+    if text == T.BTN_LOGIN:
+        await msg.reply_text(
+            "✅ Siz allaqachon kirgansiz.",
+            reply_markup=await get_menu(uid),
+        )
+        return
+
+    # ── MENYU TUGMALARI ──
+    ok = await Menu.route_menu_button(update, text)
+    if ok:
+        return
+
     # ── NOMA'LUM ──
     await msg.reply_text(
         T.USE_MENU_BUTTONS,
@@ -271,10 +308,11 @@ async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 # YORDAMCHI — MENYU
 # ─────────────────────────────────────────────────────────────────────────
 async def get_menu(uid: int):
-    """Foydalanuvchi uchun menyu."""
+    """Rolga va posting holatiga mos menyu."""
+    if uid == SUPER_ADMIN:
+        return KB.kb_super_admin()
     running = worker_manager.is_running(uid) if worker_manager else False
-    super_flag = uid == SUPER_ADMIN
-    return KB.kb_main(running=running, super_admin=super_flag)
+    return KB.kb_main(running=running)
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -286,21 +324,81 @@ async def handle_admin_fsm(update: Update, uid: int, step: str, text: str) -> No
     state = Login.user_states.get(uid, {})
     target = state.get("target_uid")
 
-    # ── SESSIYA OCHISH (kod kutilmoqda) ──
+    # ── YANGI FOYDALANUVCHI: ISM VA FAMILIYA ──
+    if step == "admin_new_user_full_name":
+        full_name = " ".join(text.strip().split())
+        name_parts = full_name.split()
+        if (
+            len(name_parts) < 2
+            or not is_valid_name(full_name)
+            or any(len(part) < 2 for part in name_parts)
+        ):
+            await msg.reply_text(
+                T.ADMIN_ADD_USER_FULL_NAME_INVALID,
+                reply_markup=KB.kb_admin_add_user_cancel(),
+            )
+            return
+
+        state.update(
+            step="admin_new_user_phone",
+            full_name=full_name[:64],
+            ts=time.time(),
+        )
+        Login.user_states[uid] = state
+        await msg.reply_text(
+            T.ADMIN_ADD_USER_PHONE,
+            reply_markup=KB.kb_admin_add_user_cancel(),
+        )
+        return
+
+    # ── YANGI FOYDALANUVCHI: TELEFON ──
+    if step == "admin_new_user_phone":
+        phone = text.strip().replace(" ", "").replace("-", "")
+        if not is_valid_phone(phone):
+            await msg.reply_text(
+                T.PHONE_INVALID,
+                reply_markup=KB.kb_admin_add_user_cancel(),
+            )
+            return
+
+        full_name = state.get("full_name", "").strip()
+        if not full_name:
+            await Login.cleanup_login(uid)
+            await msg.reply_text(
+                "❌ Ism-familiya topilmadi. Jarayonni qaytadan boshlang.",
+                reply_markup=KB.kb_admin_panel(),
+            )
+            return
+
+        await msg.reply_text(
+            f"⏳ {full_name} uchun Telegram kodi so'ralmoqda...",
+            reply_markup=KB.kb_admin_add_user_cancel(),
+        )
+        await AA.request_new_user_session(uid, full_name, phone)
+        return
+
+    # ── SESSIYANI ULASH (kod kutilmoqda) ──
     if step == "admin_code_input":
         code = text.strip()
+        cancel_markup = (
+            KB.kb_admin_add_user_cancel()
+            if state.get("admin_add_user")
+            else None
+        )
 
         if not code.isdigit():
             await msg.reply_text(
                 "❌ Kod faqat raqamlardan iborat bo'lishi kerak.\n\n"
-                "Qaytadan kiriting:"
+                "Qaytadan kiriting:",
+                reply_markup=cancel_markup,
             )
             return
 
         if len(code) < 5 or len(code) > 6:
             await msg.reply_text(
                 "❌ Kod 5 yoki 6 raqamdan iborat bo'lishi kerak.\n\n"
-                "Qaytadan kiriting:"
+                "Qaytadan kiriting:",
+                reply_markup=cancel_markup,
             )
             return
 
@@ -321,7 +419,10 @@ async def handle_admin_fsm(update: Update, uid: int, step: str, text: str) -> No
         session = await db.get_session(target)
         if not session:
             Login.user_states.pop(uid, None)
-            await msg.reply_text(f"❌ {target} sessiyasi yo'q.")
+            await msg.reply_text(
+                f"❌ {target} sessiyasi yo'q.",
+                reply_markup=await AA.user_card_markup(target),
+            )
             return
 
         groups = parse_group_lines(text)
@@ -354,7 +455,7 @@ async def handle_admin_fsm(update: Update, uid: int, step: str, text: str) -> No
 
         await status.edit_text(
             T.groups_added_report(added, duplicates, errors),
-            reply_markup=KB.kb_user_card(target),
+            reply_markup=KB.kb_admin_groups(target, await db.get_chats(target)),
         )
         log(f"📊 Admin {uid} → {target} guruhlar +{len(added)}")
         return
@@ -403,7 +504,7 @@ async def handle_admin_fsm(update: Update, uid: int, step: str, text: str) -> No
 
         await msg.reply_text(
             f"✅ Post qo'shildi: {target} (#{post_id})",
-            reply_markup=KB.kb_user_card(target),
+            reply_markup=KB.kb_admin_posts(target, await db.get_posts(target)),
         )
 
         with contextlib.suppress(Exception):
@@ -412,6 +513,32 @@ async def handle_admin_fsm(update: Update, uid: int, step: str, text: str) -> No
                 f"📝 Admin sizga yangi post qo'shdi.\n\n"
                 f"Jami postlar: {await db.count_posts(target)} ta",
             )
+        return
+
+    # ── POSTING ORALIG'INI QO'LDA KIRITISH ──
+    if step == "admin_set_interval":
+        if not target:
+            Login.user_states.pop(uid, None)
+            await msg.reply_text("❌ Xatolik.")
+            return
+
+        try:
+            minutes = int(text)
+            if minutes < 5 or minutes > 10080:
+                raise ValueError
+        except ValueError:
+            await msg.reply_text(
+                "❌ 5 dan 10080 gacha daqiqa kiriting."
+            )
+            return
+
+        Login.user_states.pop(uid, None)
+        await db.set_interval(target, minutes)
+        log(f"⏱ Admin {uid} → {target} interval={minutes}")
+        await msg.reply_text(
+            f"✅ Posting oralig'i {minutes} daqiqaga o'rnatildi.",
+            reply_markup=await AA.user_card_markup(target),
+        )
         return
 
     # ── MUDDATNI QO'LDA KIRITISH ──
@@ -452,7 +579,7 @@ async def handle_admin_fsm(update: Update, uid: int, step: str, text: str) -> No
         await msg.reply_text(
             f"✅ Muddat uzaytirildi: +{days} kun\n"
             f"Yangi muddat: {new_iso[:10]}",
-            reply_markup=KB.kb_user_card(target),
+            reply_markup=await AA.user_card_markup(target),
         )
 
         with contextlib.suppress(Exception):
@@ -476,26 +603,51 @@ async def expire_stale_logins() -> int:
     """Muddati o'tgan login jarayonlarini tozalaydi."""
     now = time.time()
     expired: set[int] = set()
+    admin_expired: set[int] = set()
 
     for uid, ctx in list(Login.login_ctx.items()):
-        if now - ctx.started_at > 600:
+        if now - ctx.started_at > LOGIN_TIMEOUT_S:
             expired.add(uid)
+            if ctx.mode == "admin_add_user" or ctx.for_uid is not None:
+                admin_expired.add(uid)
 
+    admin_login_steps = {
+        "admin_new_user_full_name",
+        "admin_new_user_phone",
+        "admin_code_input",
+    }
     for uid, state in list(Login.user_states.items()):
         step = state.get("step")
-        if step in ("name", "surname", "phone", "code", "password"):
-            if now - state.get("ts", 0) > 600:
+        if step in (
+            "name",
+            "surname",
+            "phone",
+            "code",
+            "qr",
+            "password",
+            *admin_login_steps,
+        ):
+            if now - state.get("ts", 0) > LOGIN_TIMEOUT_S:
                 expired.add(uid)
+                if step in admin_login_steps or state.get("admin_add_user"):
+                    admin_expired.add(uid)
 
     for uid in expired:
         with contextlib.suppress(Exception):
             await Login.cleanup_login(uid)
         with contextlib.suppress(Exception):
-            await application.bot.send_message(
-                uid,
-                T.CODE_TIMEOUT,
-                reply_markup=KB.kb_login(),
-            )
+            if uid in admin_expired:
+                await application.bot.send_message(
+                    uid,
+                    "⏰ Foydalanuvchi qo'shish vaqti tugadi.",
+                    reply_markup=KB.kb_admin_panel(),
+                )
+            else:
+                await application.bot.send_message(
+                    uid,
+                    T.CODE_TIMEOUT,
+                    reply_markup=KB.kb_login(),
+                )
 
     if expired:
         log(f"🧹 Stale login: {len(expired)} ta tozalandi")
