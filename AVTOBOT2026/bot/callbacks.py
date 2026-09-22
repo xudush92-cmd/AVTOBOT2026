@@ -59,6 +59,9 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     data = q.data or ""
 
     try:
+        if data == "noop":
+            return
+
         # NUMPAD
         if data.startswith("np:"):
             await handle_numpad(update, uid, data)
@@ -117,6 +120,12 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         if data.startswith("uc:"):
             from admin import admin_actions
             await admin_actions.handle_user_card(update, uid, data)
+            return
+
+        # TANLANGAN USER POSTING ORALIG'I
+        if data.startswith("aint:"):
+            from admin import admin_actions
+            await admin_actions.handle_interval(update, uid, data)
             return
 
         # MUDDAT UZAYTIRISH

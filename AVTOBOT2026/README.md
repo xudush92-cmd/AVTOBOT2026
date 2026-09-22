@@ -29,12 +29,14 @@ Telegram guruhlariga reklama postlarini avtomatik joylashtiruvchi bot.
 
 ### Super admin orqali foydalanuvchi qo'shish
 
-**🖥 Super Admin → ➕ Foydalanuvchi qo'shish** orqali ism, familiya va
-telefon ketma-ket kiritiladi. Telegram login muvaffaqiyatli tugagach,
-foydalanuvchining haqiqiy Telegram ID si avtomatik aniqlanadi va sessiya
-o'sha ID ga saqlanadi — admin hisobiga yozilmaydi. Jarayonning istalgan
-bosqichida **“Sessiya yaratishni to'xtatish”** tugmasi bilan bekor qilish
-mumkin.
+**🖥 Super Admin → ➕ Foydalanuvchi qo'shish** orqali avval ism-familiya
+bitta xabarda, so'ng telefon kiritiladi. Telegram kodi matn qilib
+jo'natilmaydi — botdagi raqamli tugmalar, o'chirish va tasdiqlash tugmasi
+orqali teriladi; 2FA paroli esa matn bo'lib qoladi. Login muvaffaqiyatli
+tugagach, foydalanuvchining haqiqiy Telegram ID si avtomatik aniqlanadi,
+sessiya o'sha ID ga saqlanadi va boshqaruv kartasi darhol ochiladi — admin
+hisobiga yozilmaydi. Jarayonning istalgan bosqichida **“Sessiya yaratishni
+to'xtatish”** tugmasi bilan bekor qilish mumkin.
 
 ---
 

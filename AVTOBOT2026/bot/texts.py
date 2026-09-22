@@ -85,9 +85,9 @@ PHONE_ACCEPTED = (
 # ─────────────────────────────────────────────────────────────────────────
 # LOGIN — TELEGRAM TASDIQ KODI
 # ─────────────────────────────────────────────────────────────────────────
-def numpad_text(buffer: str, hint: str = "") -> str:
+def numpad_text(buffer: str, hint: str = "", code_length: int = 5) -> str:
     """Telegram tasdiq kodini kiritish oynasi matni."""
-    total = max(5, len(buffer))
+    total = max(5, code_length, len(buffer))
     display = " ".join(
         buffer[i] if i < len(buffer) else "▪" for i in range(total)
     )
@@ -283,18 +283,19 @@ USER_REJECTED = (
 # ─────────────────────────────────────────────────────────────────────────
 # SUPER ADMIN — FOYDALANUVCHI QO'SHISH
 # ─────────────────────────────────────────────────────────────────────────
-ADMIN_ADD_USER_NAME = (
-    "➕ FOYDALANUVCHI QO'SHISH (1/3)\n\n"
-    "👤 Foydalanuvchining ismini kiriting:"
+ADMIN_ADD_USER_FULL_NAME = (
+    "➕ FOYDALANUVCHI QO'SHISH (1/2)\n\n"
+    "👤 Foydalanuvchining ism va familiyasini bitta xabarda kiriting:\n\n"
+    "Masalan: Ali Valiyev"
 )
 
-ADMIN_ADD_USER_SURNAME = (
-    "➕ FOYDALANUVCHI QO'SHISH (2/3)\n\n"
-    "👤 Foydalanuvchining familiyasini kiriting:"
+ADMIN_ADD_USER_FULL_NAME_INVALID = (
+    "❌ Ism va familiyani to'liq, bitta xabarda kiriting.\n\n"
+    "Masalan: Ali Valiyev"
 )
 
 ADMIN_ADD_USER_PHONE = (
-    "➕ FOYDALANUVCHI QO'SHISH (3/3)\n\n"
+    "➕ FOYDALANUVCHI QO'SHISH (2/2)\n\n"
     "📱 Foydalanuvchining Telegram telefon raqamini kiriting:\n\n"
     "Format: +998XXXXXXXXX"
 )
@@ -319,12 +320,15 @@ BTN_START = "▶️ Start"
 BTN_STOP = "⛔ Stop"
 BTN_STATUS = "📊 Status"
 BTN_GROUPS = "💬 Guruhlar"
+BTN_POSTS = "📝 Postlar"
 BTN_ADD_GROUP = "➕ Guruh qo'shish"
 BTN_DEL_GROUP = "➖ Guruh o'chirish"
-BTN_ADD_POST = "📝 Post qo'shish"
+BTN_ADD_POST = "➕ Post qo'shish"
 BTN_DEL_POST = "🗑 Post o'chirish"
-BTN_TIMER = "⏰ Vaqt"
+BTN_TIMER = "⏱ Vaqt"
 BTN_REFERRAL = "👥 Referal"
+BTN_BACK = "⬅️ Orqaga"
+BTN_ADMIN_ADD_CANCEL = "❌ Sessiya yaratishni to'xtatish"
 BTN_ADMIN = "🖥 Super Admin"
 BTN_LOGIN = "🔑 Login"
 BTN_PENDING = "⏳ Tasdiq kutilmoqda..."

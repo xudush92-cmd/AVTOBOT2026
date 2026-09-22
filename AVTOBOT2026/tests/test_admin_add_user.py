@@ -78,31 +78,20 @@ class AdminAddUserWizardTests(unittest.IsolatedAsyncioTestCase):
         }
         self.assertEqual(cancel_callbacks, {"adm:adduser:cancel"})
 
-    async def test_wizard_asks_name_surname_then_phone(self) -> None:
+    async def test_wizard_asks_full_name_then_phone(self) -> None:
         callback_update = self._callback_update()
         await admin_actions.begin_add_user(callback_update, SUPER_ADMIN)
         self.assertEqual(
             login.user_states[SUPER_ADMIN]["step"],
-            "admin_new_user_name",
+            "admin_new_user_full_name",
         )
 
         update = self._message_update()
         await main.handle_admin_fsm(
             update,
             SUPER_ADMIN,
-            "admin_new_user_name",
-            "Ali",
-        )
-        self.assertEqual(
-            login.user_states[SUPER_ADMIN]["step"],
-            "admin_new_user_surname",
-        )
-
-        await main.handle_admin_fsm(
-            update,
-            SUPER_ADMIN,
-            "admin_new_user_surname",
-            "Valiyev",
+            "admin_new_user_full_name",
+            "Ali Valiyev",
         )
         state = login.user_states[SUPER_ADMIN]
         self.assertEqual(state["step"], "admin_new_user_phone")
@@ -125,6 +114,69 @@ class AdminAddUserWizardTests(unittest.IsolatedAsyncioTestCase):
             "Ali Valiyev",
             "+998901234567",
         )
+
+    async def test_admin_code_screen_uses_inline_numpad(self) -> None:
+        login.user_states[SUPER_ADMIN] = {
+            "step": "code",
+            "admin_add_user": True,
+            "code_length": 5,
+        }
+        await login.send_numpad(SUPER_ADMIN)
+
+        markup = self.bot.send_message.await_args.kwargs["reply_markup"]
+        callbacks = {
+            button.callback_data
+            for row in markup.inline_keyboard
+            for button in row
+        }
+        self.assertTrue({"np:back", "np:ok", "np:cancel"} <= callbacks)
+        self.assertIn("np:0", callbacks)
+
+    async def test_phone_request_enters_button_code_state(self) -> None:
+        phone = "+998901234567"
+        sent_code = SimpleNamespace(
+            type=SimpleNamespace(length=6),
+            phone_code_hash="hash",
+            next_type=None,
+            timeout=60,
+        )
+        client = SimpleNamespace(
+            connect=AsyncMock(),
+            send_code_request=AsyncMock(return_value=sent_code),
+            disconnect=AsyncMock(),
+        )
+
+        with (
+            patch.object(
+                admin_actions.db,
+                "get_phone",
+                new=AsyncMock(return_value="+998900000000"),
+            ),
+            patch.object(
+                admin_actions.db,
+                "get_all_users",
+                new=AsyncMock(return_value=[]),
+            ),
+            patch("telethon.TelegramClient", return_value=client),
+        ):
+            await admin_actions.request_new_user_session(
+                SUPER_ADMIN,
+                "Ali Valiyev",
+                phone,
+            )
+
+        state = login.user_states[SUPER_ADMIN]
+        self.assertEqual(state["step"], "code")
+        self.assertEqual(state["code_length"], 6)
+        self.assertTrue(state["admin_add_user"])
+        self.assertEqual(login.login_ctx[SUPER_ADMIN].mode, "admin_add_user")
+        markup = self.bot.send_message.await_args.kwargs["reply_markup"]
+        callbacks = {
+            button.callback_data
+            for row in markup.inline_keyboard
+            for button in row
+        }
+        self.assertIn("np:ok", callbacks)
 
     async def test_admin_phone_is_rejected_before_requesting_code(self) -> None:
         phone = "+998901234567"
@@ -157,7 +209,7 @@ class AdminAddUserWizardTests(unittest.IsolatedAsyncioTestCase):
             mode="admin_add_user",
         )
         login.user_states[SUPER_ADMIN] = {
-            "step": "admin_code_input",
+            "step": "code",
             "admin_add_user": True,
         }
 
@@ -189,7 +241,10 @@ class AdminAddUserWizardTests(unittest.IsolatedAsyncioTestCase):
             mode="admin_add_user",
         )
         login.login_ctx[SUPER_ADMIN] = ctx
-        login.user_states[SUPER_ADMIN] = {"step": "admin_code_input"}
+        login.user_states[SUPER_ADMIN] = {
+            "step": "code",
+            "admin_add_user": True,
+        }
 
         with (
             patch.object(login.db, "get_user", new=AsyncMock(return_value=None)),
@@ -208,6 +263,15 @@ class AdminAddUserWizardTests(unittest.IsolatedAsyncioTestCase):
         add_admin.assert_awaited_once_with(target_uid)
         self.assertNotIn(SUPER_ADMIN, login.login_ctx)
         client.log_out.assert_not_awaited()
+        admin_markup = self.bot.send_message.await_args_list[0].kwargs["reply_markup"]
+        callbacks = {
+            button.callback_data
+            for row in admin_markup.inline_keyboard
+            for button in row
+        }
+        self.assertIn(f"uc:groups:{target_uid}", callbacks)
+        self.assertIn(f"uc:posts:{target_uid}", callbacks)
+        self.assertIn(f"uc:interval:{target_uid}", callbacks)
 
     async def test_admin_phone_cannot_be_added_as_regular_user(self) -> None:
         client = SimpleNamespace(

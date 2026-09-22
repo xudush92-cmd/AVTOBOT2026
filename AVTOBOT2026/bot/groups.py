@@ -23,14 +23,13 @@ from telethon.errors import (
 )
 from telethon.sessions import StringSession
 from telegram import Update
-from telegram.ext import ContextTypes
 
 from bot import keyboards as KB
 from bot import texts as T
 from config.config import API_HASH, API_ID
 from core import database as db
 from core.logger import log
-from core.utils import parse_group_lines, truncate
+from core.utils import parse_group_lines
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -100,13 +99,14 @@ async def show_groups(update: Update) -> None:
     if not chats:
         await update.message.reply_text(
             T.GROUPS_EMPTY,
-            reply_markup=KB.kb_main(
-                running=await db.get_user(uid) and (await db.get_user(uid)).get("running"),
-            ),
+            reply_markup=KB.kb_groups_menu(),
         )
         return
 
-    await update.message.reply_text(T.groups_list(chats))
+    await update.message.reply_text(
+        T.groups_list(chats),
+        reply_markup=KB.kb_groups_menu(),
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -118,7 +118,10 @@ async def begin_add_groups(update: Update) -> None:
     from bot.login import user_states
 
     user_states[uid] = {"step": "add_group", "ts": __import__("time").time()}
-    await update.message.reply_text(T.ASK_ADD_GROUP)
+    await update.message.reply_text(
+        T.ASK_ADD_GROUP,
+        reply_markup=KB.kb_input_cancel(),
+    )
   
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -132,11 +135,11 @@ async def handle_add_groups(update: Update, text: str) -> None:
     from bot.login import user_states
 
     uid = update.effective_user.id
-    user_states.pop(uid, None)
 
     # Sessiyani olish
     session = await db.get_session(uid)
     if not session:
+        user_states.pop(uid, None)
         await update.message.reply_text(
             "❌ Sessiya topilmadi. Qaytadan 🔑 Login qiling.",
             reply_markup=KB.kb_login(),
@@ -148,8 +151,11 @@ async def handle_add_groups(update: Update, text: str) -> None:
     if not groups:
         await update.message.reply_text(
             "❌ Guruh topilmadi. Qaytadan yuboring:",
+            reply_markup=KB.kb_input_cancel(),
         )
         return
+
+    user_states.pop(uid, None)
 
     # Natija xabari
     msg = await update.message.reply_text(
@@ -207,6 +213,10 @@ async def handle_add_groups(update: Update, text: str) -> None:
     report = T.groups_added_report(added, duplicates, errors)
     with contextlib.suppress(Exception):
         await msg.edit_text(report)
+    await update.message.reply_text(
+        "💬 Guruhlar menyusi",
+        reply_markup=KB.kb_groups_menu(),
+    )
 
     log(f"📊 Guruhlar: {uid} → +{len(added)} (⚠️{len(duplicates)} ❌{len(errors)})")
 

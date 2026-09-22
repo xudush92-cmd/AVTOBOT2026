@@ -217,8 +217,13 @@ async def send_numpad(uid: int, buffer: str = "", hint: str = "") -> None:
     state = user_states.get(uid, {})
     if not hint:
         hint = state.get("code_hint", "")
-    text = T.numpad_text(buffer, hint)
+    text = T.numpad_text(
+        buffer,
+        hint,
+        int(state.get("code_length") or CODE_LENGTH),
+    )
     msg_id = state.get("numpad_msg_id")
+    markup = KB.kb_numpad(admin_add_user=bool(state.get("admin_add_user")))
 
     if msg_id:
         try:
@@ -226,7 +231,7 @@ async def send_numpad(uid: int, buffer: str = "", hint: str = "") -> None:
                 chat_id=uid,
                 message_id=msg_id,
                 text=text,
-                reply_markup=KB.kb_numpad(),
+                reply_markup=markup,
             )
             state["ts"] = time.time()
             user_states[uid] = state
@@ -235,7 +240,7 @@ async def send_numpad(uid: int, buffer: str = "", hint: str = "") -> None:
             pass
 
     msg = await application.bot.send_message(
-        uid, text, reply_markup=KB.kb_numpad()
+        uid, text, reply_markup=markup
     )
     state["numpad_msg_id"] = msg.message_id
     state["ts"] = time.time()
@@ -664,7 +669,11 @@ async def attempt_signin(uid: int, code: str) -> None:
                     chat_id=uid, message_id=old_msg
                 )
 
-        user_states[uid] = {"step": "password", "ts": time.time()}
+        user_states[uid] = {
+            "step": "password",
+            "ts": time.time(),
+            "admin_add_user": ctx.mode == "admin_add_user",
+        }
         await application.bot.send_message(
             uid,
             T.ASK_PASSWORD,
@@ -678,15 +687,42 @@ async def attempt_signin(uid: int, code: str) -> None:
     except PhoneCodeInvalidError:
         ctx.wrong_count += 1
 
-        # Admin kodi matn ko'rinishida kiritiladi; uni oddiy user numpad
-        # holatiga o'tkazib yubormaymiz.
-        if ctx.mode == "admin_add_user" or ctx.for_uid is not None:
+        if ctx.mode == "admin_add_user":
             if ctx.wrong_count >= MAX_WRONG_CODE:
                 await cleanup_login(uid)
                 await application.bot.send_message(
                     uid,
                     T.CODE_MAX_WRONG.format(count=ctx.wrong_count),
-                    reply_markup=KB.kb_admin_panel(),
+                    reply_markup=KB.kb_super_admin(),
+                )
+                return
+
+            state = user_states.get(uid, {})
+            state.update(
+                step="code",
+                code_buffer="",
+                ts=time.time(),
+                admin_add_user=True,
+            )
+            user_states[uid] = state
+            await send_numpad(
+                uid,
+                "",
+                hint=T.CODE_HINT_WRONG.format(
+                    count=ctx.wrong_count,
+                    max=MAX_WRONG_CODE,
+                ),
+            )
+            return
+
+        # Eski user kartasidan sessiya ulash oqimi matnli kod bilan ishlaydi.
+        if ctx.for_uid is not None:
+            if ctx.wrong_count >= MAX_WRONG_CODE:
+                await cleanup_login(uid)
+                await application.bot.send_message(
+                    uid,
+                    T.CODE_MAX_WRONG.format(count=ctx.wrong_count),
+                    reply_markup=KB.kb_super_admin(),
                 )
                 return
 
@@ -694,18 +730,12 @@ async def attempt_signin(uid: int, code: str) -> None:
                 "step": "admin_code_input",
                 "ts": time.time(),
                 "target_uid": ctx.for_uid,
-                "admin_add_user": ctx.mode == "admin_add_user",
             }
             await application.bot.send_message(
                 uid,
                 T.CODE_HINT_WRONG.format(
                     count=ctx.wrong_count,
                     max=MAX_WRONG_CODE,
-                ),
-                reply_markup=(
-                    KB.kb_admin_add_user_cancel()
-                    if ctx.mode == "admin_add_user"
-                    else None
                 ),
             )
             return
@@ -759,22 +789,28 @@ async def attempt_signin(uid: int, code: str) -> None:
             ctx.phone_code_hash = result.phone_code_hash
             ctx.wrong_count = 0
 
-            if ctx.mode == "admin_add_user" or ctx.for_uid is not None:
+            if ctx.mode == "admin_add_user":
+                state = user_states.get(uid, {})
+                state.update(
+                    step="code",
+                    code_buffer="",
+                    code_length=(
+                        getattr(getattr(result, "type", None), "length", None)
+                        or CODE_LENGTH
+                    ),
+                    code_hint=T.CODE_HINT_RESENT,
+                    ts=time.time(),
+                    admin_add_user=True,
+                )
+                user_states[uid] = state
+                await send_numpad(uid, "", hint=T.CODE_HINT_RESENT)
+            elif ctx.for_uid is not None:
                 user_states[uid] = {
                     "step": "admin_code_input",
                     "ts": time.time(),
                     "target_uid": ctx.for_uid,
-                    "admin_add_user": ctx.mode == "admin_add_user",
                 }
-                await application.bot.send_message(
-                    uid,
-                    T.CODE_HINT_RESENT,
-                    reply_markup=(
-                        KB.kb_admin_add_user_cancel()
-                        if ctx.mode == "admin_add_user"
-                        else None
-                    ),
-                )
+                await application.bot.send_message(uid, T.CODE_HINT_RESENT)
             else:
                 state = user_states.get(uid, {})
                 state["code_buffer"] = ""
@@ -938,13 +974,21 @@ async def _finalize_admin_added_user(uid: int, ctx: LoginCtx) -> None:
         f"✅ Admin yangi user qo'shdi: admin={uid} target={target_uid} "
         f"phone={mask_phone(phone)}"
     )
+    user = await db.get_user(target_uid) or {}
     await application.bot.send_message(
         uid,
-        "✅ Foydalanuvchi muvaffaqiyatli qo'shildi!\n\n"
+        "👤 FOYDALANUVCHI BOSHQARUVI\n\n"
+        "✅ Muvaffaqiyatli qo'shildi\n"
         f"👤 {name}\n"
         f"📱 {phone}\n"
-        f"🆔 {target_uid}",
-        reply_markup=KB.kb_admin_panel(),
+        f"🆔 {target_uid}\n"
+        "🔐 Sessiya: ✅ Ulangan",
+        reply_markup=KB.kb_user_card(
+            target_uid,
+            running=bool(user.get("running")),
+            blocked=bool(user.get("is_blocked")),
+            has_session=True,
+        ),
     )
 
     with contextlib.suppress(Exception):

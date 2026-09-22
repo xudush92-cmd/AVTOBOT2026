@@ -84,6 +84,16 @@ class LoginDiagnosticsTests(unittest.TestCase):
         ]
         self.assertIn("np:qr", callbacks)
 
+    def test_admin_add_user_numpad_has_digits_confirm_delete_and_cancel(self) -> None:
+        callbacks = {
+            button.callback_data
+            for row in kb_numpad(admin_add_user=True).inline_keyboard
+            for button in row
+        }
+        self.assertTrue({f"np:{digit}" for digit in range(10)} <= callbacks)
+        self.assertTrue({"np:back", "np:ok", "np:cancel"} <= callbacks)
+        self.assertNotIn("np:qr", callbacks)
+
     def test_qr_keyboard_contains_deep_link_and_cancel(self) -> None:
         url = "tg://login?token=test-token"
         keyboard = kb_qr_login(url).inline_keyboard
