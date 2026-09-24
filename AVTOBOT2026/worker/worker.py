@@ -14,7 +14,6 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import random
-import time
 
 from telethon import TelegramClient
 from telethon.errors import (
@@ -28,12 +27,23 @@ from telethon.errors import (
     UsernameNotOccupiedError,
 )
 from telethon.tl.types import (
-    MessageEntityBold, MessageEntityBotCommand, MessageEntityCashtag,
-    MessageEntityCode, MessageEntityCustomEmoji, MessageEntityEmail,
-    MessageEntityHashtag, MessageEntityItalic, MessageEntityMention,
-    MessageEntityMentionName, MessageEntityPhone, MessageEntityPre,
-    MessageEntitySpoiler, MessageEntityStrike, MessageEntityTextUrl,
-    MessageEntityUnderline, MessageEntityUrl,
+    MessageEntityBold,
+    MessageEntityBotCommand,
+    MessageEntityCashtag,
+    MessageEntityCode,
+    MessageEntityCustomEmoji,
+    MessageEntityEmail,
+    MessageEntityHashtag,
+    MessageEntityItalic,
+    MessageEntityMention,
+    MessageEntityMentionName,
+    MessageEntityPhone,
+    MessageEntityPre,
+    MessageEntitySpoiler,
+    MessageEntityStrike,
+    MessageEntityTextUrl,
+    MessageEntityUnderline,
+    MessageEntityUrl,
 )
 
 from config.config import (
@@ -46,9 +56,7 @@ from config.config import (
 )
 from core import database as db
 from core.logger import log
-from core.utils import safe_unlink
 from worker.client_pool import ClientPool, PoolBusyError, SessionInvalidError
-
 
 # ─────────────────────────────────────────────────────────────────────────
 # GLOBAL (main.py da o'rnatiladi)
@@ -88,7 +96,9 @@ def dicts_to_entities(items: list[dict]) -> list:
             elif t == "code":
                 out.append(MessageEntityCode(off, ln))
             elif t == "pre":
-                out.append(MessageEntityPre(off, ln, language=d.get("language", "") or ""))
+                out.append(
+                    MessageEntityPre(off, ln, language=d.get("language", "") or "")
+                )
             elif t == "text_link":
                 out.append(MessageEntityTextUrl(off, ln, url=d.get("url", "")))
             elif t == "text_mention":
@@ -145,6 +155,7 @@ async def send_post(client: TelegramClient, chat: str, post: dict) -> None:
     photo_path = post.get("photo")
     if photo_path:
         import os
+
         if os.path.exists(photo_path):
             await client.send_file(
                 entity=target,
@@ -160,7 +171,7 @@ async def send_post(client: TelegramClient, chat: str, post: dict) -> None:
         formatting_entities=entities or None,
         link_preview=bool(post.get("link_preview", True)),
     )
-  
+
 
 # ─────────────────────────────────────────────────────────────────────────
 # YORDAMCHI — SLEEP YOKI STOP
@@ -209,9 +220,22 @@ async def posting_loop(uid: int, stop: asyncio.Event) -> None:
 
     try:
         while not stop.is_set():
-            # Sessiya tekshirish
+            # Har siklda ruxsatlarni qayta tekshiramiz: blok/tarif/sessiya
+            # uzoq ishlayotgan worker ichida ham darhol kuchga kiradi.
+            user = await db.get_user(uid)
+            if (
+                not user
+                or not user.get("is_admin")
+                or user.get("is_blocked")
+                or await db.is_tariff_expired(uid)
+            ):
+                await db.set_running(uid, False)
+                log(f"⛔ Worker:{uid} ruxsat/tarif sabab to'xtadi", "warning")
+                break
+
             session = await db.get_session(uid)
             if not session:
+                await db.set_running(uid, False)
                 log(f"❌ Worker:{uid} sessiya yo'q — to'xtaydi", "warning")
                 break
 
@@ -317,7 +341,7 @@ async def posting_loop(uid: int, stop: asyncio.Event) -> None:
 
                     except Exception as e:
                         fail += 1
-                        log(f"❌ {uid} → {chat}: {type(e).__name__}: {e}", "error")
+                        log(f"❌ {uid} → {chat}: {type(e).__name__}", "error")
 
                     if not stop.is_set():
                         await sleep_or_stop(stop, SEND_DELAY_S)
@@ -354,17 +378,16 @@ async def posting_loop(uid: int, stop: asyncio.Event) -> None:
     except asyncio.CancelledError:
         pass
     except Exception as e:
-        log(f"💥 Worker:{uid} kutilmagan xato: {type(e).__name__}: {e}", "error")
+        log(f"💥 Worker:{uid} kutilmagan xato: {type(e).__name__}", "error")
         with contextlib.suppress(Exception):
             await application.bot.send_message(
                 SUPER_ADMIN,
-                f"⚠️ Worker xato\nUID: {uid}\n{type(e).__name__}: {e}",
+                f"⚠️ Worker xato\nUID: {uid}\n{type(e).__name__}",
             )
     finally:
-        if client_pool:
-            await client_pool.release(uid)
+        await db.set_running(uid, False)
         log(f"🔴 Worker:{uid} to'xtadi")
-      
+
 
 # ─────────────────────────────────────────────────────────────────────────
 # WORKER MANAGER
@@ -380,10 +403,12 @@ class WorkerManager:
 
     def __init__(self, max_workers: int | None = None):
         from config.config import MAX_CONCURRENT_WORKERS
+
         self.max_workers = max_workers or MAX_CONCURRENT_WORKERS
         self._workers: dict[int, dict] = {}  # uid -> {task, stop_event}
         self._shutdown_event = asyncio.Event()
         self._worker_factory = None
+        self._lock = asyncio.Lock()
 
     # ─────────────────────────────────────────────────────────────
     # SOZLASH
@@ -420,33 +445,47 @@ class WorkerManager:
     # ISHGA TUSHIRISH
     # ─────────────────────────────────────────────────────────────
     async def start_worker(self, uid: int) -> bool:
-        """Worker'ni ishga tushirish."""
-        if self.is_running(uid):
-            return False
+        """Worker'ni atomar ravishda ishga tushiradi."""
+        async with self._lock:
+            if self.is_running(uid):
+                return False
+            for stale_uid, info in list(self._workers.items()):
+                if info["task"].done():
+                    self._workers.pop(stale_uid, None)
+            if len(self._workers) >= self.max_workers:
+                log(f"⚠️ Worker limiti to'la ({self.max_workers})", "warning")
+                return False
+            if not self._worker_factory:
+                log("❌ Worker factory o'rnatilmagan", "error")
+                return False
 
-        if len(self._workers) >= self.max_workers:
-            log(f"⚠️ Worker limiti to'la ({self.max_workers})", "warning")
-            return False
-
-        if not self._worker_factory:
-            log("❌ Worker factory o'rnatilmagan", "error")
-            return False
-
-        stop_event = asyncio.Event()
-        task = asyncio.create_task(
-            self._worker_factory(uid, stop_event),
-            name=f"worker-{uid}",
-        )
-        self._workers[uid] = {"task": task, "stop_event": stop_event}
-        log(f"✅ Worker:{uid} boshlandi (jami {len(self._workers)})")
+            stop_event = asyncio.Event()
+            task = asyncio.create_task(
+                self._worker_factory(uid, stop_event),
+                name=f"worker-{uid}",
+            )
+            self._workers[uid] = {"task": task, "stop_event": stop_event}
+            task.add_done_callback(
+                lambda finished, worker_uid=uid: self._remove_finished(
+                    worker_uid, finished
+                )
+            )
+            total = len(self._workers)
+        log(f"✅ Worker:{uid} boshlandi (jami {total})")
         return True
+
+    def _remove_finished(self, uid: int, task: asyncio.Task) -> None:
+        info = self._workers.get(uid)
+        if info and info.get("task") is task:
+            self._workers.pop(uid, None)
 
     # ─────────────────────────────────────────────────────────────
     # TO'XTATISH
     # ─────────────────────────────────────────────────────────────
     async def stop_worker(self, uid: int, timeout: float = 10.0) -> bool:
         """Worker'ni to'xtatish (graceful)."""
-        info = self._workers.pop(uid, None)
+        async with self._lock:
+            info = self._workers.pop(uid, None)
         if not info:
             return False
 
@@ -460,7 +499,7 @@ class WorkerManager:
         except asyncio.TimeoutError:
             log(f"⚠️ Worker:{uid} timeout, cancel qilinadi", "warning")
             task.cancel()
-            with contextlib.suppress(Exception):
+            with contextlib.suppress(asyncio.CancelledError, Exception):
                 await task
         except Exception:
             pass
@@ -490,7 +529,8 @@ class WorkerManager:
     def stats(self) -> dict:
         """Workerlarning holati."""
         running = sum(
-            1 for info in self._workers.values()
+            1
+            for info in self._workers.values()
             if info["task"] and not info["task"].done()
         )
         return {
@@ -502,6 +542,7 @@ class WorkerManager:
     def get_running_uids(self) -> list[int]:
         """Ishlayotgan worker uidlari."""
         return [
-            uid for uid, info in self._workers.items()
+            uid
+            for uid, info in self._workers.items()
             if info["task"] and not info["task"].done()
         ]

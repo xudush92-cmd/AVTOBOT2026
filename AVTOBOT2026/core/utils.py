@@ -9,6 +9,7 @@ from __future__ import annotations
 import re
 from datetime import datetime, timedelta, timezone
 
+
 # ─────────────────────────────────────────────────────────────────────────
 # VAQT YORDAMCHILARI
 # ─────────────────────────────────────────────────────────────────────────
@@ -65,8 +66,9 @@ def is_expired(expires_iso: str | None) -> bool:
             tzinfo=timezone.utc
         )
         return now_utc() >= dt
-    except Exception:
-        return False
+    except (TypeError, ValueError):
+        # Noto'g'ri saqlangan tarif muddati cheklovni chetlab o'tmasin.
+        return True
 
 
 def is_last_day(expires_iso: str | None) -> bool:
@@ -107,21 +109,38 @@ def is_valid_phone(phone: str) -> bool:
 
 
 def is_valid_interval(value: int) -> bool:
-    """
-    Interval (vaqt) qiymatini tekshiradi.
+    """Posting oralig'ini xavfsiz diapazonda tekshiradi."""
+    from config.config import MAX_INTERVAL_MIN, MIN_INTERVAL_MIN
 
-    Minimum 5 daqiqa, maksimum yo'q.
-    """
-    from config.config import MIN_INTERVAL_MIN
-    return value >= MIN_INTERVAL_MIN
+    return MIN_INTERVAL_MIN <= value <= MAX_INTERVAL_MIN
+
+
+def _valid_name_part(part: str) -> bool:
+    letters = [char for char in part if char.isalpha()]
+    return len(letters) >= 2 and all(
+        char.isalpha() or char in "-'’ʻʼ`" for char in part
+    )
 
 
 def is_valid_name(name: str) -> bool:
-    """Ism/familiyani tekshiradi (kamida 2 harf)."""
+    """Bitta ism qismini tekshiradi: faqat harf, apostrof va defis."""
     if not name:
         return False
-    name = name.strip()
-    return 2 <= len(name) <= 64
+    value = name.strip()
+    return 2 <= len(value) <= 64 and _valid_name_part(value)
+
+
+def is_valid_full_name(name: str) -> bool:
+    """Ism va familiya bitta xabarda, kamida ikki to'g'ri qism bo'lishi kerak."""
+    if not name:
+        return False
+    value = " ".join(name.strip().split())
+    parts = value.split()
+    return (
+        3 <= len(value) <= 64
+        and len(parts) >= 2
+        and all(_valid_name_part(part) for part in parts)
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -172,6 +191,7 @@ def safe_unlink(path: str | None) -> None:
         return
     import contextlib
     import os
+
     with contextlib.suppress(Exception):
         if os.path.exists(path):
             os.remove(path)
@@ -184,6 +204,7 @@ def wipe_directory(path: str) -> None:
     import contextlib
     import os
     import shutil
+
     with contextlib.suppress(Exception):
         if os.path.isdir(path):
             shutil.rmtree(path, ignore_errors=True)

@@ -7,8 +7,6 @@ Server monitoring uchun (masalan, Uptime Robot).
 
 from __future__ import annotations
 
-import asyncio
-import json
 import time
 
 from aiohttp import web

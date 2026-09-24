@@ -11,18 +11,18 @@ Funksiyalar:
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import time
 
 from telegram import Update
 
+from bot import action_tokens
 from bot import keyboards as KB
-from bot import texts as T
 from config.config import SUPER_ADMIN
 from core import database as db
 from core.logger import log
-from core.utils import truncate
-
+from core.update_locks import user_update_lock
 
 # ─────────────────────────────────────────────────────────────────────────
 # APPLICATION (main.py da o'rnatiladi)
@@ -45,9 +45,30 @@ async def handle_admin_callback(update: Update, uid: int, data: str) -> None:
     if uid != SUPER_ADMIN:
         return
 
+    # Eski panel tugmasi yangi/admin FSM holatini aralashtirib yubormasin.
+    if data not in {"adm:noop", "adm:adduser:cancel"}:
+        from admin import broadcast
+        from bot.login import cleanup_login, user_states
+
+        if user_states.get(uid):
+            await cleanup_login(uid)
+        broadcast.broadcast_pending.pop(uid, None)
+
     # Orqaga — asosiy panel
     if data == "adm:back":
         await show_panel(update)
+        return
+
+    # Yangi foydalanuvchi qo'shish / jarayonni to'xtatish
+    if data == "adm:adduser:cancel":
+        from admin import admin_actions
+
+        await admin_actions.cancel_add_user(update, uid)
+        return
+    if data == "adm:adduser":
+        from admin import admin_actions
+
+        await admin_actions.begin_add_user(update, uid)
         return
 
     # Foydalanuvchilar ro'yxati (sahifalash bilan)
@@ -62,6 +83,17 @@ async def handle_admin_callback(update: Update, uid: int, data: str) -> None:
         await show_users(update, page=page)
         return
 
+    if data == "adm:pending":
+        await show_pending(update, page=0)
+        return
+    if data.startswith("adm:pending:"):
+        try:
+            page = int(data.split(":")[2])
+        except (ValueError, IndexError):
+            page = 0
+        await show_pending(update, page=page)
+        return
+
     # Statistika
     if data == "adm:stats":
         await show_stats(update)
@@ -70,19 +102,27 @@ async def handle_admin_callback(update: Update, uid: int, data: str) -> None:
     # Broadcast
     if data == "adm:broadcast":
         from admin import broadcast
+
         await broadcast.begin_broadcast(update)
         return
 
     # Bloklanganlar
     if data == "adm:blocked":
-        await show_blocked(update)
+        await show_blocked(update, page=0)
+        return
+    if data.startswith("adm:blocked:"):
+        try:
+            page = int(data.split(":")[2])
+        except (ValueError, IndexError):
+            page = 0
+        await show_blocked(update, page=page)
         return
 
     # DB panel
     if data == "adm:db":
+        action_tokens.clear(uid, "db:clearlogs")
         await q.edit_message_text(
-            "💾 MA'LUMOTLAR BAZASI\n\n"
-            "Kerakli amalni tanlang:",
+            "💾 MA'LUMOTLAR BAZASI\n\nKerakli amalni tanlang:",
             reply_markup=KB.kb_db_panel(),
         )
         return
@@ -107,8 +147,9 @@ async def handle_admin_callback(update: Update, uid: int, data: str) -> None:
 # ASOSIY PANEL
 # ─────────────────────────────────────────────────────────────────────────
 async def show_panel(update: Update) -> None:
-    """Asosiy admin panelni ko'rsatadi."""
+    """Asosiy admin panelni ko'rsatadi va eski tasdiqlarni bekor qiladi."""
     q = update.callback_query
+    action_tokens.clear(SUPER_ADMIN)
 
     stats = await db.get_stats()
     text = (
@@ -122,7 +163,7 @@ async def show_panel(update: Update) -> None:
     )
     with contextlib.suppress(Exception):
         await q.edit_message_text(text, reply_markup=KB.kb_admin_panel())
-      
+
 
 # ─────────────────────────────────────────────────────────────────────────
 # FOYDALANUVCHILAR RO'YXATI
@@ -146,12 +187,30 @@ async def show_users(update: Update, page: int = 0) -> None:
         "🟢 — ishlayapti\n"
         "⚪ — sessiya bor, to'xtatilgan\n"
         "🔑 — sessiya yo'q (login kerak)\n"
+        "⏳ — tasdiq kutilmoqda\n"
         "🚫 — bloklangan\n\n"
         "Tanlash uchun bosing:"
     )
     kb = KB.kb_users_list(users, page=page)
     with contextlib.suppress(Exception):
         await q.edit_message_text(text, reply_markup=kb)
+
+
+async def show_pending(update: Update, page: int = 0) -> None:
+    """Admin tasdig'ini kutayotgan arizalar ro'yxati."""
+    q = update.callback_query
+    users = await db.get_pending_users()
+    if not users:
+        await q.edit_message_text(
+            "✅ Tasdiq kutilayotgan arizalar yo'q.",
+            reply_markup=KB.kb_admin_back(),
+        )
+        return
+    await q.edit_message_text(
+        f"⏳ TASDIQ KUTILAYOTGANLAR ({len(users)} ta)\n\n"
+        "Arizani ochib, ism va telefonni tekshiring:",
+        reply_markup=KB.kb_pending_users(users, page=page),
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -164,10 +223,12 @@ async def show_stats(update: Update) -> None:
 
     # Worker statistikasi
     from bot.menu import worker_manager
+
     w_stats = worker_manager.stats() if worker_manager else {}
 
     # Pool statistikasi
     from worker.worker import client_pool
+
     p_stats = client_pool.stats() if client_pool else {}
 
     text = (
@@ -195,7 +256,7 @@ async def show_stats(update: Update) -> None:
 # ─────────────────────────────────────────────────────────────────────────
 # BLOKLANGANLAR
 # ─────────────────────────────────────────────────────────────────────────
-async def show_blocked(update: Update) -> None:
+async def show_blocked(update: Update, page: int = 0) -> None:
     """Bloklangan foydalanuvchilar ro'yxati."""
     q = update.callback_query
     users = await db.get_all_users()
@@ -210,15 +271,13 @@ async def show_blocked(update: Update) -> None:
         return
 
     text = f"🚫 BLOKLANGANLAR ({len(blocked)} ta)\n\nBlokdan chiqarish uchun bosing:"
-    kb = KB.kb_blocked_list(blocked)
+    kb = KB.kb_blocked_list(blocked, page=page)
     with contextlib.suppress(Exception):
         await q.edit_message_text(text, reply_markup=kb)
 
 
 async def handle_unblock(update: Update, admin_uid: int, data: str) -> None:
     """Blokdan chiqarish."""
-    q = update.callback_query
-
     if admin_uid != SUPER_ADMIN:
         return
 
@@ -227,16 +286,14 @@ async def handle_unblock(update: Update, admin_uid: int, data: str) -> None:
     except (ValueError, IndexError):
         return
 
-    await db.set_blocked(target, False)
-    log(f"🔓 Blokdan chiqarildi: {target}")
-    await q.edit_message_text(f"🔓 Blokdan chiqarildi: {target}")
+    from admin.admin_actions import action_unblock
 
-    with contextlib.suppress(Exception):
-        await application.bot.send_message(
-            target,
-            "✅ Hisobingiz blokdan chiqarildi.\n\n🔑 Login bosing.",
-            reply_markup=KB.kb_login(),
-        )
+    target_lock = user_update_lock(target)
+    if target_lock is user_update_lock(admin_uid):
+        await action_unblock(update, admin_uid, target)
+    else:
+        async with target_lock:
+            await action_unblock(update, admin_uid, target)
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -245,8 +302,8 @@ async def handle_unblock(update: Update, admin_uid: int, data: str) -> None:
 async def show_system(update: Update) -> None:
     """Tizim holati."""
     q = update.callback_query
-    from worker.health import START_TIME, _get_memory_info, format_status_message
     from bot.menu import worker_manager
+    from worker.health import START_TIME, _get_memory_info, format_status_message
     from worker.worker import client_pool
 
     uptime = int(time.time() - START_TIME)
@@ -258,7 +315,7 @@ async def show_system(update: Update) -> None:
 
     with contextlib.suppress(Exception):
         await q.edit_message_text(text, reply_markup=KB.kb_admin_back())
-      
+
 
 # ─────────────────────────────────────────────────────────────────────────
 # DB PANEL
@@ -270,58 +327,100 @@ async def handle_db_callback(update: Update, admin_uid: int, data: str) -> None:
     if admin_uid != SUPER_ADMIN:
         return
 
-    # Eksport
+    # Sessiya sirlarisiz eksport
     if data == "db:export":
-        from config.config import DB_PATH
-        import os
-        if os.path.exists(str(DB_PATH)):
-            size_kb = os.path.getsize(str(DB_PATH)) // 1024
-            with contextlib.suppress(Exception):
+        from datetime import datetime, timezone
+
+        from config.config import BACKUP_DIR
+        from core.utils import safe_unlink
+
+        BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+        export_path = BACKUP_DIR / (
+            f"avtobot_sanitized_{datetime.now(timezone.utc):%Y%m%d_%H%M%S_%f}.db"
+        )
+        try:
+            await db.backup_to(export_path, sanitize_sessions=True)
+            size_kb = export_path.stat().st_size // 1024
+            with export_path.open("rb") as document:
                 await application.bot.send_document(
                     admin_uid,
-                    document=open(str(DB_PATH), "rb"),
-                    filename="avtobot.db",
-                    caption=f"📥 SQLite baza ({size_kb} KB)",
+                    document=document,
+                    filename="avtobot_sanitized.db",
+                    caption=(
+                        f"📥 Sanitized SQLite baza ({size_kb} KB)\n"
+                        "🔒 session va pending_session chiqarib tashlangan"
+                    ),
                 )
             await q.edit_message_text(
-                "✅ Baza yuborildi.",
+                "✅ Sanitized baza yuborildi.",
                 reply_markup=KB.kb_db_panel(),
             )
-        else:
+        except Exception as exc:
+            log(f"DB eksport xatosi: {type(exc).__name__}", "error")
             await q.edit_message_text(
-                "❌ Baza topilmadi.",
+                "❌ Eksport yaratilmadi.",
                 reply_markup=KB.kb_db_panel(),
             )
+        finally:
+            safe_unlink(export_path)
         return
 
-    # Zaxira nusxa
+    # SQLite online backup va retention
     if data == "db:backup":
-        from config.config import DB_PATH
-        from datetime import datetime
-        import shutil
+        from datetime import datetime, timezone
+
+        from config.config import BACKUP_DIR, BACKUP_RETENTION
+
         try:
-            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-            backup = str(DB_PATH).replace(".db", f"_backup_{ts}.db")
-            shutil.copy2(str(DB_PATH), backup)
-            await q.edit_message_text(
-                f"✅ Zaxira nusxa yaratildi:\n`{backup}`",
-                reply_markup=KB.kb_db_panel(),
+            BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+            backup = BACKUP_DIR / (
+                f"avtobot_backup_{datetime.now(timezone.utc):%Y%m%d_%H%M%S_%f}.db"
             )
-        except Exception as e:
+            await db.backup_to(backup)
+            backups = sorted(
+                BACKUP_DIR.glob("avtobot_backup_*.db"),
+                key=lambda item: item.stat().st_mtime,
+                reverse=True,
+            )
+            for old in backups[BACKUP_RETENTION:]:
+                old.unlink(missing_ok=True)
             await q.edit_message_text(
-                f"❌ Zaxira xato: {e}",
+                f"✅ Izchil zaxira yaratildi: `{backup.name}`",
+                reply_markup=KB.kb_db_panel(),
+                parse_mode="Markdown",
+            )
+        except Exception as exc:
+            log(f"DB backup xatosi: {type(exc).__name__}", "error")
+            await q.edit_message_text(
+                "❌ Zaxira yaratilmadi.",
                 reply_markup=KB.kb_db_panel(),
             )
         return
 
     # Loglarni tozalash
-    if data == "db:clearlogs":
+    if data == "db:clearlogs:ask":
+        token = action_tokens.issue(admin_uid, "db:clearlogs")
+        await q.edit_message_text(
+            "⚠️ Server loglari qaytarib bo'lmaydigan tarzda tozalansinmi?",
+            reply_markup=KB.kb_clear_logs_confirm(token),
+        )
+        return
+
+    if data.startswith("db:clearlogs:confirm:"):
+        token = data.rsplit(":", 1)[-1]
+        if not action_tokens.consume(admin_uid, "db:clearlogs", token):
+            await q.edit_message_text(
+                "⚠️ Bu tasdiqlash oynasi eskirgan.",
+                reply_markup=KB.kb_db_panel(),
+            )
+            return
+
         from config.config import LOG_FILE
-        import os
+
         try:
-            if os.path.exists(str(LOG_FILE)):
-                size_mb = os.path.getsize(str(LOG_FILE)) / 1024 / 1024
-                open(str(LOG_FILE), "w").close()
+            if LOG_FILE.exists():
+                size_mb = LOG_FILE.stat().st_size / 1024 / 1024
+                await asyncio.to_thread(LOG_FILE.write_text, "", encoding="utf-8")
                 await q.edit_message_text(
                     f"✅ Log tozalandi ({size_mb:.1f} MB).",
                     reply_markup=KB.kb_db_panel(),
@@ -331,9 +430,10 @@ async def handle_db_callback(update: Update, admin_uid: int, data: str) -> None:
                     "❌ Log fayli topilmadi.",
                     reply_markup=KB.kb_db_panel(),
                 )
-        except Exception as e:
+        except OSError as exc:
+            log(f"Log tozalash xatosi: {type(exc).__name__}", "error")
             await q.edit_message_text(
-                f"❌ Xato: {e}",
+                "❌ Log faylini tozalab bo'lmadi.",
                 reply_markup=KB.kb_db_panel(),
             )
         return

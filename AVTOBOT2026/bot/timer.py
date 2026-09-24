@@ -12,11 +12,10 @@ from __future__ import annotations
 import time
 
 from telegram import Update
-from telegram.ext import ContextTypes
 
+from bot import action_tokens
 from bot import keyboards as KB
 from bot import texts as T
-from config.config import MIN_INTERVAL_MIN
 from core import database as db
 from core.logger import log
 from core.utils import is_valid_interval
@@ -33,7 +32,10 @@ async def begin_set_interval(update: Update) -> None:
     current = await db.get_interval(uid)
     user_states[uid] = {"step": "set_interval", "ts": time.time()}
 
-    await update.message.reply_text(T.ask_interval(current))
+    await update.message.reply_text(
+        T.ask_interval(current),
+        reply_markup=KB.kb_input_cancel(),
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -41,8 +43,6 @@ async def begin_set_interval(update: Update) -> None:
 # ─────────────────────────────────────────────────────────────────────────
 async def handle_set_interval(update: Update, text: str) -> None:
     """Foydalanuvchi yangi interval qiymatini kiritdi."""
-    from bot.login import user_states
-
     uid = update.effective_user.id
     value_text = text.strip()
 
@@ -58,19 +58,25 @@ async def handle_set_interval(update: Update, text: str) -> None:
         await update.message.reply_text(T.interval_invalid_min())
         return
 
-    # Maksimum yo'q — lekin 1 kundan oshsa ogohlantirish
+    # Bir kundan oshsa qo'shimcha tasdiq so'raymiz.
     if minutes > 1440:
         # 1 kundan oshsa — tasdiq so'raymiz
         from bot.login import user_states as us
+
+        token = action_tokens.issue(uid, "interval")
         us[uid] = {
             "step": "set_interval_confirm",
             "ts": time.time(),
             "value": minutes,
+            "token": token,
         }
         await update.message.reply_text(
             f"⚠️ Siz {minutes} daqiqa (~{minutes // 60} soat) kiritdingiz.\n\n"
             "Bu juda katta qiymat. Davom etamizmi?",
-            reply_markup=KB.kb_yes_no("intv:yes", "intv:no"),
+            reply_markup=KB.kb_yes_no(
+                f"intv:yes:{token}",
+                f"intv:no:{token}",
+            ),
         )
         return
 

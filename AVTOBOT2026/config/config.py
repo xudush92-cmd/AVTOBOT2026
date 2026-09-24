@@ -21,8 +21,7 @@ def _require(name: str) -> str:
     value = os.getenv(name)
     if not value:
         raise RuntimeError(
-            f"Environment variable '{name}' topilmadi. "
-            f".env faylini tekshiring."
+            f"Environment variable '{name}' topilmadi. .env faylini tekshiring."
         )
     return value
 
@@ -64,40 +63,47 @@ MAX_CONCURRENT_WORKERS: int = _int("MAX_CONCURRENT_WORKERS", 50)
 MAX_CLIENT_POOL: int = _int("MAX_CLIENT_POOL", 50)
 
 # ─────────────────────────────────────────────────────────────────────────
+# MAXFIY SESSIYALAR / BACKUP
+# ─────────────────────────────────────────────────────────────────────────
+SESSION_ENCRYPTION_KEY: str = os.getenv("SESSION_ENCRYPTION_KEY", "")
+BACKUP_RETENTION: int = max(1, _int("BACKUP_RETENTION", 7))
+
+# ─────────────────────────────────────────────────────────────────────────
 # POSTING SOZLAMALARI
 # ─────────────────────────────────────────────────────────────────────────
-MIN_INTERVAL_MIN: int = 5          # minimal interval (5 daqiqa)
-SEND_DELAY_S: int = 5              # guruhlar orasidagi pauza (soniya)
-JITTER_S: int = 300                # tasodifiy qo'shimcha vaqt (5 daqiqagacha)
-START_JITTER_S: int = 60           # worker birinchi start (1 daqiqagacha)
-MAX_GROUP_FAILS: int = 3           # guruh necha xato qilsa o'chiriladi
+MIN_INTERVAL_MIN: int = 5  # minimal interval (5 daqiqa)
+MAX_INTERVAL_MIN: int = 10080  # maksimal interval (7 kun)
+SEND_DELAY_S: int = 5  # guruhlar orasidagi pauza (soniya)
+JITTER_S: int = 300  # tasodifiy qo'shimcha vaqt (5 daqiqagacha)
+START_JITTER_S: int = 60  # worker birinchi start (1 daqiqagacha)
+MAX_GROUP_FAILS: int = 3  # guruh necha xato qilsa o'chiriladi
 
 # ─────────────────────────────────────────────────────────────────────────
 # LOGIN SOZLAMALARI
 # ─────────────────────────────────────────────────────────────────────────
-LOGIN_TIMEOUT_S: int = 600         # login jarayoni maksimal (10 daqiqa)
-SMS_MAX_ATTEMPTS: int = 3          # SMS kod qayta so'rash limiti
-SMS_COOLDOWN_MIN: int = 30         # 3 martadan keyin kutish (30 daqiqa)
-CODE_LENGTH: int = 5               # SMS kod uzunligi
-MAX_CODE_LENGTH: int = 6           # maksimal kod uzunligi
-MAX_WRONG_CODE: int = 5            # xato kod kiritish limiti
+LOGIN_TIMEOUT_S: int = 300  # login jarayoni maksimal (5 daqiqa)
+SMS_MAX_ATTEMPTS: int = 1  # muddati o'tgan kodni faqat 1 marta qayta so'rash
+SMS_COOLDOWN_MIN: int = 30  # keyingi qayta so'rovgacha kutish
+CODE_LENGTH: int = 5  # SMS kod uzunligi
+MAX_CODE_LENGTH: int = 6  # maksimal kod uzunligi
+MAX_WRONG_CODE: int = 5  # xato kod kiritish limiti
 
 # ─────────────────────────────────────────────────────────────────────────
 # MUDDAT SOZLAMALARI
 # ─────────────────────────────────────────────────────────────────────────
-DEFAULT_DURATION_DAYS: int = 30    # standart muddat (30 kun)
-WARN_HOUR_LOCAL: int = 9           # ogohlantirish yuboriladigan soat
-EXPIRY_CHECK_INTERVAL_S: int = 3600  # muddat tekshirish (har soat)
-JANITOR_INTERVAL_S: int = 60       # stale login tozalash (har daqiqa)
+DEFAULT_DURATION_DAYS: int = max(1, _int("DEFAULT_DURATION_DAYS", 30))
+EXPIRY_CHECK_INTERVAL_S: int = max(30, _int("EXPIRY_CHECK_INTERVAL_S", 60))
+JANITOR_INTERVAL_S: int = 60  # stale login tozalash (har daqiqa)
 
 # ─────────────────────────────────────────────────────────────────────────
 # RATE LIMIT
 # ─────────────────────────────────────────────────────────────────────────
-RATE_LIMIT_LOGIN: int = 3          # login urinishlari
-RATE_LIMIT_COMMAND: int = 30       # buyruqlar
-RATE_LIMIT_MESSAGE: int = 40       # xabarlar
-RATE_LIMIT_MODIFY: int = 20        # o'zgartirish amallari
-RATE_WINDOW_S: int = 60            # oyna vaqti (60 soniya)
+RATE_LIMIT_LOGIN: int = 3  # login urinishlari
+RATE_LIMIT_COMMAND: int = 30  # buyruqlar
+RATE_LIMIT_MESSAGE: int = 40  # xabarlar
+RATE_LIMIT_MODIFY: int = 20  # o'zgartirish amallari
+RATE_WINDOW_S: int = 60  # oddiy amallar oynasi (60 soniya)
+RATE_LIMIT_LOGIN_WINDOW_S: int = 3600  # login: 3 marta / 1 soat
 
 # ─────────────────────────────────────────────────────────────────────────
 # FAYL YO'LLARI
@@ -107,11 +113,18 @@ MEDIA_DIR: Path = BASE_DIR / "media"
 LOGS_DIR: Path = BASE_DIR / "logs"
 DB_PATH: Path = DATA_DIR / "avtobot.db"
 LOG_FILE: Path = LOGS_DIR / "avtobot.log"
+_backup_dir_value = Path(os.getenv("BACKUP_DIR", "backups")).expanduser()
+BACKUP_DIR: Path = (
+    _backup_dir_value
+    if _backup_dir_value.is_absolute()
+    else BASE_DIR / _backup_dir_value
+)
 
 # Papkalarni yaratish
 DATA_DIR.mkdir(exist_ok=True)
 MEDIA_DIR.mkdir(exist_ok=True)
 LOGS_DIR.mkdir(exist_ok=True)
+BACKUP_DIR.mkdir(parents=True, exist_ok=True)
 
 # ─────────────────────────────────────────────────────────────────────────
 # MUDDAT TUGMALARI (admin uchun tez tugmalar)

@@ -6,13 +6,7 @@ Bu fayl orqali botdagi har bir xabar matnini bir joydan boshqarish mumkin.
 
 from __future__ import annotations
 
-from config.config import (
-    ADMIN_CONTACT_PHONE,
-    MIN_INTERVAL_MIN,
-    SMS_MAX_ATTEMPTS,
-    SMS_COOLDOWN_MIN,
-)
-
+from config.config import ADMIN_CONTACT_PHONE, MAX_INTERVAL_MIN, MIN_INTERVAL_MIN
 
 # ─────────────────────────────────────────────────────────────────────────
 # UMUMIY
@@ -21,10 +15,10 @@ WELCOME_SHORT = (
     "🤖 AVTOBOT\n\n"
     "Telegram guruhlaringizga reklama postlarini avtomatik joylashtiruvchi bot.\n\n"
     "📌 Boshlash:\n"
-    "1. 🔑 Login bosing\n"
-    "2. Ism, familiya va telefonni kiriting\n"
-    "3. SMS kodni tugmalar orqali kiriting\n"
-    "4. Admin tasdiqlashini kuting\n\n"
+    "1. 🔑 Login bosib ism-familiyangizni bitta xabarda kiriting\n"
+    "2. Telefon raqamingizni kiriting\n"
+    "3. Admin tasdiqlashini kuting\n"
+    "4. Tasdiqdan keyin 🔑 Login bosib kodni tugmalarda kiriting\n\n"
     f"📱 Yordam: {ADMIN_CONTACT_PHONE}"
 )
 
@@ -34,39 +28,27 @@ ADMIN_CONTACT_LINE = f"📱 Admin: {ADMIN_CONTACT_PHONE}"
 # ─────────────────────────────────────────────────────────────────────────
 # BLOK
 # ─────────────────────────────────────────────────────────────────────────
-BLOCKED = (
-    "🚫 Bot to'xtatildi.\n\n"
-    f"Admin bilan bog'laning: {ADMIN_CONTACT_PHONE}"
+BLOCKED = f"🚫 Bot to'xtatildi.\n\nAdmin bilan bog'laning: {ADMIN_CONTACT_PHONE}"
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# LOGIN — ISM VA FAMILIYA
+# ─────────────────────────────────────────────────────────────────────────
+ASK_FULL_NAME = (
+    "📋 RO'YXATDAN O'TISH (1/2)\n\n"
+    "👤 Ism va familiyangizni bitta xabarda kiriting:\n\n"
+    "Masalan: Akmal Karimov"
 )
 
-
-# ─────────────────────────────────────────────────────────────────────────
-# LOGIN — ISM
-# ─────────────────────────────────────────────────────────────────────────
-ASK_NAME = (
-    "📋 RO'YXATDAN O'TISH (1/4)\n\n"
-    "👤 Ismingizni kiriting:\n\n"
-    "Masalan: Akmal"
+FULL_NAME_INVALID = (
+    "❌ Ism va familiyani to'liq, faqat harflar bilan kiriting.\n\n"
+    "Masalan: Akmal Karimov"
 )
 
-NAME_TOO_SHORT = "❌ Ism juda qisqa. Kamida 2 harf kiriting:"
-
-NAME_ACCEPTED = (
-    "✅ {name}\n\n"
-    "📋 RO'YXATDAN O'TISH (2/4)\n\n"
-    "👤 Familiyangizni kiriting:"
-)
-
-
-# ─────────────────────────────────────────────────────────────────────────
-# LOGIN — FAMILIYA
-# ─────────────────────────────────────────────────────────────────────────
-SURNAME_TOO_SHORT = "❌ Familiya juda qisqa. Kamida 2 harf kiriting:"
-
-SURNAME_ACCEPTED = (
+FULL_NAME_ACCEPTED = (
     "✅ {full_name}\n\n"
-    "📋 RO'YXATDAN O'TISH (3/4)\n\n"
-    "📱 Telefon raqamingizni yuboring:\n\n"
+    "📋 RO'YXATDAN O'TISH (2/2)\n\n"
+    "📱 Telegram telefon raqamingizni yuboring:\n\n"
     "Format: +998XXXXXXXXX"
 )
 
@@ -81,20 +63,24 @@ PHONE_INVALID = (
 )
 
 PHONE_ACCEPTED = (
-    "📱 {phone} raqamiga kod yuborilmoqda...\n\n"
-    "Telegram ilovangizdagi \"Telegram\" rasmiy chatidan kodni ko'ring."
+    "📱 {phone} raqami uchun kod so'ralmoqda...\n\n"
+    "ℹ️ Telethon login kodi odatda SMSga emas, Telegram ilovasidagi "
+    'rasmiy "Telegram" (777000) chatiga keladi.'
+)
+
+PHONE_ALREADY_USED = (
+    "❌ Bu telefon boshqa AVTOBOT foydalanuvchisiga biriktirilgan.\n\n"
+    f"Xato bo'lsa admin bilan bog'laning: {ADMIN_CONTACT_PHONE}"
 )
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# LOGIN — SMS KOD
+# LOGIN — TELEGRAM TASDIQ KODI
 # ─────────────────────────────────────────────────────────────────────────
-def numpad_text(buffer: str, hint: str = "") -> str:
-    """SMS kod kiritish oynasi matni."""
-    total = max(5, len(buffer))
-    display = " ".join(
-        buffer[i] if i < len(buffer) else "▪" for i in range(total)
-    )
+def numpad_text(buffer: str, hint: str = "", code_length: int = 5) -> str:
+    """Telegram tasdiq kodini kiritish oynasi matni."""
+    total = max(5, code_length, len(buffer))
+    display = " ".join("●" if i < len(buffer) else "▪" for i in range(total))
     text = (
         "🔑 TASDIQ KODI\n\n"
         "📩 Telegramdan kelgan kodni quyidagi tugmalar orqali kiriting.\n\n"
@@ -109,16 +95,19 @@ def numpad_text(buffer: str, hint: str = "") -> str:
     return text
 
 
-CODE_HINT_SENT = (
-    "📩 Kod yuborildi!\n"
-    "Telegram ilovangizdan kodni ko'ring va tugmalar orqali kiriting."
-)
+def code_hint_sent(destination: str) -> str:
+    """Telegram qaytargan haqiqiy yetkazish usulini ko'rsatadi."""
+    return (
+        "✅ Telegram kod so'rovini qabul qildi.\n"
+        f"📍 Yetkazish usuli: {destination}\n\n"
+        "Kod 1 daqiqada kelmasa, pastdagi 📷 QR Login tugmasini bosing."
+    )
+
 
 CODE_HINT_WRONG = "❌ Noto'g'ri kod ({count}/{max}). Qaytadan kiriting:"
 
 CODE_HINT_RESENT = (
-    "⏰ Yangi kod yuborildi!\n"
-    "Telegram ilovasidan ENG SO'NGGI kodni oling."
+    "⏰ Yangi kod yuborildi!\nTelegram ilovasidan ENG SO'NGGI kodni oling."
 )
 
 CODE_TOO_SHORT = "Kamida 5 ta raqam kiriting!"
@@ -131,10 +120,7 @@ CODE_MAX_WRONG = (
     f"📱 Yordam: {ADMIN_CONTACT_PHONE}"
 )
 
-CODE_EXPIRED = (
-    "⏰ Kod muddati tugadi.\n\n"
-    "Yangi kod so'ralmoqda..."
-)
+CODE_EXPIRED = "⏰ Kod muddati tugadi.\n\nYangi kod so'ralmoqda..."
 
 CODE_NOT_MATN = (
     "⚠️ Iltimos, kodni MATN sifatida yozmang!\n\n"
@@ -144,19 +130,64 @@ CODE_NOT_MATN = (
 
 CODE_CANCELLED = "❌ Login bekor qilindi."
 
-CODE_TIMEOUT = (
-    "⏰ Login vaqti tugadi.\n\n"
-    "Qaytadan 🔑 Login bosing."
-)
+CODE_TIMEOUT = "⏰ Login vaqti tugadi.\n\nQaytadan 🔑 Login bosing."
 
 
 # ─────────────────────────────────────────────────────────────────────────
 # SMS QAYTA SO'RASH LIMITI
 # ─────────────────────────────────────────────────────────────────────────
 SMS_LIMIT_REACHED = (
-    "⚠️ SMS kodni {attempts} marta so'radingiz.\n\n"
+    "⚠️ Tasdiq kodini {attempts} marta so'radingiz.\n\n"
     "Iltimos, {minutes} daqiqa kuting va qaytadan urinib ko'ring.\n\n"
     f"📱 Yordam: {ADMIN_CONTACT_PHONE}"
+)
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# LOGIN — QR (AWS/VPS UCHUN FALLBACK)
+# ─────────────────────────────────────────────────────────────────────────
+QR_PREPARING = "⏳ Xavfsiz QR Login tayyorlanmoqda..."
+
+QR_CAPTION = (
+    "📷 TELEGRAM QR LOGIN\n\n"
+    "1. Pastdagi «Telegramda tasdiqlash» tugmasini bosing; yoki\n"
+    "2. QR rasmni boshqa ekranda ochib, Telegram → Settings → Devices → "
+    "Link Desktop Device orqali skaner qiling.\n\n"
+    "⚠️ Tasdiqlasangiz, AVTOBOT guruhlarga sizning akkauntingiz nomidan "
+    "post yuborishi uchun Telegram sessiyasi yaratiladi.\n\n"
+    "⏱ QR qisqa vaqt amal qiladi."
+)
+
+QR_WAITING = (
+    "📷 QR tasdiqlanishi kutilmoqda.\n\n"
+    "Rasmdagi tugmani bosing yoki QR kodni Telegram Devices bo'limidan "
+    "skaner qiling."
+)
+
+QR_EXPIRED = (
+    "⏰ QR kod muddati tugadi.\n\nQaytadan 🔑 Login bosing va yangi QR yarating."
+)
+
+QR_WRONG_ACCOUNT = (
+    "❌ Boshqa Telegram akkaunti tasdiqlandi.\n\n"
+    "Bot bilan gaplashayotgan aynan shu akkaunt orqali QR Login qiling."
+)
+
+QR_ERROR = (
+    "❌ QR Login yakunlanmadi.\n\n"
+    "Qaytadan 🔑 Login bosing yoki birozdan keyin urinib ko'ring."
+)
+
+API_CREDENTIALS_INVALID = (
+    "❌ API_ID yoki API_HASH noto'g'ri.\n\n"
+    "Bu qiymatlar BotFather'dan emas, https://my.telegram.org → "
+    "API development tools bo'limidan olinishi kerak."
+)
+
+CODE_UNAVAILABLE = (
+    "❌ Telegram hozir tasdiq kodini bera olmadi.\n\n"
+    "Ko'p urinish bo'lgan bo'lsa bir necha soat kuting. AWS/VPS IP manzili "
+    "cheklangan bo'lsa, QR Login usulidan foydalaning."
 )
 
 
@@ -175,6 +206,13 @@ PASSWORD_WRONG = "❌ Noto'g'ri parol. Qaytadan kiriting:"
 # ─────────────────────────────────────────────────────────────────────────
 # LOGIN YAKUNLANGANDA
 # ─────────────────────────────────────────────────────────────────────────
+REGISTRATION_PENDING = (
+    "✅ Ro'yxatdan o'tish so'rovingiz qabul qilindi!\n\n"
+    "⏳ Avval admin sizni tasdiqlaydi. Shundan keyin 🔑 Login bosib "
+    "Telegram kodini so'raysiz.\n\n"
+    f"📞 Tezroq tasdiqlanish uchun: {ADMIN_CONTACT_PHONE}"
+)
+
 LOGIN_SUCCESS_PENDING = (
     "✅ Login muvaffaqiyatli!\n\n"
     "⏳ So'rovingiz admin tasdiqini kutmoqda.\n\n"
@@ -187,8 +225,7 @@ LOGIN_SUCCESS_APPROVED = (
 )
 
 LOGIN_ALREADY_PENDING = (
-    "⏳ So'rovingiz admin tasdiqini kutmoqda.\n\n"
-    f"📱 Admin: {ADMIN_CONTACT_PHONE}"
+    f"⏳ So'rovingiz admin tasdiqini kutmoqda.\n\n📱 Admin: {ADMIN_CONTACT_PHONE}"
 )
 
 LOGIN_NOT_APPROVED = (
@@ -219,9 +256,30 @@ USER_APPROVED = (
 )
 
 USER_REJECTED = (
-    "❌ So'rovingiz rad etildi.\n\n"
-    f"📞 Savollar uchun: {ADMIN_CONTACT_PHONE}"
+    f"❌ So'rovingiz rad etildi.\n\n📞 Savollar uchun: {ADMIN_CONTACT_PHONE}"
 )
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# SUPER ADMIN — FOYDALANUVCHI QO'SHISH
+# ─────────────────────────────────────────────────────────────────────────
+ADMIN_ADD_USER_FULL_NAME = (
+    "➕ FOYDALANUVCHI QO'SHISH (1/2)\n\n"
+    "👤 Foydalanuvchining ism va familiyasini bitta xabarda kiriting:\n\n"
+    "Masalan: Ali Valiyev"
+)
+
+ADMIN_ADD_USER_FULL_NAME_INVALID = (
+    "❌ Ism va familiyani to'liq, bitta xabarda kiriting.\n\nMasalan: Ali Valiyev"
+)
+
+ADMIN_ADD_USER_PHONE = (
+    "➕ FOYDALANUVCHI QO'SHISH (2/2)\n\n"
+    "📱 Foydalanuvchining Telegram telefon raqamini kiriting:\n\n"
+    "Format: +998XXXXXXXXX"
+)
+
+ADMIN_ADD_USER_CANCELLED = "❌ Foydalanuvchi qo'shish bekor qilindi."
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -231,8 +289,8 @@ def rate_limit_text(minutes: int) -> str:
     return (
         f"⏳ Juda ko'p so'rov yubordingiz.\n\n"
         f"{minutes} daqiqa kuting va qaytadan urinib ko'ring."
-)
-  
+    )
+
 
 # ─────────────────────────────────────────────────────────────────────────
 # MENYU TUGMALARI
@@ -241,12 +299,16 @@ BTN_START = "▶️ Start"
 BTN_STOP = "⛔ Stop"
 BTN_STATUS = "📊 Status"
 BTN_GROUPS = "💬 Guruhlar"
+BTN_POSTS = "📝 Postlar"
 BTN_ADD_GROUP = "➕ Guruh qo'shish"
 BTN_DEL_GROUP = "➖ Guruh o'chirish"
-BTN_ADD_POST = "📝 Post qo'shish"
+BTN_ADD_POST = "➕ Post qo'shish"
 BTN_DEL_POST = "🗑 Post o'chirish"
-BTN_TIMER = "⏰ Vaqt"
+BTN_TIMER = "⏱ Posting oralig'i"
 BTN_REFERRAL = "👥 Referal"
+BTN_ACCOUNT = "⚙️ Hisob"
+BTN_BACK = "⬅️ Orqaga"
+BTN_ADMIN_ADD_CANCEL = "❌ Sessiya yaratishni to'xtatish"
 BTN_ADMIN = "🖥 Super Admin"
 BTN_LOGIN = "🔑 Login"
 BTN_PENDING = "⏳ Tasdiq kutilmoqda..."
@@ -260,7 +322,8 @@ START_CONFIRM = (
     "▶️ Postingni boshlaymizmi?\n\n"
     "💬 {groups} ta guruhga\n"
     "📝 {posts} ta postdan navbatma-navbat\n"
-    "⏰ Har {interval} daqiqada yuboriladi."
+    "⏰ Keyingi sikl taxminan har {interval} daqiqada.\n"
+    "ℹ️ Anti-spam uchun 5 daqiqagacha tasodifiy farq bo'lishi mumkin."
 )
 
 START_NO_GROUPS = "❌ Avval ➕ Guruh qo'shing."
@@ -273,7 +336,8 @@ START_DONE = (
     "✅ Posting boshlandi!\n\n"
     "💬 {groups} ta guruh\n"
     "📝 {posts} ta post\n"
-    "⏰ Har {interval} daqiqada"
+    "⏰ Taxminiy oraliq: {interval} daqiqa\n"
+    "ℹ️ Anti-spam farqi: 5 daqiqagacha"
 )
 
 START_BUSY = "⚠️ Tizim band. Bir oz kuting va qaytadan urinib ko'ring."
@@ -316,7 +380,7 @@ def status_text(
         f"📅 Muddat: {expires}\n\n"
         f"💬 Guruhlar: {groups}\n"
         f"📝 Postlar: {posts}\n"
-        f"⏰ Vaqt: {interval} daqiqa"
+        f"⏱ Posting oralig'i: taxminan {interval} daqiqa"
     )
 
 
@@ -324,6 +388,7 @@ def status_text(
 # GURUHLAR
 # ─────────────────────────────────────────────────────────────────────────
 GROUPS_EMPTY = "❌ Guruhlar yo'q. ➕ Guruh qo'shish orqali qo'shing."
+
 
 def groups_list(groups: list[str]) -> str:
     lines = [f"💬 GURUHLAR ({len(groups)} ta):\n"]
@@ -342,6 +407,7 @@ ASK_ADD_GROUP = (
     "-1001234567890"
 )
 
+
 def groups_added_report(
     added: list[str], duplicates: list[str], errors: list[str]
 ) -> str:
@@ -351,7 +417,7 @@ def groups_added_report(
     for g in duplicates:
         lines.append(f"⚠️ {g} — allaqachon mavjud")
     for g in errors:
-        lines.append(f"❌ {g} — topilmadi")
+        lines.append(f"❌ {g}")
     lines.append("")
     lines.append(f"✅ Qo'shildi: {len(added)} ta")
     if duplicates:
@@ -381,31 +447,19 @@ ASK_ADD_POST = (
     "Bold, italic, link va barcha formatlash saqlanadi."
 )
 
-POST_ADDED = (
-    "✅ Saqlandi (#{n})\n"
-    "{kind}\n\n"
-    "{preview}"
-)
+POST_ADDED = "✅ Saqlandi (#{n})\n{kind}\n\n{preview}"
 
 POST_KIND_TEXT = "📝 Matn"
 POST_KIND_PHOTO = "🖼 Rasm + matn"
 POST_KIND_PHOTO_ONLY = "🖼 Faqat rasm"
 
-POST_EMPTY_ERROR = (
-    "❌ Bo'sh post qabul qilinmaydi.\n"
-    "Matn yoki rasm yuboring."
-)
+POST_EMPTY_ERROR = "❌ Bo'sh post qabul qilinmaydi.\nMatn yoki rasm yuboring."
 
-POST_PHOTO_ERROR = (
-    "❌ Rasmni saqlab bo'lmadi. Qaytadan urinib ko'ring."
-)
+POST_PHOTO_ERROR = "❌ Rasmni saqlab bo'lmadi. Qaytadan urinib ko'ring."
 
 ASK_DEL_POST = "🗑 O'chirish uchun postni tanlang:"
 
-POST_DELETED = (
-    "🗑 O'chirildi:\n"
-    "{preview}"
-)
+POST_DELETED = "🗑 O'chirildi:\n{preview}"
 
 POST_NOT_FOUND = "❌ Post topilmadi."
 
@@ -415,19 +469,26 @@ POST_NOT_FOUND = "❌ Post topilmadi."
 # ─────────────────────────────────────────────────────────────────────────
 def ask_interval(current: int) -> str:
     return (
-        f"⏰ VAQT\n\n"
-        f"Hozirgi: {current} daqiqa\n\n"
+        f"⏱ POSTING ORALIG'I\n\n"
+        f"Hozirgi: taxminan {current} daqiqa\n\n"
         f"Yangi qiymatni kiriting (daqiqada):\n"
-        f"Kamida {MIN_INTERVAL_MIN} daqiqa."
+        f"{MIN_INTERVAL_MIN}–{MAX_INTERVAL_MIN} daqiqa. Anti-spam uchun real vaqt "
+        f"5 daqiqagacha farq qilishi mumkin."
     )
 
+
 def interval_invalid_min() -> str:
-    return f"❌ Kamida {MIN_INTERVAL_MIN} daqiqa bo'lishi kerak."
+    return f"❌ {MIN_INTERVAL_MIN} dan {MAX_INTERVAL_MIN} gacha daqiqa kiriting."
+
 
 INTERVAL_INVALID_NUMBER = "❌ Faqat butun son kiriting. Qaytadan:"
 
+
 def interval_set(minutes: int) -> str:
-    return f"✅ Vaqt: {minutes} daqiqa"
+    return (
+        f"✅ Taxminiy posting oralig'i: {minutes} daqiqa.\n"
+        "ℹ️ Anti-spam uchun real vaqt 5 daqiqagacha farq qilishi mumkin."
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -484,8 +545,7 @@ EXPIRED_TEXT = (
 GENERIC_ERROR = "❌ Xatolik yuz berdi. Qaytadan urinib ko'ring."
 
 SESSION_INVALID = (
-    "🚫 Sessiyangiz Telegram tomonidan bekor qilindi.\n\n"
-    "Qaytadan 🔑 Login qiling."
+    "🚫 Sessiyangiz Telegram tomonidan bekor qilindi.\n\nQaytadan 🔑 Login qiling."
 )
 
 SESSION_EXPIRED_SEND = "🚫 Sessiyangiz bekor qilindi. Qaytadan 🔑 Login qiling."

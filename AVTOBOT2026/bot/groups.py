@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 
+from telegram import Update
 from telethon import TelegramClient
 from telethon.errors import (
     ChannelPrivateError,
@@ -22,15 +23,13 @@ from telethon.errors import (
     UsernameNotOccupiedError,
 )
 from telethon.sessions import StringSession
-from telegram import Update
-from telegram.ext import ContextTypes
 
 from bot import keyboards as KB
 from bot import texts as T
 from config.config import API_HASH, API_ID
 from core import database as db
 from core.logger import log
-from core.utils import parse_group_lines, truncate
+from core.utils import parse_group_lines
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -48,28 +47,38 @@ async def check_group_access(session_str: str, group: str) -> tuple[bool, str]:
         (False, 'flood')       — FloodWait
         (False, 'error')       — boshqa xatolik
     """
-    client = TelegramClient(StringSession(session_str), API_ID, API_HASH)
+    client: TelegramClient | None = None
     try:
+        client = TelegramClient(StringSession(session_str), API_ID, API_HASH)
         await asyncio.wait_for(client.connect(), timeout=20)
 
-        if not await client.is_user_authorized():
+        authorized = await asyncio.wait_for(client.is_user_authorized(), timeout=15)
+        if not authorized:
             return False, "invalid"
 
         # Entity'ni olish
-        if group.startswith("@"):
-            entity = await client.get_entity(group)
-        elif group.lstrip("-").isdigit():
-            entity = await client.get_entity(int(group))
-        elif group.startswith("https://t.me/") or group.startswith("t.me/"):
-            entity = await client.get_entity(group)
-        else:
-            entity = await client.get_entity(group)
+        entity_value: str | int = group
+        if group.lstrip("-").isdigit():
+            entity_value = int(group)
+        entity = await asyncio.wait_for(client.get_entity(entity_value), timeout=20)
 
-        # Yozish huquqini tekshirish
+        # Faqat entity mavjudligini emas, aynan yozish huquqini tekshiramiz.
         try:
-            await client.get_permissions(entity, "me")
+            permissions = await asyncio.wait_for(
+                client.get_permissions(entity, "me"), timeout=20
+            )
         except Exception:
-            pass
+            return False, "no_write"
+
+        can_send = getattr(permissions, "send_messages", None)
+        is_admin = bool(
+            getattr(permissions, "is_admin", False)
+            or getattr(permissions, "is_creator", False)
+        )
+        if can_send is False and not is_admin:
+            return False, "no_write"
+        if getattr(entity, "broadcast", False) and not is_admin:
+            return False, "no_write"
 
         return True, "ok"
 
@@ -82,11 +91,12 @@ async def check_group_access(session_str: str, group: str) -> tuple[bool, str]:
     except ValueError:
         return False, "invalid"
     except Exception as e:
-        log(f"check_group_access {group}: {type(e).__name__}: {e}", "warning")
+        log(f"check_group_access {group}: {type(e).__name__}", "warning")
         return False, "error"
     finally:
-        with contextlib.suppress(Exception):
-            await client.disconnect()
+        if client:
+            with contextlib.suppress(Exception):
+                await client.disconnect()
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -100,13 +110,29 @@ async def show_groups(update: Update) -> None:
     if not chats:
         await update.message.reply_text(
             T.GROUPS_EMPTY,
-            reply_markup=KB.kb_main(
-                running=await db.get_user(uid) and (await db.get_user(uid)).get("running"),
-            ),
+            reply_markup=KB.kb_groups_menu(),
         )
         return
 
-    await update.message.reply_text(T.groups_list(chats))
+    lines = [f"💬 GURUHLAR ({len(chats)} ta):"] + [
+        f"{index}. {chat}" for index, chat in enumerate(chats, 1)
+    ]
+    chunks: list[str] = []
+    current = ""
+    for line in lines:
+        candidate = f"{current}\n{line}" if current else line
+        if len(candidate) > 3800:
+            chunks.append(current)
+            current = line
+        else:
+            current = candidate
+    if current:
+        chunks.append(current)
+    for index, chunk in enumerate(chunks):
+        await update.message.reply_text(
+            chunk,
+            reply_markup=(KB.kb_groups_menu() if index == len(chunks) - 1 else None),
+        )
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -118,8 +144,11 @@ async def begin_add_groups(update: Update) -> None:
     from bot.login import user_states
 
     user_states[uid] = {"step": "add_group", "ts": __import__("time").time()}
-    await update.message.reply_text(T.ASK_ADD_GROUP)
-  
+    await update.message.reply_text(
+        T.ASK_ADD_GROUP,
+        reply_markup=KB.kb_input_cancel(),
+    )
+
 
 # ─────────────────────────────────────────────────────────────────────────
 # GURUH QO'SHISH — BULK
@@ -132,11 +161,11 @@ async def handle_add_groups(update: Update, text: str) -> None:
     from bot.login import user_states
 
     uid = update.effective_user.id
-    user_states.pop(uid, None)
 
     # Sessiyani olish
     session = await db.get_session(uid)
     if not session:
+        user_states.pop(uid, None)
         await update.message.reply_text(
             "❌ Sessiya topilmadi. Qaytadan 🔑 Login qiling.",
             reply_markup=KB.kb_login(),
@@ -148,8 +177,11 @@ async def handle_add_groups(update: Update, text: str) -> None:
     if not groups:
         await update.message.reply_text(
             "❌ Guruh topilmadi. Qaytadan yuboring:",
+            reply_markup=KB.kb_input_cancel(),
         )
         return
+
+    user_states.pop(uid, None)
 
     # Natija xabari
     msg = await update.message.reply_text(
@@ -181,6 +213,8 @@ async def handle_add_groups(update: Update, text: str) -> None:
                 errors.append(f"{group} (topilmadi)")
             elif reason == "private":
                 errors.append(f"{group} (yopiq)")
+            elif reason == "no_write":
+                errors.append(f"{group} (yozish huquqi yo'q)")
             else:
                 errors.append(f"{group} (xato)")
             continue
@@ -207,6 +241,10 @@ async def handle_add_groups(update: Update, text: str) -> None:
     report = T.groups_added_report(added, duplicates, errors)
     with contextlib.suppress(Exception):
         await msg.edit_text(report)
+    await update.message.reply_text(
+        "💬 Guruhlar menyusi",
+        reply_markup=KB.kb_groups_menu(),
+    )
 
     log(f"📊 Guruhlar: {uid} → +{len(added)} (⚠️{len(duplicates)} ❌{len(errors)})")
 
@@ -217,13 +255,13 @@ async def handle_add_groups(update: Update, text: str) -> None:
 async def begin_delete_groups(update: Update) -> None:
     """➖ Guruh o'chirish tugmasi bosilganda."""
     uid = update.effective_user.id
-    chats = await db.get_chats(uid)
+    groups = await db.get_chat_records(uid)
 
-    if not chats:
+    if not groups:
         await update.message.reply_text(T.GROUPS_EMPTY)
         return
 
     await update.message.reply_text(
         T.ASK_DEL_GROUP,
-        reply_markup=KB.kb_groups_delete(chats),
-      )
+        reply_markup=KB.kb_groups_delete(groups),
+    )
