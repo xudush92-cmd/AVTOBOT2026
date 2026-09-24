@@ -809,7 +809,7 @@ async def action_show_groups(update: Update, target: int, page: int = 0) -> None
     lines = [f"💬 GURUHLAR — {target} ({len(groups)} ta)\n"]
     if visible:
         for index, group in enumerate(visible, start + 1):
-            lines.append(f"{index}. {group['chat']}")
+            lines.append(f"{index}. {group['value']}")
         lines.append("\nGuruhni o'chirish uchun uning 🗑 tugmasini bosing.")
     else:
         lines.append(T.GROUPS_EMPTY)

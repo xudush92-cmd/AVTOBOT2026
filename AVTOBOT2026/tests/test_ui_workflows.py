@@ -199,6 +199,25 @@ class SelectedUserControlsTests(unittest.IsolatedAsyncioTestCase):
             <= posts
         )
 
+    async def test_admin_group_screen_renders_database_value_records(self) -> None:
+        update = SimpleNamespace(
+            callback_query=SimpleNamespace(edit_message_text=AsyncMock())
+        )
+        records = [{"id": 41, "uid": 2001, "value": "@one", "created_at": "2026-01-01"}]
+        with patch.object(
+            admin_actions.db,
+            "get_chat_records",
+            new=AsyncMock(return_value=records),
+        ):
+            await admin_actions.action_show_groups(update, 2001)
+
+        text = update.callback_query.edit_message_text.await_args.args[0]
+        markup = update.callback_query.edit_message_text.await_args.kwargs[
+            "reply_markup"
+        ]
+        self.assertIn("1. @one", text)
+        self.assertIn("uc:delg:2001:41:0", callback_data(markup))
+
     async def test_admin_can_delete_selected_users_group_and_post(self) -> None:
         update = SimpleNamespace(
             callback_query=SimpleNamespace(edit_message_text=AsyncMock())
