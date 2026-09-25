@@ -37,7 +37,9 @@ from bot import texts as T
 from config.config import (
     API_HASH,
     API_ID,
+    BACKUP_RETENTION,
     BOT_TOKEN,
+    CLEANUP_INTERVAL_S,
     EXPIRY_CHECK_INTERVAL_S,
     LOGIN_TIMEOUT_S,
     MAX_CLIENT_POOL,
@@ -51,7 +53,13 @@ from core import database as db
 from core.logger import log
 from core.rate_limit import RateLimiter
 from core.update_locks import user_operation_lock, user_update_lock
-from core.utils import is_valid_full_name, is_valid_phone, safe_unlink
+from core.utils import (
+    is_valid_full_name,
+    is_valid_phone,
+    prune_old_backups,
+    prune_orphan_media,
+    safe_unlink,
+)
 
 # Worker
 from worker import health as Health
@@ -258,6 +266,7 @@ async def _on_message_locked(
         "admin_set_interval",
         "admin_set_expire",
         "admin_broadcast",
+        "admin_user_message",
     ):
         if uid != SUPER_ADMIN:
             return
@@ -710,6 +719,32 @@ async def handle_admin_fsm(update: Update, uid: int, step: str, text: str) -> No
             )
         return
 
+    # ── FOYDALANUVCHIGA XABAR YUBORISH ──
+    if step == "admin_user_message":
+        Login.user_states.pop(uid, None)
+        if target is None:
+            await msg.reply_text(
+                "❌ Xatolik. Qaytadan urinib ko'ring.",
+                reply_markup=KB.kb_admin_panel(),
+            )
+            return
+        try:
+            await application.bot.send_message(int(target), text)
+            sent = True
+        except Exception:
+            sent = False
+        if sent:
+            log(f"✉️ Admin {uid} → {target} xabar yuborildi")
+        await msg.reply_text(
+            (
+                f"✅ Xabar yuborildi: {target}"
+                if sent
+                else "❌ Yuborilmadi (foydalanuvchi botni bloklagan bo'lishi mumkin)."
+            ),
+            reply_markup=await AA.user_card_markup(int(target)),
+        )
+        return
+
     # ── BROADCAST ──
     if step == "admin_broadcast":
         await BC.receive_broadcast(update)
@@ -913,6 +948,45 @@ async def tariff_janitor_loop(stop: asyncio.Event) -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────
+# CLEANUP JANITOR
+# ─────────────────────────────────────────────────────────────────────────
+async def cleanup_janitor_once() -> None:
+    """Ortiqcha ma'lumotlarni bir marta tozalaydi."""
+    # Bazada yo'q foydalanuvchilarning media (rasm) papkalari
+    with contextlib.suppress(Exception):
+        valid_uids = await db.get_all_uids()
+        removed = prune_orphan_media(valid_uids)
+        if removed:
+            log(f"🧹 Media: {removed} ta yetim papka o'chirildi")
+
+    # Eski backup/eksport nusxalari (disk to'lib ketmasligi uchun)
+    with contextlib.suppress(Exception):
+        removed = prune_old_backups(BACKUP_RETENTION)
+        if removed:
+            log(f"🧹 Zaxira: {removed} ta eski nusxa o'chirildi")
+
+    # Baza statistikasi va WAL hajmi
+    with contextlib.suppress(Exception):
+        await db.optimize_db()
+
+
+async def cleanup_janitor_loop(stop: asyncio.Event) -> None:
+    """Har CLEANUP_INTERVAL_S soniyada davriy tozalashni bajaradi."""
+    log("🧽 Cleanup janitor boshlandi")
+    try:
+        while not stop.is_set():
+            try:
+                await asyncio.wait_for(stop.wait(), timeout=CLEANUP_INTERVAL_S)
+                break
+            except asyncio.TimeoutError:
+                pass
+            with contextlib.suppress(Exception):
+                await cleanup_janitor_once()
+    except asyncio.CancelledError:
+        pass
+
+
+# ─────────────────────────────────────────────────────────────────────────
 # RESTORE
 # ─────────────────────────────────────────────────────────────────────────
 async def restore_running_workers() -> None:
@@ -938,6 +1012,10 @@ async def restore_running_workers() -> None:
                 continue
             if await worker_manager.start_worker(uid):
                 restored += 1
+            else:
+                # Worker boshlanmadi (limit band yoki xato) — holatni
+                # tuzatamiz, aks holda admin "ishlayapti" deb ko'radi.
+                await db.set_running(uid, False)
     log(f"🔁 {restored} ta worker tiklandi")
 
 
@@ -1036,6 +1114,12 @@ async def _main() -> None:
         name="tariff-janitor",
     )
 
+    cleanup_stop = asyncio.Event()
+    cleanup_task = asyncio.create_task(
+        cleanup_janitor_loop(cleanup_stop),
+        name="cleanup-janitor",
+    )
+
     # 11. Shutdown kutish
     try:
         await worker_manager.wait_shutdown()
@@ -1051,10 +1135,13 @@ async def _main() -> None:
 
         janitor_stop.set()
         tariff_stop.set()
+        cleanup_stop.set()
         with contextlib.suppress(Exception):
             await asyncio.wait_for(janitor_task, timeout=5)
         with contextlib.suppress(Exception):
             await asyncio.wait_for(tariff_task, timeout=5)
+        with contextlib.suppress(Exception):
+            await asyncio.wait_for(cleanup_task, timeout=5)
         with contextlib.suppress(Exception):
             await app.stop()
 

@@ -211,6 +211,79 @@ def wipe_directory(path: str) -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────
+# DAVRIY TOZALASH (JANITOR UCHUN)
+# ─────────────────────────────────────────────────────────────────────────
+def prune_orphan_media(valid_uids: set[int]) -> int:
+    """
+    Bazada yo'q foydalanuvchilarning media (rasm) papkalarini o'chiradi.
+
+    Foydalanuvchi o'chirilganda papka darhol tozalanadi; bu funksiya
+    kutilmagan to'xtash yoki eski nusxadan qolgan yetim papkalarni
+    yig'ishtirib oladi.
+
+    Returns:
+        O'chirilgan papkalar soni
+    """
+    import os
+
+    from config.config import MEDIA_DIR
+
+    try:
+        entries = os.listdir(MEDIA_DIR)
+    except OSError:
+        return 0
+
+    removed = 0
+    for name in entries:
+        if not name.isdigit():
+            continue
+        if int(name) in valid_uids:
+            continue
+        wipe_directory(str(MEDIA_DIR / name))
+        removed += 1
+    return removed
+
+
+def prune_old_backups(keep: int, min_age_s: int = 3600) -> int:
+    """
+    Eski zaxira nusxalarni o'chiradi, oxirgi {keep} tasini qoldiradi.
+
+    Faqat {min_age_s} soniyadan eski fayllar o'chiriladi — shu bilan hozir
+    yaratilayotgan eksport/backup fayliga tegib ketish xavfi bo'lmaydi.
+
+    Returns:
+        O'chirilgan fayllar soni
+    """
+    import os
+    import time
+
+    from config.config import BACKUP_DIR
+
+    keep = max(0, keep)
+    cutoff = time.time() - max(0, min_age_s)
+    removed = 0
+
+    for pattern in ("avtobot_backup_*.db", "avtobot_sanitized_*.db"):
+        try:
+            files = sorted(
+                BACKUP_DIR.glob(pattern),
+                key=os.path.getmtime,
+                reverse=True,
+            )
+        except OSError:
+            continue
+        for path in files[keep:]:
+            try:
+                if os.path.getmtime(path) > cutoff:
+                    continue
+            except OSError:
+                continue
+            safe_unlink(str(path))
+            removed += 1
+    return removed
+
+
+# ─────────────────────────────────────────────────────────────────────────
 # MATN QISQARTIRISH
 # ─────────────────────────────────────────────────────────────────────────
 def truncate(text: str, max_len: int = 60) -> str:

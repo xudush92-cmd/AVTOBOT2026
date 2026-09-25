@@ -822,3 +822,29 @@ async def is_tariff_expired(uid: int) -> bool:
     from core.utils import is_expired
 
     return is_expired(expires)
+
+
+# ─────────────────────────────────────────
+# DAVRIY XIZMAT AMALLARI
+# ─────────────────────────────────────────
+async def get_all_uids() -> set[int]:
+    """Barcha foydalanuvchi ID'lari (yetim media papkalarni tozalash uchun)."""
+    async with _conn().execute("SELECT uid FROM users") as cur:
+        return {int(row["uid"]) for row in await cur.fetchall()}
+
+
+async def optimize_db() -> None:
+    """
+    Bazani vaqti-vaqti bilan optimallashtiradi.
+
+    - PRAGMA optimize: query planner statistikasini yangilaydi
+    - wal_checkpoint(TRUNCATE): WAL faylini bazaga qo'shib, disk hajmini
+      ushlab turadi (uzoq ishlaganda WAL o'sib ketmasligi uchun)
+    """
+    try:
+        async with _write_lock:
+            await _conn().execute("PRAGMA optimize")
+            await _conn().execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            await _conn().commit()
+    except Exception as exc:
+        log(f"optimize_db xatosi: {type(exc).__name__}", "error")

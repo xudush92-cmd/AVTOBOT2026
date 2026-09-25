@@ -287,6 +287,11 @@ def kb_admin_panel() -> InlineKeyboardMarkup:
                 )
             ],
             [InlineKeyboardButton("👥 Foydalanuvchilar", callback_data="adm:users")],
+            [
+                InlineKeyboardButton(
+                    "🕓 Muddati tugaganlar", callback_data="adm:expired"
+                )
+            ],
             [InlineKeyboardButton("📊 Statistika", callback_data="adm:stats")],
             [InlineKeyboardButton("📢 Xabar yuborish", callback_data="adm:broadcast")],
             [InlineKeyboardButton("🚫 Bloklanganlar", callback_data="adm:blocked")],
@@ -443,6 +448,13 @@ def kb_user_card(
                 "⏱ Posting oralig'i", callback_data=f"uc:interval:{uid}"
             ),
             InlineKeyboardButton("⏰ Tarif muddati", callback_data=f"uc:expire:{uid}"),
+        ]
+    )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                "✉️ Xabar yuborish", callback_data=f"uc:msg:{uid}"
+            )
         ]
     )
 

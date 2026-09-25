@@ -94,6 +94,8 @@ MAX_WRONG_CODE: int = 5  # xato kod kiritish limiti
 DEFAULT_DURATION_DAYS: int = max(1, _int("DEFAULT_DURATION_DAYS", 30))
 EXPIRY_CHECK_INTERVAL_S: int = max(30, _int("EXPIRY_CHECK_INTERVAL_S", 60))
 JANITOR_INTERVAL_S: int = 60  # stale login tozalash (har daqiqa)
+# Davriy tozalash: yetim media, eski backup, WAL/statistika (standart 30 daqiqa)
+CLEANUP_INTERVAL_S: int = max(300, _int("CLEANUP_INTERVAL_S", 1800))
 
 # ─────────────────────────────────────────────────────────────────────────
 # RATE LIMIT

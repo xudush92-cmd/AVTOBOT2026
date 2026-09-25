@@ -377,6 +377,9 @@ async def _handle_user_card_target_locked(
     if action == "expire":
         await action_show_expire(update, admin_uid, target)
         return
+    if action == "msg":
+        await action_send_message(update, admin_uid, target)
+        return
     if action == "approve":
         await action_approve(update, admin_uid, target)
         return
@@ -1346,6 +1349,32 @@ async def _action_delete_locked(update: Update, admin_uid: int, target: int) -> 
     )
     with contextlib.suppress(Exception):
         await application.bot.send_message(target, "❌ Hisobingiz o'chirildi.")
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# FOYDALANUVCHIGA XABAR YUBORISH
+# ─────────────────────────────────────────────────────────────────────────
+async def action_send_message(
+    update: Update, admin_uid: int, target: int
+) -> None:
+    """
+    Admin tanlangan foydalanuvchiga bitta matnli xabar yozib yuboradi.
+
+    Botni tushunmayotgan userga admin tushuntirish yozishi uchun.
+    """
+    q = update.callback_query
+    login_states[admin_uid] = {
+        "step": "admin_user_message",
+        "ts": time.time(),
+        "target_uid": target,
+    }
+    await q.edit_message_text(
+        f"✉️ XABAR YUBORISH\n\n"
+        f"Foydalanuvchi: {target}\n\n"
+        f"Yubormoqchi bo'lgan matnni shu yerning o'ziga yozing.\n"
+        f"Xabar to'g'ridan-to'g'ri foydalanuvchiga boradi.",
+        reply_markup=KB.kb_admin_section_back(target, "back"),
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────

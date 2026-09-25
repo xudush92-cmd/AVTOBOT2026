@@ -106,6 +106,11 @@ async def handle_admin_callback(update: Update, uid: int, data: str) -> None:
         await broadcast.begin_broadcast(update)
         return
 
+    # Muddati tugaganlar
+    if data == "adm:expired":
+        await show_expired(update)
+        return
+
     # Bloklanganlar
     if data == "adm:blocked":
         await show_blocked(update, page=0)
@@ -211,6 +216,34 @@ async def show_pending(update: Update, page: int = 0) -> None:
         "Arizani ochib, ism va telefonni tekshiring:",
         reply_markup=KB.kb_pending_users(users, page=page),
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# MUDDATI TUGAGANLAR
+# ─────────────────────────────────────────────────────────────────────────
+async def show_expired(update: Update) -> None:
+    """Muddati tugagan foydalanuvchilar ro'yxati."""
+    q = update.callback_query
+    from core.utils import is_expired
+
+    users = await db.get_all_users()
+    expired = [u for u in users if is_expired(u.get("tariff_expires_at"))]
+
+    if not expired:
+        with contextlib.suppress(Exception):
+            await q.edit_message_text(
+                "✅ Muddati tugagan foydalanuvchilar yo'q.",
+                reply_markup=KB.kb_admin_back(),
+            )
+        return
+
+    text = (
+        f"🕓 MUDDATI TUGAGANLAR ({len(expired)} ta)\n\n"
+        "Muddatni uzaytirish uchun foydalanuvchini tanlang:"
+    )
+    kb = KB.kb_users_list(expired)
+    with contextlib.suppress(Exception):
+        await q.edit_message_text(text, reply_markup=kb)
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -416,11 +449,14 @@ async def handle_db_callback(update: Update, admin_uid: int, data: str) -> None:
             return
 
         from config.config import LOG_FILE
+        from core.logger import clear_log_file
 
         try:
             if LOG_FILE.exists():
                 size_mb = LOG_FILE.stat().st_size / 1024 / 1024
-                await asyncio.to_thread(LOG_FILE.write_text, "", encoding="utf-8")
+                # Faylni tashqaridan ustidan yozish handler'ni buzadi; ochiq
+                # oqimni truncate qilamiz.
+                await asyncio.to_thread(clear_log_file)
                 await q.edit_message_text(
                     f"✅ Log tozalandi ({size_mb:.1f} MB).",
                     reply_markup=KB.kb_db_panel(),
