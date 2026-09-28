@@ -543,11 +543,9 @@ async def handle_admin_fsm(update: Update, uid: int, step: str, text: str) -> No
             await msg.reply_text("❌ Xatolik.")
             return
 
-        from bot.groups import check_group_access, group_reason_text
-        from core.utils import group_reference_key, parse_group_lines
+        from core.utils import group_reference_key, parse_group_lines_with_errors
 
-        session = await db.get_session(target)
-        if not session:
+        if not await db.get_session(target):
             Login.user_states.pop(uid, None)
             await msg.reply_text(
                 f"❌ {target} sessiyasi yo'q.",
@@ -555,15 +553,18 @@ async def handle_admin_fsm(update: Update, uid: int, step: str, text: str) -> No
             )
             return
 
-        groups = parse_group_lines(text)
+        groups, invalid = parse_group_lines_with_errors(text)
         if not groups:
-            await msg.reply_text("❌ Guruh topilmadi. Qaytadan yuboring:")
+            await msg.reply_text(
+                "❌ Guruh topilmadi yoki formati noto'g'ri. Qaytadan yuboring:"
+            )
             return
 
         Login.user_states.pop(uid, None)
-        status = await msg.reply_text(f"⏳ {len(groups)} ta guruh tekshirilmoqda...")
+        status = await msg.reply_text(f"⏳ {len(groups)} ta guruh saqlanmoqda...")
 
-        added, duplicates, errors = [], [], []
+        added, duplicates = [], []
+        errors = [f"{value} (noto'g'ri format)" for value in invalid]
         existing = {group_reference_key(value) for value in await db.get_chats(target)}
 
         for group in groups:
@@ -571,10 +572,7 @@ async def handle_admin_fsm(update: Update, uid: int, step: str, text: str) -> No
             if group_key in existing:
                 duplicates.append(group)
                 continue
-            ok, reason = await check_group_access(session, group)
-            if not ok:
-                errors.append(f"{group} ({group_reason_text(reason)})")
-                continue
+            # Formatdan tashqari Telegram tarmog'i bu bosqichda tekshirilmaydi.
             saved, save_reason = await db.add_chat(target, group)
             if saved:
                 added.append(group)

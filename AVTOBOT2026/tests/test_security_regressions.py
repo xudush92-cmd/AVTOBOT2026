@@ -6,6 +6,7 @@ import stat
 import tempfile
 import unittest
 from pathlib import Path
+from typing import ClassVar
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -281,11 +282,13 @@ class CallbackAuthorizationTests(unittest.IsolatedAsyncioTestCase):
 
 
 class FakeTelegramClient:
-    instances: list["FakeTelegramClient"] = []
+    instances: ClassVar[list[FakeTelegramClient]] = []
 
-    def __init__(self, *_args, **_kwargs):
+    def __init__(self, session, *_args, **_kwargs):
+        self.uid = {"session-one": 1, "session-two": 2}[session]
         self.connected = False
         self.disconnected = False
+        self.me_checks = 0
         self.__class__.instances.append(self)
 
     async def connect(self) -> None:
@@ -295,8 +298,9 @@ class FakeTelegramClient:
         self.connected = False
         self.disconnected = True
 
-    async def is_user_authorized(self) -> bool:
-        return True
+    async def get_me(self):
+        self.me_checks += 1
+        return SimpleNamespace(id=self.uid)
 
     def is_connected(self) -> bool:
         return self.connected

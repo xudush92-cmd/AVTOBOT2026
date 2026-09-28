@@ -77,8 +77,21 @@ class ClientPool:
         with contextlib.suppress(Exception):
             await client.disconnect()
 
-    async def acquire(self, uid: int, session_str: str) -> TelegramClient:
-        """Client oladi; idle LRU clientni zarur bo'lsa chiqarib yuboradi."""
+    @staticmethod
+    async def _check_me(client: TelegramClient, uid: int) -> None:
+        """get_me orqali haqiqiy akkauntni tekshiradi; flood/timeout yuqoriga o'tadi.
+
+        is_user_authorized() har qanday RPCError (FloodWait ham) uchun False
+        qaytaradi, shu sababli uni sessiya yaroqsizligi uchun ishlatmaymiz.
+        """
+        me = await asyncio.wait_for(client.get_me(), timeout=15)
+        if me is None or getattr(me, "id", None) != uid:
+            raise SessionInvalidError(f"uid={uid} sessiya yaroqsiz yoki boshqa akkaunt")
+
+    async def acquire(
+        self, uid: int, session_str: str, *, verify: bool = False
+    ) -> TelegramClient:
+        """Client oladi; Start'da keshlangan clientni ham get_me bilan tekshiradi."""
         uid = int(uid)
         if not session_str:
             raise SessionInvalidError(f"uid={uid} sessiya yo'q")
@@ -97,15 +110,33 @@ class ClientPool:
                 await self._disconnect(stale.client)
 
             if existing:
-                if not existing.client.is_connected():
-                    try:
+                try:
+                    if not existing.client.is_connected():
                         await asyncio.wait_for(existing.client.connect(), timeout=20)
-                    except Exception as exc:
-                        async with self._lock:
-                            if self._pool.get(uid) is existing:
-                                self._pool.pop(uid, None)
-                        await self._disconnect(existing.client)
-                        raise PoolBusyError(f"uid={uid} qayta ulanmadi") from exc
+                    if verify:
+                        await self._check_me(existing.client, uid)
+                except (asyncio.CancelledError, Exception) as exc:
+                    async with self._lock:
+                        if self._pool.get(uid) is existing:
+                            self._pool.pop(uid, None)
+                    await self._disconnect(existing.client)
+                    if isinstance(exc, asyncio.CancelledError):
+                        raise
+                    if isinstance(exc, SessionInvalidError):
+                        raise
+                    if isinstance(
+                        exc, (AuthKeyUnregisteredError, UserDeactivatedBanError)
+                    ):
+                        raise SessionInvalidError(
+                            f"uid={uid} {type(exc).__name__}"
+                        ) from exc
+                    log(
+                        f"⚠️ Pool client vaqtincha xato {uid}: {type(exc).__name__}",
+                        "warning",
+                    )
+                    raise PoolBusyError(
+                        f"uid={uid} qayta ulanib/tekshirib bo'lmadi"
+                    ) from exc
                 async with self._lock:
                     if self._pool.get(uid) is not existing:
                         raise PoolBusyError(f"uid={uid} client almashtirildi")
@@ -137,12 +168,17 @@ class ClientPool:
 
             client: TelegramClient | None = None
             try:
-                client = TelegramClient(
-                    StringSession(session_str), self.api_id, self.api_hash
-                )
+                try:
+                    parsed_session = StringSession(session_str)
+                except (TypeError, ValueError) as exc:
+                    raise SessionInvalidError(
+                        f"uid={uid} sessiya formati yaroqsiz"
+                    ) from exc
+                client = TelegramClient(parsed_session, self.api_id, self.api_hash)
                 await asyncio.wait_for(client.connect(), timeout=20)
-                if not await asyncio.wait_for(client.is_user_authorized(), timeout=15):
-                    raise SessionInvalidError(f"uid={uid} sessiya yaroqsiz")
+                # Yangi (shu jumladan restartda tiklangan) sessiya bir marta
+                # tekshiriladi. Keshlangan clientlar faqat Start'da tekshiriladi.
+                await self._check_me(client, uid)
             except asyncio.CancelledError:
                 if client:
                     await self._disconnect(client)
@@ -151,14 +187,10 @@ class ClientPool:
                 if client:
                     await self._disconnect(client)
                 raise SessionInvalidError(f"uid={uid} {type(exc).__name__}") from exc
-            except (ValueError, SessionInvalidError) as exc:
+            except SessionInvalidError:
                 if client:
                     await self._disconnect(client)
-                if isinstance(exc, SessionInvalidError):
-                    raise
-                raise SessionInvalidError(
-                    f"uid={uid} sessiya formati yaroqsiz"
-                ) from exc
+                raise
             except Exception as exc:
                 if client:
                     await self._disconnect(client)
@@ -202,12 +234,17 @@ class ClientPool:
                 log(f"🌊 Pool: -client {uid} (jami {len(self._pool)})")
 
     @asynccontextmanager
-    async def lease(self, uid: int, session_str: str):
-        client = await self.acquire(uid, session_str)
+    async def lease(self, uid: int, session_str: str, *, verify: bool = False):
+        client = await self.acquire(uid, session_str, verify=verify)
         try:
             yield client
         finally:
             await self.release(uid)
+
+    async def verify_session(self, uid: int, session_str: str) -> None:
+        """Start uchun bitta get_me; sessiyani DB'da o'zgartirmaydi."""
+        async with self.lease(uid, session_str, verify=True):
+            pass
 
     def stats(self) -> dict:
         total = len(self._pool)

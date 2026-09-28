@@ -5,7 +5,7 @@ Funksiyalar:
 - Bulk qo'shish (bir nechta guruhni bir marta)
 - O'chirish
 - Ro'yxatni ko'rsatish
-- Telegram'da guruhni tekshirish
+- Qo'shishda faqat formatni tekshirish; postingda Telegram entity'ni topish
 """
 
 from __future__ import annotations
@@ -34,7 +34,11 @@ from bot import texts as T
 from config.config import API_HASH, API_ID
 from core import database as db
 from core.logger import log
-from core.utils import group_reference_key, normalize_group_reference, parse_group_lines
+from core.utils import (
+    group_reference_key,
+    normalize_group_reference,
+    parse_group_lines_with_errors,
+)
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -188,15 +192,15 @@ async def check_group_access(session_str: str, group: str) -> tuple[bool, str]:
         client = TelegramClient(StringSession(session_str), API_ID, API_HASH)
         await asyncio.wait_for(client.connect(), timeout=20)
 
-        authorized = await asyncio.wait_for(client.is_user_authorized(), timeout=15)
-        if not authorized:
+        # is_user_authorized() FloodWait'ni ham False ga aylantiradi.
+        me = await asyncio.wait_for(client.get_me(), timeout=15)
+        if me is None:
             return False, "unauthorized"
 
         entity = await asyncio.wait_for(resolve_group_entity(client, group), timeout=30)
         if bool(getattr(entity, "left", False)):
             return False, "not_member"
 
-        me = await asyncio.wait_for(client.get_me(), timeout=15)
         try:
             permissions = await asyncio.wait_for(
                 client.get_permissions(entity, me), timeout=20
@@ -289,15 +293,14 @@ async def begin_add_groups(update: Update) -> None:
 async def handle_add_groups(update: Update, text: str) -> None:
     """
     Foydalanuvchi bir yoki bir nechta guruh yuboradi.
-    Har birini tekshirib, natijani ko'rsatamiz.
+    Faqat formatni tekshirib saqlaymiz; Telegram'ga ulanmaymiz.
     """
     from bot.login import user_states
 
     uid = update.effective_user.id
 
-    # Sessiyani olish
-    session = await db.get_session(uid)
-    if not session:
+    # Mavjud hisob sessiyasini o'zgartirmaymiz; faqat borligini tekshiramiz.
+    if not await db.get_session(uid):
         user_states.pop(uid, None)
         await update.message.reply_text(
             "❌ Sessiya topilmadi. Qaytadan 🔑 Login qiling.",
@@ -305,29 +308,23 @@ async def handle_add_groups(update: Update, text: str) -> None:
         )
         return
 
-    # Qatorlarni ajratish
-    groups = parse_group_lines(text)
+    groups, invalid = parse_group_lines_with_errors(text)
     if not groups:
         await update.message.reply_text(
-            "❌ Guruh topilmadi. Qaytadan yuboring:",
+            "❌ Guruh topilmadi yoki formati noto'g'ri. Qaytadan yuboring:",
             reply_markup=KB.kb_input_cancel(),
         )
         return
 
     user_states.pop(uid, None)
 
-    # Natija xabari
-    msg = await update.message.reply_text(
-        f"⏳ {len(groups)} ta guruh tekshirilmoqda...\n"
-        "Bu bir necha daqiqa olishi mumkin."
-    )
+    msg = await update.message.reply_text(f"⏳ {len(groups)} ta guruh saqlanmoqda...")
 
     added: list[str] = []
     duplicates: list[str] = []
-    errors: list[str] = []
+    errors = [f"{value} (noto'g'ri format)" for value in invalid]
     existing = {group_reference_key(value) for value in await db.get_chats(uid)}
 
-    # Har bir guruhni tekshirish
     for i, group in enumerate(groups, 1):
         # Bir guruh URL va @username bilan qayta qo'shilmasin.
         group_key = group_reference_key(group)
@@ -335,16 +332,7 @@ async def handle_add_groups(update: Update, text: str) -> None:
             duplicates.append(group)
             continue
 
-        # Telegram'da tekshirish
-        ok, reason = await check_group_access(session, group)
-
-        if not ok:
-            errors.append(f"{group} ({group_reason_text(reason)})")
-            if reason == "flood":
-                await asyncio.sleep(3)
-            continue
-
-        # Bazaga canonical ko'rinishda qo'shish
+        # Telegram'da hech qanday tekshiruv yo'q — faqat format va DB.
         saved, save_reason = await db.add_chat(uid, group)
         if saved:
             added.append(group)
@@ -358,7 +346,7 @@ async def handle_add_groups(update: Update, text: str) -> None:
         if i % 5 == 0:
             with contextlib.suppress(Exception):
                 await msg.edit_text(
-                    f"⏳ {i}/{len(groups)} tekshirildi...\n"
+                    f"⏳ {i}/{len(groups)} saqlandi...\n"
                     f"✅ {len(added)} | ⚠️ {len(duplicates)} | ❌ {len(errors)}"
                 )
 

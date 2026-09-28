@@ -342,6 +342,17 @@ START_DONE = (
 
 START_BUSY = "⚠️ Tizim band. Bir oz kuting va qaytadan urinib ko'ring."
 
+START_SESSION_INVALID = (
+    "🚫 Telegram sessiyasini tasdiqlab bo'lmadi (bekor qilingan yoki boshqa "
+    "akkaunt). Sessiya saqlandi; Hisob bo'limidan tekshiring yoki admin bilan "
+    "bog'laning."
+)
+
+START_SESSION_RETRY = (
+    "⏳ Telegram vaqtincha javob bermadi yoki FloodWait berdi. Sessiya saqlandi; "
+    "keyinroq Start'ni qayta bosing."
+)
+
 STOP_CONFIRM = "⛔ Postingni to'xtatasizmi?"
 
 STOP_NOT_RUNNING = "⚠️ Hozir ishlamayapti."
@@ -400,8 +411,9 @@ def groups_list(groups: list[str]) -> str:
 ASK_ADD_GROUP = (
     "➕ GURUH QO'SHISH\n\n"
     "Bir yoki bir nechta guruhni yuboring — har biri YANGI QATORDA.\n"
-    "Ulangan Telegram akkaunti guruhga avvaldan a'zo va yozish huquqiga "
-    "ega bo'lishi kerak. Bot guruhga avtomatik kirmaydi.\n\n"
+    "Qo'shishda faqat havola/ID formati tekshiriladi, Telegram'ga ulanilmaydi. "
+    "Post yuborish uchun akkaunt guruhga a'zo va yozish huquqiga ega bo'lishi "
+    "kerak; bot avtomatik kirmaydi.\n\n"
     "Qabul qilinadi:\n"
     "@guruh_username\n"
     "https://t.me/guruh_username\n"

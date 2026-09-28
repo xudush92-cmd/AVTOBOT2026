@@ -12,6 +12,7 @@ dist/
 
 # Virtual muhit
 venv/
+.venv/
 env/
 ENV/
 
