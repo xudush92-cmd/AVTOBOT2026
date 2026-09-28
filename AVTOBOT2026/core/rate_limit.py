@@ -12,22 +12,29 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 
 from config.config import (
-    RATE_LIMIT_LOGIN,
     RATE_LIMIT_COMMAND,
+    RATE_LIMIT_LOGIN,
+    RATE_LIMIT_LOGIN_WINDOW_S,
     RATE_LIMIT_MESSAGE,
     RATE_LIMIT_MODIFY,
     RATE_WINDOW_S,
 )
 
-
 # ─────────────────────────────────────────────────────────────────────────
 # AMAL LIMITLARI
 # ─────────────────────────────────────────────────────────────────────────
 LIMITS: dict[str, int] = {
-    "login": RATE_LIMIT_LOGIN,       # login urinishlari
-    "command": RATE_LIMIT_COMMAND,   # /start va h.k.
-    "message": RATE_LIMIT_MESSAGE,   # oddiy xabarlar
-    "modify": RATE_LIMIT_MODIFY,     # guruh/post o'zgartirish
+    "login": RATE_LIMIT_LOGIN,  # login urinishlari
+    "command": RATE_LIMIT_COMMAND,  # /start va h.k.
+    "message": RATE_LIMIT_MESSAGE,  # oddiy xabarlar
+    "modify": RATE_LIMIT_MODIFY,  # guruh/post o'zgartirish
+}
+
+WINDOWS: dict[str, int] = {
+    "login": RATE_LIMIT_LOGIN_WINDOW_S,  # Telegram auth: 3 marta / soat
+    "command": RATE_WINDOW_S,
+    "message": RATE_WINDOW_S,
+    "modify": RATE_WINDOW_S,
 }
 
 
@@ -37,6 +44,7 @@ LIMITS: dict[str, int] = {
 @dataclass
 class UserRecord:
     """Bitta foydalanuvchining amallari vaqtlari."""
+
     # action -> [timestamp, timestamp, ...]
     timestamps: dict[str, list[float]] = field(
         default_factory=lambda: defaultdict(list)
@@ -52,9 +60,7 @@ class UserRecord:
 
     def cleanup(self, action: str, since: float) -> None:
         """Eski yozuvlarni tozalaydi."""
-        self.timestamps[action] = [
-            ts for ts in self.timestamps[action] if ts >= since
-        ]
+        self.timestamps[action] = [ts for ts in self.timestamps[action] if ts >= since]
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -74,9 +80,17 @@ class RateLimiter:
             print(f"{wait} daqiqa kuting")
     """
 
-    def __init__(self, window_s: int = RATE_WINDOW_S) -> None:
-        self.window_s = window_s
+    def __init__(self, window_s: int | None = None) -> None:
+        # Testlar/maxsus holatlar uchun berilgan window barcha actionlarga
+        # qo'llanadi. Standart holatda login oynasi alohida — 1 soat.
+        self._custom_window_s = window_s
+        self.window_s = window_s if window_s is not None else RATE_WINDOW_S
         self._records: dict[int, UserRecord] = {}
+
+    def _window_for(self, action: str) -> int:
+        if self._custom_window_s is not None:
+            return self._custom_window_s
+        return WINDOWS.get(action, RATE_WINDOW_S)
 
     # ─────────────────────────────────────────────────────────────
     # ASOSIY TEKSHIRUV
@@ -94,7 +108,7 @@ class RateLimiter:
             return True  # noma'lum amal — cheklov yo'q
 
         now = time.time()
-        since = now - self.window_s
+        since = now - self._window_for(action)
 
         record = self._records.get(uid)
         if record is None:
@@ -127,7 +141,8 @@ class RateLimiter:
             return 1
 
         now = time.time()
-        since = now - self.window_s
+        window_s = self._window_for(action)
+        since = now - window_s
         timestamps = [ts for ts in record.timestamps.get(action, []) if ts >= since]
 
         if not timestamps:
@@ -135,7 +150,7 @@ class RateLimiter:
 
         # Eng eski amal + oyna - hozirgi vaqt
         oldest = min(timestamps)
-        wait_seconds = (oldest + self.window_s) - now
+        wait_seconds = (oldest + window_s) - now
         if wait_seconds <= 0:
             return 1
 
@@ -157,14 +172,13 @@ class RateLimiter:
             }
         """
         now = time.time()
-        since = now - self.window_s
-
         tracked = len(self._records)
         blocked = 0
         total = 0
 
         for uid, record in self._records.items():
             for action, limit in LIMITS.items():
+                since = now - self._window_for(action)
                 count = record.count(action, since)
                 total += count
                 if count >= limit:
@@ -191,13 +205,13 @@ class RateLimiter:
             O'chirilgan foydalanuvchilar soni
         """
         now = time.time()
-        since = now - self.window_s
         removed = 0
 
         for uid in list(self._records.keys()):
             record = self._records[uid]
             has_recent = False
             for action in list(record.timestamps.keys()):
+                since = now - self._window_for(action)
                 record.cleanup(action, since)
                 if record.timestamps[action]:
                     has_recent = True

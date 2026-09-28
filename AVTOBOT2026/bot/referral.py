@@ -10,7 +10,6 @@ Funksiyalar:
 from __future__ import annotations
 
 from telegram import Update
-from telegram.ext import ContextTypes
 
 from bot import keyboards as KB
 from bot import texts as T
@@ -76,8 +75,10 @@ async def register_referral(uid: int, ref_arg: str) -> bool:
     if existing:
         return False
 
-    # Referrerni saqlash
-    await db.set_referrer(uid, referrer_uid)
+    # Faqat mavjud, tasdiqlangan va bloklanmagan referrer qabul qilinadi.
+    saved = await db.set_referrer(uid, referrer_uid)
+    if not saved:
+        return False
     log(f"👥 Referal qayd etildi: {uid} ← {referrer_uid}")
     return True
 

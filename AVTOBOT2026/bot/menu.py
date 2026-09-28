@@ -10,17 +10,14 @@ Tugmalar:
 
 from __future__ import annotations
 
-import contextlib
-
 from telegram import Update
-from telegram.ext import ContextTypes
 
+from bot import action_tokens
 from bot import keyboards as KB
 from bot import texts as T
 from core import database as db
 from core.logger import log
-from core.utils import format_expires, is_expired
-
+from core.utils import format_expires
 
 # ─────────────────────────────────────────────────────────────────────────
 # WORKER MANAGER (main.py da o'rnatiladi)
@@ -78,6 +75,17 @@ async def handle_start(update: Update) -> None:
         await update.message.reply_text(T.START_ALREADY)
         return
 
+    user = await db.get_user(uid)
+    if not user or not user.get("is_admin") or not user.get("session"):
+        await update.message.reply_text(
+            "❌ Avval tasdiqlangan hisob bilan 🔑 Login qiling.",
+            reply_markup=KB.kb_login(),
+        )
+        return
+    if user.get("is_blocked"):
+        await update.message.reply_text(T.BLOCKED, reply_markup=KB.kb_blocked())
+        return
+
     # Muddat tugaganmi?
     if await db.is_tariff_expired(uid):
         await update.message.reply_text(T.EXPIRED_TEXT)
@@ -102,9 +110,10 @@ async def handle_start(update: Update) -> None:
         interval=interval,
     )
 
+    token = action_tokens.issue(uid, "start")
     await update.message.reply_text(
         text,
-        reply_markup=KB.kb_start_confirm(),
+        reply_markup=KB.kb_start_confirm(token),
     )
 
 
@@ -119,11 +128,12 @@ async def handle_stop(update: Update) -> None:
         await update.message.reply_text(T.STOP_NOT_RUNNING)
         return
 
+    token = action_tokens.issue(uid, "stop")
     await update.message.reply_text(
         T.STOP_CONFIRM,
-        reply_markup=KB.kb_stop_confirm(),
-  )
-  
+        reply_markup=KB.kb_stop_confirm(token),
+    )
+
 
 # ─────────────────────────────────────────────────────────────────────────
 # START TASDIQLANGANDA (callback)
@@ -142,6 +152,13 @@ async def confirm_start(uid: int) -> tuple[bool, str]:
     if worker_manager.is_running(uid):
         return False, T.START_ALREADY
 
+    user = await db.get_user(uid)
+    if not user or not user.get("is_admin"):
+        return False, "❌ Hisob tasdiqlanmagan."
+    if user.get("is_blocked"):
+        return False, T.BLOCKED
+    if not user.get("session"):
+        return False, "❌ Sessiya yo'q. Qaytadan 🔑 Login qiling."
     if await db.is_tariff_expired(uid):
         return False, T.EXPIRED_TEXT
 
@@ -151,11 +168,11 @@ async def confirm_start(uid: int) -> tuple[bool, str]:
     if not chats or not posts:
         return False, "❌ Guruh yoki post yo'q."
 
+    await db.set_running(uid, True)
     started = await worker_manager.start_worker(uid)
     if not started:
+        await db.set_running(uid, False)
         return False, T.START_BUSY
-
-    await db.set_running(uid, True)
     interval = await db.get_interval(uid)
     log(f"▶️ Start: {uid}")
 
@@ -173,6 +190,10 @@ async def confirm_stop(uid: int) -> tuple[bool, str]:
     """Stop tasdiqlanganda workerni to'xtatish."""
     if worker_manager:
         await worker_manager.stop_worker(uid)
+    from worker.worker import client_pool
+
+    if client_pool:
+        await client_pool.remove(uid)
     await db.set_running(uid, False)
     log(f"⛔ Stop: {uid}")
     return True, T.STOP_DONE
@@ -192,8 +213,8 @@ async def route_menu_button(update: Update, text: str) -> bool:
     # Import ichida — circular import oldini olish uchun
     from bot import groups as G
     from bot import posts as P
-    from bot import timer as Tm
     from bot import referral as R
+    from bot import timer as Tm
 
     # ▶️ Start
     if text == T.BTN_START:
@@ -213,6 +234,11 @@ async def route_menu_button(update: Update, text: str) -> bool:
     # 💬 Guruhlar
     if text == T.BTN_GROUPS:
         await G.show_groups(update)
+        return True
+
+    # 📝 Postlar
+    if text == T.BTN_POSTS:
+        await P.show_posts(update)
         return True
 
     # ➕ Guruh qo'shish
@@ -243,6 +269,25 @@ async def route_menu_button(update: Update, text: str) -> bool:
     # 👥 Referal
     if text == T.BTN_REFERRAL:
         await R.show_referral(update)
+        return True
+
+    # ⚙️ Hisob
+    if text == T.BTN_ACCOUNT:
+        await update.message.reply_text(
+            "⚙️ HISOB\n\nTelegram sessiyasini uzsangiz posting to'xtaydi va "
+            "qayta Login qilish kerak bo'ladi.",
+            reply_markup=KB.kb_account(),
+        )
+        return True
+
+    # ⬅️ Ichki menyudan asosiy menyuga
+    if text == T.BTN_BACK:
+        uid = update.effective_user.id
+        running = bool(worker_manager and worker_manager.is_running(uid))
+        await update.message.reply_text(
+            "🏠 Asosiy menyu",
+            reply_markup=KB.kb_main(running=running),
+        )
         return True
 
     return False
