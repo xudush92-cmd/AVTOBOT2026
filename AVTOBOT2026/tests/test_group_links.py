@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -19,6 +20,7 @@ os.environ.setdefault(
     "MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA=",
 )
 
+from telethon.errors import FloodWaitError  # noqa: E402
 from telethon.tl import types  # noqa: E402
 from telethon.tl.functions.messages import CheckChatInviteRequest  # noqa: E402
 
@@ -29,6 +31,7 @@ from core.utils import (  # noqa: E402
     group_reference_key,
     normalize_group_reference,
     parse_group_lines,
+    parse_group_lines_with_errors,
 )
 from worker import worker as posting_worker  # noqa: E402
 
@@ -90,6 +93,38 @@ class GroupReferenceTests(unittest.TestCase):
     def test_numeric_references_are_canonical(self) -> None:
         self.assertEqual(normalize_group_reference("-10000123"), "-10000123")
         self.assertEqual(normalize_group_reference("00042"), "42")
+
+    def test_bad_formats_are_not_silently_stored(self) -> None:
+        bad = [
+            "https://example.org/Example_Group",
+            "https://@t.me/Example_Group",
+            "https://t.me:9999/Example_Group",
+            "https://t.me/",
+            "https://t.me/+",
+            "https://t.me/joinchat/bad!",
+            "https://t.me/c/abc/12",
+            "https://t.me/Example_Group/not-a-post",
+            "https://t.me/Example_Group/12/extra",
+            "tg://join?invite=bad!",
+            "@bad!",
+            "a b",
+            "-100abc",
+            "0",
+            "https://[bad",
+        ]
+        for value in bad:
+            with self.subTest(value=value):
+                self.assertEqual(normalize_group_reference(value), "")
+        valid, invalid = parse_group_lines_with_errors(
+            "https://t.me/Example_Group/12\n"
+            "@example_group\nhttps://example.org/fake\nhttps://t.me/+AbC_def-123\n"
+            "https://t.me/c/1234567890/77\n@bad!"
+        )
+        self.assertEqual(
+            valid,
+            ["@Example_Group", "https://t.me/+AbC_def-123", "-1001234567890"],
+        )
+        self.assertEqual(invalid, ["https://example.org/fake", "@bad!"])
 
 
 class GroupResolutionTests(unittest.IsolatedAsyncioTestCase):
@@ -189,6 +224,28 @@ class GroupResolutionTests(unittest.IsolatedAsyncioTestCase):
                 (True, "ok"),
             )
         client.get_permissions.assert_awaited_once()
+        client.get_me.assert_awaited_once()
+        client.is_user_authorized.assert_not_awaited()
+        client.disconnect.assert_awaited_once()
+
+    async def test_legacy_group_checker_does_not_confuse_flood_with_invalid_session(
+        self,
+    ) -> None:
+        client = SimpleNamespace(
+            connect=AsyncMock(),
+            disconnect=AsyncMock(),
+            get_me=AsyncMock(side_effect=FloodWaitError(None, 30)),
+            is_user_authorized=AsyncMock(return_value=False),
+        )
+        with (
+            patch.object(groups, "TelegramClient", return_value=client),
+            patch.object(groups, "StringSession", side_effect=lambda value: value),
+        ):
+            self.assertEqual(
+                await groups.check_group_access("session", "@Example_Group"),
+                (False, "flood"),
+            )
+        client.is_user_authorized.assert_not_awaited()
         client.disconnect.assert_awaited_once()
 
     def test_default_message_ban_is_rejected(self) -> None:
@@ -222,7 +279,7 @@ class GroupResolutionTests(unittest.IsolatedAsyncioTestCase):
 
 
 class GroupFlowTests(unittest.IsolatedAsyncioTestCase):
-    async def test_user_flow_validates_and_stores_canonical_reference(self) -> None:
+    async def test_user_flow_stores_valid_references_without_telegram(self) -> None:
         uid = 100
         status = SimpleNamespace(edit_text=AsyncMock())
         message = SimpleNamespace(
@@ -232,33 +289,77 @@ class GroupFlowTests(unittest.IsolatedAsyncioTestCase):
             effective_user=SimpleNamespace(id=uid),
             message=message,
         )
-        check_access = AsyncMock(return_value=(True, "ok"))
         bot_login.user_states[uid] = {"step": "add_group"}
         try:
             with (
-                patch.object(groups.db, "get_session", new=AsyncMock(return_value="s")),
-                patch.object(groups.db, "get_chats", new=AsyncMock(return_value=[])),
+                patch.object(
+                    groups.db, "get_session", new=AsyncMock(return_value="old-session")
+                ) as get_session,
+                patch.object(
+                    groups.db, "get_chats", new=AsyncMock(return_value=["@existing"])
+                ),
                 patch.object(
                     groups.db, "add_chat", new=AsyncMock(return_value=(True, "ok"))
                 ) as add_chat,
-                patch.object(groups, "check_group_access", new=check_access),
+                patch.object(groups.db, "del_session", new=AsyncMock()) as del_session,
+                patch.object(
+                    groups, "check_group_access", new=AsyncMock()
+                ) as check_access,
+                patch.object(groups, "TelegramClient", side_effect=AssertionError),
             ):
                 await groups.handle_add_groups(
-                    update, "[Guruh](https://t.me/Example_Group/12)"
+                    update,
+                    "[Guruh](https://t.me/Example_Group/12)\n"
+                    "https://t.me/example_group/13\nhttps://t.me/+AbC_def-123\n"
+                    "https://t.me/c/1234567890/77\n@EXISTING\n"
+                    "https://example.org/bad\n@bad!",
                 )
         finally:
             bot_login.user_states.pop(uid, None)
 
-        check_access.assert_awaited_once_with("s", "@Example_Group")
-        add_chat.assert_awaited_once_with(uid, "@Example_Group")
+        get_session.assert_awaited_once_with(uid)
+        check_access.assert_not_awaited()
+        del_session.assert_not_awaited()
+        self.assertEqual(
+            [call.args for call in add_chat.await_args_list],
+            [
+                (uid, "@Example_Group"),
+                (uid, "https://t.me/+AbC_def-123"),
+                (uid, "-1001234567890"),
+            ],
+        )
+        report = status.edit_text.await_args.args[0]
+        self.assertIn("@EXISTING — allaqachon mavjud", report)
+        self.assertIn("https://example.org/bad (noto'g'ri format)", report)
+        self.assertIn("@bad! (noto'g'ri format)", report)
 
-    async def test_admin_flow_uses_selected_users_session(self) -> None:
+    async def test_user_invalid_only_keeps_group_input_open(self) -> None:
+        uid = 101
+        message = SimpleNamespace(reply_text=AsyncMock())
+        update = SimpleNamespace(
+            effective_user=SimpleNamespace(id=uid), message=message
+        )
+        bot_login.user_states[uid] = {"step": "add_group"}
+        try:
+            with (
+                patch.object(groups.db, "get_session", new=AsyncMock(return_value="s")),
+                patch.object(groups.db, "add_chat", new=AsyncMock()) as add_chat,
+            ):
+                await groups.handle_add_groups(update, "https://example.org/bad")
+            self.assertEqual(bot_login.user_states[uid]["step"], "add_group")
+            self.assertIn("formati noto'g'ri", message.reply_text.await_args.args[0])
+            add_chat.assert_not_awaited()
+        finally:
+            bot_login.user_states.pop(uid, None)
+
+    async def test_admin_flow_stores_canonical_for_target_without_telegram(
+        self,
+    ) -> None:
         admin_uid = 999
         target_uid = 200
         status = SimpleNamespace(edit_text=AsyncMock())
         message = SimpleNamespace(reply_text=AsyncMock(return_value=status))
         update = SimpleNamespace(message=message)
-        check_access = AsyncMock(return_value=(True, "ok"))
         bot_login.user_states[admin_uid] = {
             "step": "admin_add_group",
             "target_uid": target_uid,
@@ -277,39 +378,140 @@ class GroupFlowTests(unittest.IsolatedAsyncioTestCase):
                 ) as get_session,
                 patch.object(app_main.db, "get_chats", new=AsyncMock(return_value=[])),
                 patch.object(
-                    app_main.db,
-                    "add_chat",
-                    new=AsyncMock(return_value=(True, "ok")),
+                    app_main.db, "add_chat", new=AsyncMock(return_value=(True, "ok"))
                 ) as add_chat,
                 patch.object(
                     app_main.db,
                     "get_chat_records",
-                    new=AsyncMock(
-                        return_value=[
-                            {
-                                "id": 1,
-                                "uid": target_uid,
-                                "value": "@Example_Group",
-                                "created_at": "2026-09-28 00:00:00",
-                            }
-                        ]
-                    ),
+                    new=AsyncMock(return_value=[]),
                 ),
-                patch.object(groups, "check_group_access", new=check_access),
+                patch.object(
+                    app_main.db, "del_session", new=AsyncMock()
+                ) as del_session,
+                patch.object(
+                    groups, "check_group_access", new=AsyncMock()
+                ) as check_access,
+                patch.object(groups, "TelegramClient", side_effect=AssertionError),
             ):
                 await app_main.handle_admin_fsm(
                     update,
                     admin_uid,
                     "admin_add_group",
-                    "https://t.me/Example_Group/12",
+                    "https://t.me/Example_Group/12\n"
+                    "https://t.me/joinchat/AbC_def-123\n"
+                    "https://t.me/c/1234567890/77\n@bad!",
                 )
         finally:
             bot_login.user_states.pop(admin_uid, None)
 
         get_session.assert_awaited_once_with(target_uid)
-        check_access.assert_awaited_once_with("target-session", "@Example_Group")
-        add_chat.assert_awaited_once_with(target_uid, "@Example_Group")
+        check_access.assert_not_awaited()
+        del_session.assert_not_awaited()
+        self.assertEqual(
+            [call.args for call in add_chat.await_args_list],
+            [
+                (target_uid, "@Example_Group"),
+                (target_uid, "https://t.me/+AbC_def-123"),
+                (target_uid, "-1001234567890"),
+            ],
+        )
         status.edit_text.assert_awaited_once()
+        self.assertIn("@bad! (noto'g'ri format)", status.edit_text.await_args.args[0])
+
+    async def test_admin_invalid_only_keeps_target_input_open(self) -> None:
+        admin_uid, target_uid = 999, 200
+        update = SimpleNamespace(message=SimpleNamespace(reply_text=AsyncMock()))
+        bot_login.user_states[admin_uid] = {
+            "step": "admin_add_group",
+            "target_uid": target_uid,
+        }
+        try:
+            with (
+                patch.object(
+                    app_main.db,
+                    "get_user",
+                    new=AsyncMock(return_value={"uid": target_uid}),
+                ),
+                patch.object(
+                    app_main.db, "get_session", new=AsyncMock(return_value="s")
+                ),
+                patch.object(app_main.db, "add_chat", new=AsyncMock()) as add_chat,
+            ):
+                await app_main.handle_admin_fsm(
+                    update, admin_uid, "admin_add_group", "https://other.example/abc"
+                )
+            self.assertEqual(bot_login.user_states[admin_uid]["target_uid"], target_uid)
+            self.assertIn(
+                "formati noto'g'ri", update.message.reply_text.await_args.args[0]
+            )
+            add_chat.assert_not_awaited()
+        finally:
+            bot_login.user_states.pop(admin_uid, None)
+
+
+class GroupPersistenceTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self) -> None:
+        self.temp = tempfile.TemporaryDirectory()
+        self.old_path = groups.db.DB_PATH
+        groups.db.DB_PATH = Path(self.temp.name) / "groups.db"
+        await groups.db.init_db()
+        for uid in (100, 200):
+            await groups.db.upsert_user(uid, is_admin=1)
+            await groups.db.set_session(uid, f"original-session-{uid}")
+
+    async def asyncTearDown(self) -> None:
+        await groups.db.close_db()
+        groups.db.DB_PATH = self.old_path
+        self.temp.cleanup()
+
+    async def test_user_and_admin_save_canonical_without_changing_sessions(
+        self,
+    ) -> None:
+        user_status = SimpleNamespace(edit_text=AsyncMock())
+        user_update = SimpleNamespace(
+            effective_user=SimpleNamespace(id=100),
+            message=SimpleNamespace(
+                reply_text=AsyncMock(side_effect=[user_status, SimpleNamespace()])
+            ),
+        )
+        admin_uid = 999
+        admin_status = SimpleNamespace(edit_text=AsyncMock())
+        admin_update = SimpleNamespace(
+            message=SimpleNamespace(reply_text=AsyncMock(return_value=admin_status))
+        )
+        bot_login.user_states[100] = {"step": "add_group"}
+        bot_login.user_states[admin_uid] = {
+            "step": "admin_add_group",
+            "target_uid": 200,
+        }
+        try:
+            with patch.object(groups, "TelegramClient", side_effect=AssertionError):
+                await groups.handle_add_groups(
+                    user_update,
+                    "https://t.me/Example_Group/12\nhttps://t.me/+AbC_def-123",
+                )
+                await app_main.handle_admin_fsm(
+                    admin_update,
+                    admin_uid,
+                    "admin_add_group",
+                    "[Private](https://t.me/c/1234567890/77)\n"
+                    "https://t.me/Example_Group/12",
+                )
+        finally:
+            bot_login.user_states.pop(100, None)
+            bot_login.user_states.pop(admin_uid, None)
+
+        self.assertEqual(
+            await groups.db.get_chats(100),
+            ["@Example_Group", "https://t.me/+AbC_def-123"],
+        )
+        self.assertEqual(
+            await groups.db.get_chats(200), ["-1001234567890", "@Example_Group"]
+        )
+        for uid in (100, 200):
+            self.assertEqual(
+                await groups.db.get_session(uid), f"original-session-{uid}"
+            )
 
 
 if __name__ == "__main__":

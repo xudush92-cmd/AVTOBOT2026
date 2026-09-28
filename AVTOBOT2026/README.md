@@ -30,9 +30,14 @@ Telegram guruhlariga reklama postlarini avtomatik joylashtiruvchi bot.
 Posting oralig'i aniq sekundli jadval emas: har siklda sozlangan qiymatga
 `±5 daqiqa` tasodifiy anti-spam farqi qo'shiladi (minimum 5 daqiqa saqlanadi).
 Guruh qo'shishda `@username`, public `t.me` linki, post linki, private invite va
-`-100...` ID qabul qilinadi. Ulangan Telegram akkaunti guruhga avvaldan a'zo
-va yozish huquqiga ega bo'lishi shart; bot akkauntni guruhga avtomatik
-qo'shmaydi.
+`-100...` ID qabul qilinadi. User hamda admin qo'shish oqimlari **faqat formatni**
+tekshiradi va canonical ko'rinishda saqlaydi: Telegram'ga ulanib guruhning
+mavjudligi, a'zolik yoki yozish huquqini tekshirmaydi. Ulangan akkaunt post
+yubora olishi uchun guruhga a'zo va yozish huquqiga ega bo'lishi kerak;
+bot avtomatik qo'shmaydi. Start tasdiqlanganda saqlangan sessiya `get_me()`
+bilan bir marta tekshiriladi; vaqtinchalik FloodWait yoki tarmoq xatosida
+Startni keyinroq qayta sinash mumkin. Tekshiruv xatosi sessiyani avtomatik
+o'chirmaydi (Logout esa foydalanuvchining ongli amali).
 Admin paneldagi SQLite eksport `session` va `pending_session` sirlarisiz
 sanitizatsiya qilinadi; server backup esa SQLite online backup API bilan
 izchil snapshot yaratadi.

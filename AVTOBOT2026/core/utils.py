@@ -156,17 +156,24 @@ _TELEGRAM_HOSTS = {
     "www.telegram.dog",
 }
 _USERNAME_RE = re.compile(r"^[A-Za-z0-9_]{3,32}$")
+_INVITE_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+_NUMBER_RE = re.compile(r"^[0-9]+$")
 _MARKDOWN_LINK_RE = re.compile(r"^\[[^\]]*\]\(([^\s)]+)\)$")
 
 
-def normalize_group_reference(value: str) -> str:
-    """Telegram public/private havolasini saqlash uchun barqaror ko'rinishga keltiradi.
+def _positive_number(value: str) -> bool:
+    return bool(len(value) <= 20 and _NUMBER_RE.fullmatch(value) and int(value) > 0)
 
-    Public linklar ``@username`` ga, public/private post linklari esa guruhning
-    o'ziga aylantiriladi. Private invite avtomatik join qilinmaydi; tekshiruvchi
-    akkaunt avvaldan a'zo ekanini alohida tekshiradi.
+
+def normalize_group_reference(value: str) -> str:
+    """Faqat to'g'ri formatdagi guruh havolasini canonical ko'rinishga keltiradi.
+
+    Public/post linklar ``@username`` ga, ``t.me/c`` post linklari ``-100...``
+    ID'ga, private invite esa ``https://t.me/+hash`` ga aylanadi. Bu funksiya
+    Telegram'ga ulanmaydi: mavjudlik, a'zolik va yozish huquqi postingda bilinadi.
+    Noto'g'ri format uchun bo'sh satr qaytaradi.
     """
-    if not value:
+    if not isinstance(value, str) or not value:
         return ""
 
     cleaned = value.strip().replace("\u200b", "")
@@ -179,49 +186,82 @@ def normalize_group_reference(value: str) -> str:
 
     if cleaned.startswith("@"):
         username = cleaned[1:].strip().rstrip("/")
-        return f"@{username}" if _USERNAME_RE.fullmatch(username) else cleaned
+        return f"@{username}" if _USERNAME_RE.fullmatch(username) else ""
 
-    if cleaned.lstrip("-").isdigit():
-        return str(int(cleaned))
+    digits = cleaned.lstrip("-")
+    if len(digits) <= 20 and _NUMBER_RE.fullmatch(digits) and cleaned.count("-") <= 1:
+        number = int(cleaned)
+        return str(number) if number else ""
 
     lowered = cleaned.lower()
     if any(lowered.startswith(f"{host}/") for host in _TELEGRAM_HOSTS):
         cleaned = f"https://{cleaned}"
 
-    parsed = urlsplit(cleaned)
+    try:
+        parsed = urlsplit(cleaned)
+        # Noto'g'ri port yoki qavsli hostname formatini ham qabul qilmaymiz.
+        if parsed.port not in (None, 80, 443):
+            return ""
+    except ValueError:
+        return ""
     if parsed.scheme.lower() == "tg":
+        if parsed.path not in {"", "/"} or parsed.fragment:
+            return ""
         query = parse_qs(parsed.query)
         if parsed.netloc.lower() == "resolve":
             username = (query.get("domain") or [""])[0].lstrip("@")
-            return f"@{username}" if _USERNAME_RE.fullmatch(username) else cleaned
+            post = (query.get("post") or [""])[0]
+            if post and not _positive_number(post):
+                return ""
+            return f"@{username}" if _USERNAME_RE.fullmatch(username) else ""
         if parsed.netloc.lower() == "join":
             invite = (query.get("invite") or [""])[0]
-            return f"https://t.me/+{invite}" if invite else cleaned
-        return cleaned
+            return f"https://t.me/+{invite}" if _INVITE_RE.fullmatch(invite) else ""
+        return ""
 
     if parsed.scheme.lower() not in {"http", "https"}:
-        if _USERNAME_RE.fullmatch(cleaned):
-            return f"@{cleaned}"
-        return cleaned
-    if (parsed.hostname or "").lower() not in _TELEGRAM_HOSTS:
-        return cleaned
+        return f"@{cleaned}" if _USERNAME_RE.fullmatch(cleaned) else ""
+    if (
+        (parsed.hostname or "").lower() not in _TELEGRAM_HOSTS
+        or parsed.username is not None
+        or parsed.password is not None
+    ):
+        return ""
 
     parts = [part for part in parsed.path.split("/") if part]
     if not parts:
-        return cleaned
-    if parts[0].lower() == "s" and len(parts) > 1:
+        return ""
+    if parts[0].lower() == "s":
         parts = parts[1:]
+    if not parts:
+        return ""
 
     first = parts[0]
-    if first.lower() == "joinchat" and len(parts) > 1:
-        return f"https://t.me/+{parts[1]}"
-    if first.startswith("+") and len(first) > 1:
-        return f"https://t.me/{first}"
-    if first.lower() == "c" and len(parts) > 1 and parts[1].isdigit():
-        return f"-100{parts[1]}"
+    if first.lower() == "joinchat":
+        return (
+            f"https://t.me/+{parts[1]}"
+            if len(parts) == 2 and _INVITE_RE.fullmatch(parts[1])
+            else ""
+        )
+    if first.startswith("+"):
+        return (
+            f"https://t.me/{first}"
+            if len(parts) == 1 and _INVITE_RE.fullmatch(first[1:])
+            else ""
+        )
+    if first.lower() == "c":
+        if (
+            len(parts) in {2, 3}
+            and _positive_number(parts[1])
+            and (len(parts) == 2 or _positive_number(parts[2]))
+        ):
+            return f"-100{int(parts[1])}"
+        return ""
 
     username = first.lstrip("@")
-    return f"@{username}" if _USERNAME_RE.fullmatch(username) else cleaned
+    if len(parts) > 2 or (len(parts) == 2 and not _positive_number(parts[1])):
+        return ""
+    return f"@{username}" if _USERNAME_RE.fullmatch(username) else ""
 
 
 def group_reference_key(value: str) -> str:
@@ -240,23 +280,29 @@ def clean_group_value(value: str) -> str:
     return normalize_group_reference(value)
 
 
-def parse_group_lines(text: str) -> list[str]:
-    """Yangi qator/verguldagi guruhlarni ajratadi va format bo'yicha dedupe qiladi."""
-    if not text:
-        return []
-    lines = text.replace(",", "\n").split("\n")
+def parse_group_lines_with_errors(text: str) -> tuple[list[str], list[str]]:
+    """Guruhlarni canonical ko'rinishga keltiradi, noto'g'ri qatorlarni ajratadi."""
     result: list[str] = []
+    invalid: list[str] = []
     seen: set[str] = set()
-    for line in lines:
-        cleaned = clean_group_value(line)
-        if not cleaned:
+    for line in (text or "").replace(",", "\n").splitlines():
+        raw = line.strip()
+        if not raw:
             continue
-        dedupe_key = group_reference_key(cleaned)
-        if dedupe_key in seen:
+        canonical = normalize_group_reference(raw)
+        if not canonical:
+            invalid.append(raw)
             continue
-        seen.add(dedupe_key)
-        result.append(cleaned)
-    return result
+        key = group_reference_key(canonical)
+        if key not in seen:
+            seen.add(key)
+            result.append(canonical)
+    return result, invalid
+
+
+def parse_group_lines(text: str) -> list[str]:
+    """Yangi qator/verguldagi to'g'ri guruhlarni canonical, dedupe qilib oladi."""
+    return parse_group_lines_with_errors(text)[0]
 
 
 # ─────────────────────────────────────────────────────────────────────────

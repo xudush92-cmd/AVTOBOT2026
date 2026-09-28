@@ -18,6 +18,7 @@ from bot import texts as T
 from core import database as db
 from core.logger import log
 from core.utils import format_expires
+from worker.client_pool import PoolBusyError, SessionInvalidError
 
 # ─────────────────────────────────────────────────────────────────────────
 # WORKER MANAGER (main.py da o'rnatiladi)
@@ -138,6 +139,21 @@ async def handle_stop(update: Update) -> None:
 # ─────────────────────────────────────────────────────────────────────────
 # START TASDIQLANGANDA (callback)
 # ─────────────────────────────────────────────────────────────────────────
+async def check_start_session(uid: int, session: str) -> tuple[bool, str]:
+    """Start'da bitta get_me bilan sessiyani tekshiradi, uni hech qachon o'chirmaydi."""
+    from worker.worker import client_pool
+
+    if not client_pool:
+        return False, T.START_BUSY
+    try:
+        await client_pool.verify_session(uid, session)
+    except SessionInvalidError:
+        return False, T.START_SESSION_INVALID
+    except PoolBusyError:
+        return False, T.START_SESSION_RETRY
+    return True, ""
+
+
 async def confirm_start(uid: int) -> tuple[bool, str]:
     """
     Start tasdiqlanganda workerni boshlash.
@@ -167,6 +183,10 @@ async def confirm_start(uid: int) -> tuple[bool, str]:
 
     if not chats or not posts:
         return False, "❌ Guruh yoki post yo'q."
+
+    valid, reason = await check_start_session(uid, user["session"])
+    if not valid:
+        return False, reason
 
     await db.set_running(uid, True)
     started = await worker_manager.start_worker(uid)

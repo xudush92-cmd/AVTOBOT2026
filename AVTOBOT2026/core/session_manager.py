@@ -21,8 +21,10 @@ async def revoke_telegram_session(session: str, uid: int) -> bool:
     try:
         client = TelegramClient(StringSession(session), API_ID, API_HASH)
         await asyncio.wait_for(client.connect(), timeout=20)
-        authorized = await asyncio.wait_for(client.is_user_authorized(), timeout=15)
-        if authorized:
+        # is_user_authorized() FloodWait'ni ham False deb yashirishi mumkin:
+        # vaqtinchalik xatoda lokal sessiyani o'chirib yubormaslik kerak.
+        me = await asyncio.wait_for(client.get_me(), timeout=15)
+        if me is not None:
             await asyncio.wait_for(client.log_out(), timeout=20)
         return True
     except Exception as exc:

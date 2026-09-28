@@ -248,20 +248,28 @@ async def posting_loop(uid: int, stop: asyncio.Event) -> None:
             try:
                 client = await client_pool.acquire(uid, session)
             except SessionInvalidError:
-                log(f"🚫 Worker:{uid} — sessiya yaroqsiz", "warning")
-                await db.del_session(uid)
+                log(f"🚫 Worker:{uid} — sessiyani tasdiqlab bo'lmadi", "warning")
                 await db.set_running(uid, False)
                 await client_pool.remove(uid)
                 with contextlib.suppress(Exception):
                     await application.bot.send_message(
                         uid,
-                        "🚫 Sessiyangiz Telegram tomonidan bekor qilindi.\n"
-                        "Qaytadan 🔑 Login qiling.",
+                        "🚫 Telegram sessiyasini tasdiqlab bo'lmadi. "
+                        "Mavjud sessiya saqlandi; Hisob bo'limidan tekshiring.",
                     )
                 break
-            except PoolBusyError:
-                log(f"⏳ Worker:{uid} — pool band, 30s kutadi", "warning")
-                if await sleep_or_stop(stop, 30):
+            except PoolBusyError as exc:
+                cause = exc.__cause__
+                wait_s = (
+                    int(getattr(cause, "seconds", 30)) + 5
+                    if isinstance(cause, FloodWaitError)
+                    else 30
+                )
+                log(
+                    f"⏳ Worker:{uid} — pool/Telegram vaqtincha band, {wait_s}s kutadi",
+                    "warning",
+                )
+                if await sleep_or_stop(stop, wait_s):
                     break
                 continue
 
@@ -312,25 +320,20 @@ async def posting_loop(uid: int, stop: asyncio.Event) -> None:
                             removed_groups.append(chat)
 
                     except asyncio.TimeoutError:
+                        # Tarmoq uzilishi guruh yoki sessiya yaroqsizligini
+                        # anglatmaydi; avtomatik o'chirishga hisoblamaymiz.
                         fail += 1
-                        group_fails[chat] = group_fails.get(chat, 0) + 1
-                        log(
-                            f"⏱ {uid} → {chat} timeout "
-                            f"({group_fails[chat]}/{MAX_GROUP_FAILS})",
-                            "warning",
-                        )
-                        if group_fails[chat] >= MAX_GROUP_FAILS:
-                            removed_groups.append(chat)
+                        log(f"⏱ {uid} → {chat} vaqtincha timeout", "warning")
 
                     except (AuthKeyUnregisteredError, UserDeactivatedBanError) as e:
                         log(f"🚫 {uid} sessiya yaroqsiz: {type(e).__name__}", "error")
-                        await db.del_session(uid)
                         await db.set_running(uid, False)
                         await client_pool.remove(uid)
                         with contextlib.suppress(Exception):
                             await application.bot.send_message(
                                 uid,
-                                "🚫 Sessiyangiz bekor qilindi. Qaytadan 🔑 Login qiling.",
+                                "🚫 Telegram sessiyasi ishlamayapti. Mavjud "
+                                "sessiya saqlandi; Hisob bo'limidan tekshiring.",
                             )
                         return
 

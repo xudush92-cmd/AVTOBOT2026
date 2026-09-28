@@ -582,6 +582,16 @@ async def _action_start_locked(update: Update, admin_uid: int, target: int) -> N
         )
         return
 
+    from bot.menu import check_start_session
+
+    valid, reason = await check_start_session(target, user["session"])
+    if not valid:
+        await q.edit_message_text(
+            reason,
+            reply_markup=await user_card_markup(target, running=False),
+        )
+        return
+
     await db.set_running(target, True)
     started = await worker_manager.start_worker(target)
     if not started:
@@ -920,9 +930,9 @@ async def action_add_group(update: Update, admin_uid: int, target: int) -> None:
         "➕ Guruh qo'shish\n\n"
         f"Foydalanuvchi: {target}\n\n"
         "@username, public/post/private t.me havolasi yoki -100... ID'ni har "
-        "birini yangi qatorda yuboring. Tanlangan foydalanuvchi akkaunti guruhga "
-        "avvaldan a'zo va yozish huquqiga ega bo'lishi kerak; bot avtomatik "
-        "kirmaydi.",
+        "birini yangi qatorda yuboring. Qo'shishda faqat format tekshiriladi; "
+        "Telegram'ga ulanilmaydi. Posting uchun foydalanuvchi akkaunti guruhga "
+        "a'zo va yozish huquqiga ega bo'lishi kerak; bot avtomatik kirmaydi.",
         reply_markup=KB.kb_admin_section_back(target, "groups"),
     )
 
