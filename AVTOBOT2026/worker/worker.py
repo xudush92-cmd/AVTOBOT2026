@@ -132,15 +132,10 @@ def dicts_to_entities(items: list[dict]) -> list:
 # GURUHNI TOPISH
 # ─────────────────────────────────────────────────────────────────────────
 async def resolve_chat(client: TelegramClient, chat: str):
-    """Guruh entity'sini topadi."""
-    s = chat.strip()
-    if s.startswith("@"):
-        return await client.get_entity(s)
-    if s.lstrip("-").isdigit():
-        return await client.get_entity(int(s))
-    if s.startswith("https://t.me/") or s.startswith("t.me/"):
-        return await client.get_entity(s)
-    return await client.get_entity(s)
+    """Saqlangan public URL, private invite yoki ID'dan entity topadi."""
+    from bot.groups import resolve_group_entity
+
+    return await resolve_group_entity(client, chat)
 
 
 # ─────────────────────────────────────────────────────────────────────────

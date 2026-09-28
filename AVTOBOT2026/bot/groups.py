@@ -14,39 +14,175 @@ import asyncio
 import contextlib
 
 from telegram import Update
-from telethon import TelegramClient
+from telethon import TelegramClient, utils
 from telethon.errors import (
     ChannelPrivateError,
     FloodWaitError,
+    InviteHashExpiredError,
+    InviteHashInvalidError,
     PeerIdInvalidError,
+    UserNotParticipantError,
     UsernameInvalidError,
     UsernameNotOccupiedError,
 )
 from telethon.sessions import StringSession
+from telethon.tl import types
+from telethon.tl.functions.messages import CheckChatInviteRequest
 
 from bot import keyboards as KB
 from bot import texts as T
 from config.config import API_HASH, API_ID
 from core import database as db
 from core.logger import log
-from core.utils import parse_group_lines
+from core.utils import group_reference_key, normalize_group_reference, parse_group_lines
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# GURUHNI TEKSHIRISH (Telegram orqali)
+# GURUHNI TOPISH VA TEKSHIRISH (Telegram orqali)
 # ─────────────────────────────────────────────────────────────────────────
+class GroupResolveError(ValueError):
+    """Guruh reference'i nima sababdan ishlamaganini saqlaydi."""
+
+    def __init__(self, reason: str):
+        super().__init__(reason)
+        self.reason = reason
+
+
+_REASON_TEXT = {
+    "not_found": "topilmadi",
+    "not_member": "akkaunt avval guruhga kirishi kerak",
+    "private": "yopiq yoki kirish taqiqlangan",
+    "invalid": "noto'g'ri havola",
+    "not_group": "bu guruh yoki kanal emas",
+    "no_write": "yozish huquqi yo'q",
+    "unauthorized": "Telegram sessiyasi yaroqsiz",
+    "flood": "Telegram vaqtincha chekladi (FloodWait)",
+    "timeout": "Telegram javobi kechikdi",
+    "error": "Telegram tekshiruvida xato",
+}
+
+
+def group_reason_text(reason: str) -> str:
+    return _REASON_TEXT.get(reason, _REASON_TEXT["error"])
+
+
+def _is_group_entity(entity) -> bool:
+    return isinstance(
+        entity,
+        (types.Chat, types.Channel, types.ChatForbidden, types.ChannelForbidden),
+    )
+
+
+def _message_sending_is_banned(rights) -> bool:
+    """Telegram ChatBannedRights matn yuborishni taqiqlaganini tekshiradi."""
+    return bool(
+        rights
+        and (
+            getattr(rights, "send_messages", False)
+            or getattr(rights, "send_plain", False)
+        )
+    )
+
+
+def _posting_rejection(entity, permissions) -> str | None:
+    """Participant va chat huquqlaridan membership/posting xulosasini oladi."""
+    if not permissions or bool(getattr(permissions, "has_left", False)):
+        return "not_member"
+
+    participant = getattr(permissions, "participant", None)
+    participant_rights = getattr(participant, "banned_rights", None)
+    if bool(getattr(participant, "left", False)) or bool(
+        getattr(participant_rights, "view_messages", False)
+    ):
+        return "not_member"
+
+    is_creator = bool(getattr(permissions, "is_creator", False))
+    is_admin = bool(getattr(permissions, "is_admin", False) or is_creator)
+    if bool(getattr(entity, "broadcast", False)):
+        can_post = bool(getattr(permissions, "post_messages", False))
+        return None if is_creator or can_post else "no_write"
+
+    if is_admin:
+        return None
+
+    # ParticipantPermissions'da send_messages property yo'q; haqiqiy taqiq raw
+    # participant/entity ChatBannedRights ichida bo'ladi. Birinchi tekshiruv eski
+    # yoki mock permission obyektlari bilan ham moslikni saqlaydi.
+    if getattr(permissions, "send_messages", None) is False:
+        return "no_write"
+    if bool(getattr(permissions, "is_banned", False)) and not participant_rights:
+        return "no_write"
+    if any(
+        _message_sending_is_banned(rights)
+        for rights in (
+            participant_rights,
+            getattr(entity, "banned_rights", None),
+            getattr(entity, "default_banned_rights", None),
+        )
+    ):
+        return "no_write"
+    return None
+
+
+async def _find_joined_dialog(client: TelegramClient, target: int):
+    """StringSession'da entity keshi bo'lmasa, a'zo dialoglardan ID'ni topadi."""
+    try:
+        entity = await client.get_entity(target)
+        if _is_group_entity(entity):
+            return entity
+    except (ValueError, PeerIdInvalidError, ChannelPrivateError):
+        pass
+
+    async for dialog in client.iter_dialogs():
+        entity = dialog.entity
+        if not _is_group_entity(entity):
+            continue
+        marked_id = utils.get_peer_id(entity)
+        if dialog.id == target or marked_id == target:
+            return entity
+        if target > 0 and int(getattr(entity, "id", 0) or 0) == target:
+            return entity
+    raise GroupResolveError("not_found")
+
+
+async def resolve_group_entity(client: TelegramClient, group: str):
+    """Public URL, invite, post URL yoki ID'ni Telegram group entity'ga aylantiradi."""
+    reference = normalize_group_reference(group)
+    if not reference:
+        raise GroupResolveError("invalid")
+
+    if reference.startswith("https://t.me/+"):
+        invite_hash = reference.rsplit("+", 1)[-1]
+        if not invite_hash:
+            raise GroupResolveError("invalid")
+        try:
+            invite = await client(CheckChatInviteRequest(invite_hash))
+        except (InviteHashExpiredError, InviteHashInvalidError) as exc:
+            raise GroupResolveError("invalid") from exc
+        if not isinstance(invite, types.ChatInviteAlready):
+            raise GroupResolveError("not_member")
+        entity = invite.chat
+    elif reference.lstrip("-").isdigit():
+        entity = await _find_joined_dialog(client, int(reference))
+    elif reference.startswith("@"):
+        try:
+            entity = await client.get_entity(reference)
+        except ValueError as exc:
+            raise GroupResolveError("not_found") from exc
+    else:
+        raise GroupResolveError("invalid")
+
+    if not _is_group_entity(entity):
+        raise GroupResolveError("not_group")
+    if isinstance(entity, (types.ChatForbidden, types.ChannelForbidden)) or bool(
+        getattr(entity, "deactivated", False)
+    ):
+        raise GroupResolveError("private")
+    return entity
+
+
 async def check_group_access(session_str: str, group: str) -> tuple[bool, str]:
-    """
-    Guruhga kirish imkonini tekshiradi.
-
-    Returns:
-        (True, 'ok')           — muvaffaqiyat
-        (False, 'not_found')   — topilmadi
-        (False, 'private')     — yopiq
-        (False, 'invalid')     — noto'g'ri format
-        (False, 'flood')       — FloodWait
-        (False, 'error')       — boshqa xatolik
-    """
+    """Ulangan akkaunt guruhga a'zo va yozish huquqiga ega ekanini tekshiradi."""
     client: TelegramClient | None = None
     try:
         client = TelegramClient(StringSession(session_str), API_ID, API_HASH)
@@ -54,44 +190,41 @@ async def check_group_access(session_str: str, group: str) -> tuple[bool, str]:
 
         authorized = await asyncio.wait_for(client.is_user_authorized(), timeout=15)
         if not authorized:
-            return False, "invalid"
+            return False, "unauthorized"
 
-        # Entity'ni olish
-        entity_value: str | int = group
-        if group.lstrip("-").isdigit():
-            entity_value = int(group)
-        entity = await asyncio.wait_for(client.get_entity(entity_value), timeout=20)
+        entity = await asyncio.wait_for(resolve_group_entity(client, group), timeout=30)
+        if bool(getattr(entity, "left", False)):
+            return False, "not_member"
 
-        # Faqat entity mavjudligini emas, aynan yozish huquqini tekshiramiz.
+        me = await asyncio.wait_for(client.get_me(), timeout=15)
         try:
             permissions = await asyncio.wait_for(
-                client.get_permissions(entity, "me"), timeout=20
+                client.get_permissions(entity, me), timeout=20
             )
-        except Exception:
-            return False, "no_write"
+        except UserNotParticipantError:
+            return False, "not_member"
 
-        can_send = getattr(permissions, "send_messages", None)
-        is_admin = bool(
-            getattr(permissions, "is_admin", False)
-            or getattr(permissions, "is_creator", False)
-        )
-        if can_send is False and not is_admin:
-            return False, "no_write"
-        if getattr(entity, "broadcast", False) and not is_admin:
-            return False, "no_write"
+        rejection = _posting_rejection(entity, permissions)
+        return (False, rejection) if rejection else (True, "ok")
 
-        return True, "ok"
-
+    except GroupResolveError as exc:
+        return False, exc.reason
     except (UsernameNotOccupiedError, UsernameInvalidError, PeerIdInvalidError):
         return False, "not_found"
+    except UserNotParticipantError:
+        return False, "not_member"
     except ChannelPrivateError:
         return False, "private"
+    except (InviteHashExpiredError, InviteHashInvalidError):
+        return False, "invalid"
     except FloodWaitError:
         return False, "flood"
+    except (asyncio.TimeoutError, TimeoutError):
+        return False, "timeout"
     except ValueError:
         return False, "invalid"
-    except Exception as e:
-        log(f"check_group_access {group}: {type(e).__name__}", "warning")
+    except Exception as exc:
+        log(f"check_group_access {group}: {type(exc).__name__}", "warning")
         return False, "error"
     finally:
         if client:
@@ -192,12 +325,13 @@ async def handle_add_groups(update: Update, text: str) -> None:
     added: list[str] = []
     duplicates: list[str] = []
     errors: list[str] = []
-    existing = set(await db.get_chats(uid))
+    existing = {group_reference_key(value) for value in await db.get_chats(uid)}
 
     # Har bir guruhni tekshirish
     for i, group in enumerate(groups, 1):
-        # Takroriy?
-        if group in existing:
+        # Bir guruh URL va @username bilan qayta qo'shilmasin.
+        group_key = group_reference_key(group)
+        if group_key in existing:
             duplicates.append(group)
             continue
 
@@ -205,25 +339,16 @@ async def handle_add_groups(update: Update, text: str) -> None:
         ok, reason = await check_group_access(session, group)
 
         if not ok:
+            errors.append(f"{group} ({group_reason_text(reason)})")
             if reason == "flood":
-                errors.append(f"{group} (FloodWait)")
-                # Flood — biroz kutamiz
                 await asyncio.sleep(3)
-            elif reason == "not_found":
-                errors.append(f"{group} (topilmadi)")
-            elif reason == "private":
-                errors.append(f"{group} (yopiq)")
-            elif reason == "no_write":
-                errors.append(f"{group} (yozish huquqi yo'q)")
-            else:
-                errors.append(f"{group} (xato)")
             continue
 
-        # Bazaga qo'shish
+        # Bazaga canonical ko'rinishda qo'shish
         saved, save_reason = await db.add_chat(uid, group)
         if saved:
             added.append(group)
-            existing.add(group)
+            existing.add(group_key)
         elif save_reason == "duplicate":
             duplicates.append(group)
         else:

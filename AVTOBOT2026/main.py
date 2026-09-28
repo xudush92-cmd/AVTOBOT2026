@@ -543,8 +543,8 @@ async def handle_admin_fsm(update: Update, uid: int, step: str, text: str) -> No
             await msg.reply_text("❌ Xatolik.")
             return
 
-        from bot.groups import check_group_access
-        from core.utils import parse_group_lines
+        from bot.groups import check_group_access, group_reason_text
+        from core.utils import group_reference_key, parse_group_lines
 
         session = await db.get_session(target)
         if not session:
@@ -564,28 +564,29 @@ async def handle_admin_fsm(update: Update, uid: int, step: str, text: str) -> No
         status = await msg.reply_text(f"⏳ {len(groups)} ta guruh tekshirilmoqda...")
 
         added, duplicates, errors = [], [], []
-        existing = set(await db.get_chats(target))
+        existing = {group_reference_key(value) for value in await db.get_chats(target)}
 
-        for g in groups:
-            if g in existing:
-                duplicates.append(g)
+        for group in groups:
+            group_key = group_reference_key(group)
+            if group_key in existing:
+                duplicates.append(group)
                 continue
-            ok, reason = await check_group_access(session, g)
+            ok, reason = await check_group_access(session, group)
             if not ok:
-                errors.append(f"{g} ({reason})")
+                errors.append(f"{group} ({group_reason_text(reason)})")
                 continue
-            saved, sr = await db.add_chat(target, g)
+            saved, save_reason = await db.add_chat(target, group)
             if saved:
-                added.append(g)
-                existing.add(g)
-            elif sr == "duplicate":
-                duplicates.append(g)
+                added.append(group)
+                existing.add(group_key)
+            elif save_reason == "duplicate":
+                duplicates.append(group)
             else:
-                errors.append(f"{g} (saqlashda xato)")
+                errors.append(f"{group} (saqlashda xato)")
 
         await status.edit_text(
             T.groups_added_report(added, duplicates, errors),
-            reply_markup=KB.kb_admin_groups(target, await db.get_chats(target)),
+            reply_markup=KB.kb_admin_groups(target, await db.get_chat_records(target)),
         )
         log(f"📊 Admin {uid} → {target} guruhlar +{len(added)}")
         return

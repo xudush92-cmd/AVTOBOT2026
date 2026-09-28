@@ -917,10 +917,12 @@ async def action_add_group(update: Update, admin_uid: int, target: int) -> None:
         "target_uid": target,
     }
     await q.edit_message_text(
-        f"➕ Guruh qo'shish\n\n"
+        "➕ Guruh qo'shish\n\n"
         f"Foydalanuvchi: {target}\n\n"
-        f"Guruhlarni yuboring (har biri yangi qatorda):\n\n"
-        f"@guruh1\n@guruh2\n...",
+        "@username, public/post/private t.me havolasi yoki -100... ID'ni har "
+        "birini yangi qatorda yuboring. Tanlangan foydalanuvchi akkaunti guruhga "
+        "avvaldan a'zo va yozish huquqiga ega bo'lishi kerak; bot avtomatik "
+        "kirmaydi.",
         reply_markup=KB.kb_admin_section_back(target, "groups"),
     )
 
@@ -1354,9 +1356,7 @@ async def _action_delete_locked(update: Update, admin_uid: int, target: int) -> 
 # ─────────────────────────────────────────────────────────────────────────
 # FOYDALANUVCHIGA XABAR YUBORISH
 # ─────────────────────────────────────────────────────────────────────────
-async def action_send_message(
-    update: Update, admin_uid: int, target: int
-) -> None:
+async def action_send_message(update: Update, admin_uid: int, target: int) -> None:
     """
     Admin tanlangan foydalanuvchiga bitta matnli xabar yozib yuboradi.
 

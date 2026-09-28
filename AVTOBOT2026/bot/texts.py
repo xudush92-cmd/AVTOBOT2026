@@ -399,11 +399,15 @@ def groups_list(groups: list[str]) -> str:
 
 ASK_ADD_GROUP = (
     "➕ GURUH QO'SHISH\n\n"
-    "Bir yoki bir nechta guruhni yuboring — har biri YANGI QATORDA.\n\n"
-    "Misol:\n"
-    "@guruh1\n"
-    "@guruh2\n"
-    "https://t.me/guruh3\n"
+    "Bir yoki bir nechta guruhni yuboring — har biri YANGI QATORDA.\n"
+    "Ulangan Telegram akkaunti guruhga avvaldan a'zo va yozish huquqiga "
+    "ega bo'lishi kerak. Bot guruhga avtomatik kirmaydi.\n\n"
+    "Qabul qilinadi:\n"
+    "@guruh_username\n"
+    "https://t.me/guruh_username\n"
+    "https://t.me/guruh_username/123\n"
+    "https://t.me/+private_invite\n"
+    "https://t.me/c/1234567890/123\n"
     "-1001234567890"
 )
 

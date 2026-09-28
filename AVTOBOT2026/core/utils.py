@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime, timedelta, timezone
+from urllib.parse import parse_qs, urlsplit
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -144,28 +145,103 @@ def is_valid_full_name(name: str) -> bool:
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# GURUH NOMINI TOZALASH
+# TELEGRAM GURUH HAVOLASINI TOZALASH
 # ─────────────────────────────────────────────────────────────────────────
-def clean_group_value(value: str) -> str:
-    """
-    Guruh qiymatini tozalaydi.
+_TELEGRAM_HOSTS = {
+    "t.me",
+    "www.t.me",
+    "telegram.me",
+    "www.telegram.me",
+    "telegram.dog",
+    "www.telegram.dog",
+}
+_USERNAME_RE = re.compile(r"^[A-Za-z0-9_]{3,32}$")
+_MARKDOWN_LINK_RE = re.compile(r"^\[[^\]]*\]\(([^\s)]+)\)$")
 
-    Misol:
-        ' @guruh1 ' -> '@guruh1'
-        'https://t.me/guruh2\n' -> 'https://t.me/guruh2'
+
+def normalize_group_reference(value: str) -> str:
+    """Telegram public/private havolasini saqlash uchun barqaror ko'rinishga keltiradi.
+
+    Public linklar ``@username`` ga, public/private post linklari esa guruhning
+    o'ziga aylantiriladi. Private invite avtomatik join qilinmaydi; tekshiruvchi
+    akkaunt avvaldan a'zo ekanini alohida tekshiradi.
     """
     if not value:
         return ""
-    return value.strip()
+
+    cleaned = value.strip().replace("\u200b", "")
+    markdown = _MARKDOWN_LINK_RE.fullmatch(cleaned)
+    if markdown:
+        cleaned = markdown.group(1)
+    if cleaned.startswith("<") and cleaned.endswith(">"):
+        cleaned = cleaned[1:-1].strip()
+    cleaned = cleaned.rstrip(".,;")
+
+    if cleaned.startswith("@"):
+        username = cleaned[1:].strip().rstrip("/")
+        return f"@{username}" if _USERNAME_RE.fullmatch(username) else cleaned
+
+    if cleaned.lstrip("-").isdigit():
+        return str(int(cleaned))
+
+    lowered = cleaned.lower()
+    if any(lowered.startswith(f"{host}/") for host in _TELEGRAM_HOSTS):
+        cleaned = f"https://{cleaned}"
+
+    parsed = urlsplit(cleaned)
+    if parsed.scheme.lower() == "tg":
+        query = parse_qs(parsed.query)
+        if parsed.netloc.lower() == "resolve":
+            username = (query.get("domain") or [""])[0].lstrip("@")
+            return f"@{username}" if _USERNAME_RE.fullmatch(username) else cleaned
+        if parsed.netloc.lower() == "join":
+            invite = (query.get("invite") or [""])[0]
+            return f"https://t.me/+{invite}" if invite else cleaned
+        return cleaned
+
+    if parsed.scheme.lower() not in {"http", "https"}:
+        if _USERNAME_RE.fullmatch(cleaned):
+            return f"@{cleaned}"
+        return cleaned
+    if (parsed.hostname or "").lower() not in _TELEGRAM_HOSTS:
+        return cleaned
+
+    parts = [part for part in parsed.path.split("/") if part]
+    if not parts:
+        return cleaned
+    if parts[0].lower() == "s" and len(parts) > 1:
+        parts = parts[1:]
+
+    first = parts[0]
+    if first.lower() == "joinchat" and len(parts) > 1:
+        return f"https://t.me/+{parts[1]}"
+    if first.startswith("+") and len(first) > 1:
+        return f"https://t.me/{first}"
+    if first.lower() == "c" and len(parts) > 1 and parts[1].isdigit():
+        return f"-100{parts[1]}"
+
+    username = first.lstrip("@")
+    return f"@{username}" if _USERNAME_RE.fullmatch(username) else cleaned
+
+
+def group_reference_key(value: str) -> str:
+    """Equivalent public username/linklar uchun dedupe kalitini qaytaradi.
+
+    Telegram username'lari katta-kichik harfga bog'liq emas, invite hash esa
+    case-sensitive. Shu sababli faqat ``@username`` canonical qiymati casefold
+    qilinadi.
+    """
+    canonical = normalize_group_reference(value)
+    return canonical.casefold() if canonical.startswith("@") else canonical
+
+
+def clean_group_value(value: str) -> str:
+    """Guruh username, link, invite yoki ID qiymatini normalizatsiya qiladi."""
+    return normalize_group_reference(value)
 
 
 def parse_group_lines(text: str) -> list[str]:
-    """
-    Ko'p qatorli matndan guruhlar ro'yxatini ajratadi.
-
-    Misol:
-        '@guruh1\\n@guruh2\\n\\n@guruh3' -> ['@guruh1', '@guruh2', '@guruh3']
-    """
+    """Yangi qator/verguldagi guruhlarni ajratadi va format bo'yicha dedupe qiladi."""
     if not text:
         return []
     lines = text.replace(",", "\n").split("\n")
@@ -175,9 +251,10 @@ def parse_group_lines(text: str) -> list[str]:
         cleaned = clean_group_value(line)
         if not cleaned:
             continue
-        if cleaned in seen:
+        dedupe_key = group_reference_key(cleaned)
+        if dedupe_key in seen:
             continue
-        seen.add(cleaned)
+        seen.add(dedupe_key)
         result.append(cleaned)
     return result
 
