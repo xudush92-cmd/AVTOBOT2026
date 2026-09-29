@@ -95,6 +95,22 @@ async def send_super_admin_panel(message) -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────
+# LOGIN KIRISH NUQTASI (RATE LIMIT BILAN)
+# ─────────────────────────────────────────────────────────────────────────
+async def start_login_with_limit(update: Update, uid: int) -> None:
+    """UID login limitini tekshirib, login/ro'yxatdan o'tishni boshlaydi.
+
+    Yangi va tasdiqlanmagan foydalanuvchilar ham xuddi shu limitga (3 ta/soat)
+    tushadi, shuning uchun uni /start orqali aylanib o'tib bo'lmaydi.
+    """
+    if not rate_limiter.is_allowed(uid, "login"):
+        wait_min = rate_limiter.get_wait_time(uid, "login")
+        await update.message.reply_text(T.rate_limit_text(wait_min))
+        return
+    await Login.begin_login(update)
+
+
+# ─────────────────────────────────────────────────────────────────────────
 # /start COMMAND
 # ─────────────────────────────────────────────────────────────────────────
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -149,12 +165,9 @@ async def _cmd_start_locked(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
     user = await db.get_user(uid)
 
-    # Yangi user
+    # Yangi user — ro'yxatdan o'tish darhol ism-familiyadan boshlanadi.
     if not user:
-        await update.message.reply_text(
-            T.WELCOME_SHORT,
-            reply_markup=KB.kb_login(),
-        )
+        await start_login_with_limit(update, uid)
         return
 
     current_username = update.effective_user.username or ""
@@ -171,18 +184,12 @@ async def _cmd_start_locked(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         return
 
     if not user.get("is_admin"):
-        await update.message.reply_text(
-            T.WELCOME_SHORT,
-            reply_markup=KB.kb_login(),
-        )
+        await start_login_with_limit(update, uid)
         return
 
-    # Sessiya yo'q
+    # Sessiya yo'q — login oqimi xuddi shu limit ostida boshlanadi.
     if not user.get("session"):
-        await update.message.reply_text(
-            T.WELCOME_SHORT,
-            reply_markup=KB.kb_login(),
-        )
+        await start_login_with_limit(update, uid)
         return
 
     # Sessiya bor — menyu
@@ -318,7 +325,7 @@ async def _on_message_locked(
     user = await db.get_user(uid)
     if not user:
         if text == T.BTN_LOGIN:
-            await Login.begin_login(update)
+            await start_login_with_limit(update, uid)
             return
         await msg.reply_text(T.WELCOME_SHORT, reply_markup=KB.kb_login())
         return
@@ -329,7 +336,7 @@ async def _on_message_locked(
 
     if not user.get("is_admin"):
         if text == T.BTN_LOGIN:
-            await Login.begin_login(update)
+            await start_login_with_limit(update, uid)
         else:
             await msg.reply_text(T.WELCOME_SHORT, reply_markup=KB.kb_login())
         return
@@ -337,11 +344,7 @@ async def _on_message_locked(
     # ── SESSIYA YO'Q ──
     if not user.get("session"):
         if text == T.BTN_LOGIN:
-            if not rate_limiter.is_allowed(uid, "login"):
-                wait_min = rate_limiter.get_wait_time(uid, "login")
-                await msg.reply_text(T.rate_limit_text(wait_min))
-                return
-            await Login.begin_login(update)
+            await start_login_with_limit(update, uid)
             return
         await msg.reply_text(T.WELCOME_SHORT, reply_markup=KB.kb_login())
         return
@@ -839,6 +842,17 @@ async def expire_stale_logins() -> int:
     return cleaned
 
 
+async def janitor_tick() -> int:
+    """Bir marta: stale loginlar, UID va telefon limit yozuvlarini tozalaydi."""
+    cleaned = 0
+    with contextlib.suppress(Exception):
+        cleaned = await expire_stale_logins()
+    rate_limiter.cleanup_all()
+    Login.cleanup_phone_requests()
+    Login.cleanup_sms_attempts()
+    return cleaned
+
+
 async def login_janitor_loop(stop: asyncio.Event) -> None:
     """Har daqiqada stale loginlarni tekshiradi."""
     log("🧹 Login janitor boshlandi")
@@ -849,10 +863,7 @@ async def login_janitor_loop(stop: asyncio.Event) -> None:
                 break
             except asyncio.TimeoutError:
                 pass
-            with contextlib.suppress(Exception):
-                await expire_stale_logins()
-            rate_limiter.cleanup_all()
-            Login.cleanup_sms_attempts()
+            await janitor_tick()
     except asyncio.CancelledError:
         pass
 

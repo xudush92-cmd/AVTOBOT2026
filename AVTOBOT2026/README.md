@@ -17,6 +17,10 @@ Telegram guruhlariga reklama postlarini avtomatik joylashtiruvchi bot.
 - ✅ Muddat tizimi (admin qo'lda uzaytiradi)
 - ✅ Bloklash / blokdan chiqarish
 - ✅ Anti-spam himoya
+- ✅ Oddiy registratsiya: ism → telefon → Telegram kodi → admin tasdiqi
+  (tasdiqdan keyin kod qayta kiritilmaydi)
+- ✅ Sessiya admin tasdig'igacha Fernet bilan shifrlangan `pending_session`
+  sifatida saqlanadi
 - ✅ 24/7 ishlaydi, restartdan keyin avtomatik tiklanadi
 
 ---
@@ -41,6 +45,67 @@ o'chirmaydi (Logout esa foydalanuvchining ongli amali).
 Admin paneldagi SQLite eksport `session` va `pending_session` sirlarisiz
 sanitizatsiya qilinadi; server backup esa SQLite online backup API bilan
 izchil snapshot yaratadi.
+
+### Oddiy foydalanuvchi registratsiyasi (yangi oqim)
+
+1. **/start** yoki **🔑 Login** bosilganda bot birinchi xabardayoq ism va
+   familiyani **bitta xabarda** so'raydi.
+2. Telefon raqami kiritiladi va format tekshiriladi (`+998XXXXXXXXX`).
+3. Telefon validatsiyadan o'tishi bilan Telegram tasdiq kodi **darhol**
+   so'raladi — admin tasdig'i kutilmaydi. Kod faqat botdagi **raqamli
+   tugmalar** orqali kiritiladi (matn ko'rinishidagi kod qabul qilinmaydi);
+   kerak bo'lsa **📷 QR Login** yoki **2FA** ishlatiladi.
+4. Login tugagach sessiya aktiv `session` emas, Fernet bilan shifrlangan
+   `pending_session` sifatida saqlanadi va `awaiting_approval=1` qilinadi
+   (bitta atomik SQL UPDATE). Bundan oldin:
+   - Telegram qaytargan akkaunt UID'i bot foydalanuvchisining UID'iga
+     mosligi tekshiriladi;
+   - Telegram qaytargan telefon normalize qilinadi;
+   - telefon boshqa UID'ga biriktirilgan bo'lsa sessiya umuman saqlanmaydi.
+5. Super adminga tasdiq xabari boradi: **30 kunlik tarif**, **60 daqiqalik
+   posting oralig'i** va "qayta kod kiritish shart emas" eslatmasi bilan.
+6. Admin **✅ Tasdiqlash** bosganda pending sessiya Telegram orqali yana
+   tekshiriladi (`get_me()` UID solishtiriladi) va faqat aynan shu UID'ga
+   tegishli bo'lsa atomik ravishda `pending_session` → `session` ko'chiriladi:
+   - pending sessiya **revoke qilinmaydi** — u aynan shu UID uchun
+     tekshirilgan authorization;
+   - foydalanuvchidan ikkinchi marta kod yoki Login talab qilinmaydi, unga
+     darhol **asosiy menyu** yuboriladi;
+   - sessiya boshqa akkauntga tegishli bo'lsa (`mismatch`) authorization
+     Telegramda revoke qilinadi, pending holat tozalanadi va foydalanuvchi
+     qaytadan Login qilishi mumkin;
+   - sessiya yaroqsiz/revoked bo'lsa (`invalid`) pending holat tozalanadi va
+     tasdiq legacy yo'l bilan yakunlanadi — foydalanuvchi bir marta Login
+     qiladi;
+   - FloodWait/timeout/tarmoq xatosida (`temporary`) pending sessiya
+     **o'chirilmaydi va revoke qilinmaydi** — admin keyinroq yana tasdiqlaydi.
+7. Ariza rad etilsa avval pending authorization Telegramda xavfsiz revoke
+   qilinadi, keyin user o'chiriladi. Revoke vaqtinchalik xato bersa user va
+   pending ma'lumotlari saqlanadi.
+8. Birinchi marta tasdiqlangan foydalanuvchi avtomatik **30 kunlik tarif**
+   (`DEFAULT_DURATION_DAYS`) va **60 daqiqalik posting oralig'i**
+   (`DEFAULT_INTERVAL_MIN`, `MIN_INTERVAL_MIN`–`MAX_INTERVAL_MIN` oralig'iga
+   clamp qilinadi) oladi. Bu super admin qo'shgan yangi foydalanuvchiga ham
+   tegishli. Allaqachon tasdiqlangan foydalanuvchining qo'lda o'zgartirilgan
+   intervali qayta tasdiqlash yoki Login paytida **o'zgarmaydi**.
+9. Eski (pending sessiyasiz) `awaiting_approval` arizalar uchun legacy oqim
+   ishlaydi: admin tasdiqlaydi, so'ng foydalanuvchi bir marta Login qiladi.
+
+#### Rate limitlar
+
+- **UID bo'yicha login: 3 ta / soat** — yangi va tasdiqlanmagan
+  foydalanuvchilar ham shu limitga tushadi, uni **/start** orqali aylanib
+  o'tib bo'lmaydi.
+- **Telefon raqami bo'yicha kod so'rovi: 3 ta / soat** — `bot/login.py`dagi
+  alohida in-memory limiter; tekshiruv har doim Telegram
+  `send_code_request()` chaqirilishidan **oldin** bajariladi.
+- Muddat o'tgan kodni qayta so'rash: 1 marta / 30 daqiqa (o'zgarmagan).
+- Janitor har daqiqada UID limiter, telefon limiter va SMS yozuvlarini
+  tozalaydi.
+
+Sessiya hamda pending-sessiya qiymatlari hech qachon log, admin xabari yoki
+DB eksportida ko'rsatilmaydi; SQLite eksport `session` va `pending_session`
+ustunlarini bo'shatib, `VACUUM` qiladi.
 
 ### Super admin orqali foydalanuvchi qo'shish
 
@@ -94,15 +159,19 @@ SMSga majburlab o'tkaza olmaydi.
 
 Bot API/IP reputatsiyasini himoyalash uchun login oqimi qat'iy cheklangan:
 
-- yangi foydalanuvchi uchun **admin tasdig'i kod so'rovidan oldin** keladi;
-- har bir foydalanuvchi ko'pi bilan **3 marta/soat** login boshlashi mumkin;
+- yangi va tasdiqlanmagan foydalanuvchi ham UID bo'yicha **3 marta/soat**
+  login limitiga tushadi (uni **/start** orqali aylanib o'tib bo'lmaydi);
+- bitta telefon raqami uchun **3 ta/soat** kod so'rovi limiti bor va u
+  har doim `send_code_request()`dan **oldin** tekshiriladi;
 - muddati o'tgan kodni faqat **bir marta** qayta so'rash mumkin;
 - tugallanmagan login 5 daqiqada yopiladi.
 
-Shuning uchun yangi foydalanuvchi ism va telefonini kiritgach tasdiqni
-kutadi. Admin tasdiqlaganidan keyin u yana **🔑 Login** bosib kod yoki QR
-orqali kiradi. `Login`ni qayta-qayta bosish yetkazishni tezlashtirmaydi va
-Telegram flood/risk cheklovini kuchaytirishi mumkin.
+Yangi oqimda kod admin tasdig'idan **oldin** so'raladi: foydalanuvchi ism,
+telefon va kodni kiritib loginni tugatadi, sessiya shifrlangan
+`pending_session` sifatida saqlanadi. Admin tasdig'idan keyin u atomik
+faollashadi — foydalanuvchi kodni qayta kiritmaydi. `Login`ni qayta-qayta
+bosish yetkazishni tezlashtirmaydi va Telegram flood/risk cheklovini
+kuchaytirishi mumkin.
 
 ### Tavsiya etilgan yechim
 

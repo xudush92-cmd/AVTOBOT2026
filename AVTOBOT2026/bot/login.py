@@ -1,13 +1,19 @@
 """
 Login va ro'yxatdan o'tish oqimi.
 
-Ketma-ketlik:
-1. Ism
-2. Familiya
-3. Telefon
-4. Telegram tasdiq kodi (numpad) yoki QR Login
-5. 2FA (bo'lsa)
-6. Sessiya yaratiladi -> adminga xabar
+Ketma-ketlik (oddiy foydalanuvchi):
+1. Ism va familiya — bitta xabarda
+2. Telefon raqami
+3. Telegram tasdiq kodi (faqat raqamli tugmalar) yoki QR Login
+4. 2FA (bo'lsa)
+5. Sessiya Fernet bilan shifrlangan ``pending_session`` sifatida saqlanadi
+   va super adminga tasdiq so'rovi yuboriladi
+6. Admin tasdiqlagach pending sessiya aktiv sessiyaga ko'chiriladi —
+   foydalanuvchi kodni qayta kiritmaydi.
+
+Telefon bo'yicha kod so'rovlari alohida in-memory limiter bilan cheklanadi
+(soatiga 3 ta) va tekshiruv har doim ``send_code_request()``dan OLDIN
+bajariladi.
 """
 
 from __future__ import annotations
@@ -50,6 +56,7 @@ from config.config import (
 )
 from core import database as db
 from core.logger import log
+from core.rate_limit import RateLimiter
 from core.session_manager import revoke_telegram_session
 from core.update_locks import user_operation_lock, user_update_lock
 from core.utils import calc_expires, is_valid_full_name, is_valid_phone
@@ -79,6 +86,11 @@ user_states: dict[int, dict] = {}
 login_ctx: dict[int, LoginCtx] = {}
 sms_attempts: dict[int, list[float]] = {}
 
+# Telefon raqami bo'yicha kod so'rovlari limiteri — UID limiteridan alohida.
+# Kalit sifatida faqat raqamlar ishlatiladi: bitta raqam turli formatlarda
+# (probel, +, qavs) yozilsa ham bitta limit hisoblanadi.
+phone_limiter = RateLimiter()
+
 application = None
 
 
@@ -93,6 +105,30 @@ def mask_phone(phone: str) -> str:
     if len(phone) <= 6:
         return "***"
     return f"{phone[:4]}***{phone[-3:]}"
+
+
+def phone_rate_key(phone: str) -> int:
+    """Rate limiter kaliti — telefonning faqat raqamlari."""
+    digits = "".join(char for char in (phone or "") if char.isdigit())
+    return int(digits) if digits else 0
+
+
+def take_phone_code_slot(phone: str) -> tuple[bool, int]:
+    """Telefon uchun kod so'rov slotini oladi (3 ta / soat).
+
+    Returns:
+        (True, 0)           — so'rov yuborish mumkin;
+        (False, wait_min)   — limit tugagan, shuncha daqiqa kutish kerak.
+    """
+    key = phone_rate_key(phone)
+    if phone_limiter.is_allowed(key, "phone"):
+        return True, 0
+    return False, phone_limiter.get_wait_time(key, "phone")
+
+
+def cleanup_phone_requests() -> int:
+    """Telefon limiteridagi eskirgan yozuvlarni tozalaydi (janitor uchun)."""
+    return phone_limiter.cleanup_all()
 
 
 def describe_code_delivery(result) -> tuple[str, str, str, int | None]:
@@ -324,6 +360,25 @@ async def request_code(
     target_name: str = "",
 ) -> None:
     """Telegramga kod so'rovini yuboradi va yetkazish turini ko'rsatadi."""
+    # Limit Telegram `send_code_request()`dan va TelegramClient yaratilishidan
+    # OLDIN tekshiriladi: limit tugagan bo'lsa API_ID orqali kod umuman
+    # so'ralmaydi.
+    allowed, wait_min = take_phone_code_slot(phone)
+    if not allowed:
+        log(
+            f"⏳ Telefon kodi limiti: uid={uid} phone={mask_phone(phone)} "
+            f"wait={wait_min} daq",
+            "warning",
+        )
+        await application.bot.send_message(
+            uid,
+            T.PHONE_CODE_LIMIT_REACHED.format(minutes=wait_min),
+            reply_markup=(
+                KB.kb_admin_panel() if for_uid is not None else KB.kb_login()
+            ),
+        )
+        return
+
     client: TelegramClient | None = None
     try:
         client = TelegramClient(StringSession(), API_ID, API_HASH)
@@ -582,8 +637,9 @@ async def begin_login(update: Update) -> None:
         )
         return
 
-    # Yangi/tasdiqlanmagan user avval ism-familiya va telefon bilan
-    # ro'yxatdan o'tadi; Telegram kodi admin tasdig'idan keyingina so'raladi.
+    # Yangi/tasdiqlanmagan user ism-familiya va telefon bilan ro'yxatdan
+    # o'tadi; kod telefon tasdiqlangach darhol so'raladi, admin tasdig'i esa
+    # login tugagach (pending sessiya tayyor bo'lganda) so'raladi.
     if not user or not user.get("is_admin"):
         user_states[uid] = {"step": "full_name", "ts": time.time()}
         await update.message.reply_text(
@@ -673,20 +729,17 @@ async def _handle_phone_locked(update: Update, text: str) -> None:
 
     user_states.pop(uid, None)
 
-    # Faqat avvaldan tasdiqlangan user uchun kod so'raymiz. Bu ochiq botda
-    # istalgan odam AWS IP/API_ID orqali auth.sendCode spam qilishini to'xtatadi.
+    # Telefon validatsiyadan o'tgach kod DARHOL so'raladi — admin tasdig'i
+    # faqat Telegram logini tugagach kerak bo'ladi. Har bir kod so'rovi
+    # telefon limiteridan o'tadi (3 ta / soat) va u `request_code()` ichida
+    # Telegram API'ga murojaatdan oldin tekshiriladi.
     if uid == SUPER_ADMIN or await db.is_admin(uid):
         await update.message.reply_text(T.PHONE_ACCEPTED.format(phone=phone))
-        await request_code(uid, phone)
-        return
+    else:
+        await update.message.reply_text(T.REGISTRATION_CODE_REQUEST.format(phone=phone))
+        log(f"⏳ Ro'yxatdan o'tish boshlandi: uid={uid} phone={mask_phone(phone)}")
 
-    await db.set_awaiting_approval(uid, True)
-    log(f"⏳ Ro'yxatdan o'tish so'rovi: uid={uid} phone={mask_phone(phone)}")
-    await notify_super_for_approval(uid)
-    await update.message.reply_text(
-        T.REGISTRATION_PENDING,
-        reply_markup=KB.kb_pending(),
-    )
+    await request_code(uid, phone)
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -811,6 +864,22 @@ async def attempt_signin(uid: int, code: str) -> None:
                     if ctx.mode == "admin_add_user" or ctx.for_uid is not None
                     else KB.kb_login()
                 ),
+            )
+            return
+
+        # Telefon bo'yicha limit send_code_request()dan OLDIN tekshiriladi.
+        phone_allowed, phone_wait = take_phone_code_slot(ctx.phone)
+        if not phone_allowed:
+            await cleanup_login(uid)
+            log(
+                f"⏳ Kod qayta so'rovi telefon limitida: uid={uid} "
+                f"phone={mask_phone(ctx.phone)}",
+                "warning",
+            )
+            await application.bot.send_message(
+                uid,
+                T.PHONE_CODE_LIMIT_REACHED.format(minutes=phone_wait),
+                reply_markup=failure_markup,
             )
             return
 
@@ -1251,9 +1320,9 @@ async def _finalize_login_locked(uid: int) -> None:
         return
 
     # ── 4) Yangi foydalanuvchi (tasdiqlanmagan) ──
-    pending_saved = await db.set_pending(uid, sess_str)
-    awaiting_saved = await db.set_awaiting_approval(uid, True)
-    if not pending_saved or not awaiting_saved:
+    # Sessiya aktiv `session`ga emas, Fernet bilan shifrlangan `pending_session`
+    # sifatida saqlanadi; awaiting flag bitta atomik UPDATE'da yoqiladi.
+    if not await db.set_pending_approval(uid, sess_str):
         await revoke_telegram_session(sess_str, uid)
         await application.bot.send_message(
             uid,

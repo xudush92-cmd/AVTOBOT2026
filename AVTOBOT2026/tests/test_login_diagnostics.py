@@ -367,7 +367,9 @@ class RegistrationFlowTests(unittest.IsolatedAsyncioTestCase):
             message=SimpleNamespace(reply_text=AsyncMock()),
         )
 
-    async def test_unapproved_user_is_sent_to_admin_before_code_request(self) -> None:
+    async def test_unapproved_user_gets_code_request_before_admin_approval(
+        self,
+    ) -> None:
         uid = 2001
         update = self._update(uid)
         login.user_states[uid] = {"step": "phone", "full_name": "Test User"}
@@ -387,12 +389,13 @@ class RegistrationFlowTests(unittest.IsolatedAsyncioTestCase):
         ):
             await login.handle_phone(update, "+998901234567")
 
-        awaiting.assert_awaited_once_with(uid, True)
-        notify.assert_awaited_once_with(uid)
-        request_code.assert_not_awaited()
+        # Yangi oqim: kod admin tasdig'idan oldin darhol so'raladi.
+        request_code.assert_awaited_once_with(uid, "+998901234567")
+        awaiting.assert_not_awaited()
+        notify.assert_not_awaited()
         self.assertEqual(
             update.message.reply_text.await_args.args[0],
-            T.REGISTRATION_PENDING,
+            T.REGISTRATION_CODE_REQUEST.format(phone="+998901234567"),
         )
 
     async def test_approved_user_requests_code_immediately(self) -> None:

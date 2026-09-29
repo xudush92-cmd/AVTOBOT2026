@@ -73,6 +73,12 @@ BACKUP_RETENTION: int = max(1, _int("BACKUP_RETENTION", 7))
 # ─────────────────────────────────────────────────────────────────────────
 MIN_INTERVAL_MIN: int = 5  # minimal interval (5 daqiqa)
 MAX_INTERVAL_MIN: int = 10080  # maksimal interval (7 kun)
+# Birinchi marta tasdiqlangan user oladigan standart posting oralig'i.
+# Har doim MIN/MAX oraliqqa clamp qilinadi.
+DEFAULT_INTERVAL_MIN: int = min(
+    MAX_INTERVAL_MIN,
+    max(MIN_INTERVAL_MIN, _int("DEFAULT_INTERVAL_MIN", 60)),
+)
 SEND_DELAY_S: int = 5  # guruhlar orasidagi pauza (soniya)
 JITTER_S: int = 300  # tasodifiy qo'shimcha vaqt (5 daqiqagacha)
 START_JITTER_S: int = 60  # worker birinchi start (1 daqiqagacha)
@@ -100,7 +106,9 @@ CLEANUP_INTERVAL_S: int = max(300, _int("CLEANUP_INTERVAL_S", 1800))
 # ─────────────────────────────────────────────────────────────────────────
 # RATE LIMIT
 # ─────────────────────────────────────────────────────────────────────────
-RATE_LIMIT_LOGIN: int = 3  # login urinishlari
+RATE_LIMIT_LOGIN: int = 3  # login urinishlari (UID bo'yicha)
+RATE_LIMIT_PHONE_CODE: int = 3  # bitta telefon uchun kod so'rovlari
+RATE_LIMIT_PHONE_CODE_WINDOW_S: int = 3600  # telefon kod limiti oynasi (1 soat)
 RATE_LIMIT_COMMAND: int = 30  # buyruqlar
 RATE_LIMIT_MESSAGE: int = 40  # xabarlar
 RATE_LIMIT_MODIFY: int = 20  # o'zgartirish amallari
