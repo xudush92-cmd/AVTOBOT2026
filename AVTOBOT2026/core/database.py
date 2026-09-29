@@ -14,7 +14,7 @@ from typing import Any
 
 import aiosqlite
 
-from config.config import DB_PATH, SUPER_ADMIN
+from config.config import DB_PATH, DEFAULT_INTERVAL_MIN, SUPER_ADMIN
 from core.logger import log
 from core.session_crypto import decrypt_session, encrypt_session, ensure_session_cipher
 from core.utils import iso_now
@@ -338,6 +338,52 @@ async def set_pending(uid: int, session: str) -> bool:
     return cur.rowcount > 0
 
 
+async def set_pending_approval(uid: int, session: str) -> bool:
+    """Shifrlangan pending session va awaiting flag'ni bitta UPDATE'da saqlaydi.
+
+    Login tugagach sessiya aktiv ``session``ga emas, faqat pending sifatida
+    yoziladi; admin tasdig'i kelmaguncha u ishlatilmaydi.
+    """
+    cur = await _execute_write(
+        "UPDATE users SET pending_session = ?, awaiting_approval = 1, "
+        "updated_at = ? WHERE uid = ?",
+        (encrypt_session(session), iso_now(), uid),
+    )
+    return cur.rowcount > 0
+
+
+async def approve_pending_user(uid: int, default_expires: str | None = None) -> bool:
+    """Pending sessiyani atomik ravishda aktiv sessiyaga ko'chiradi.
+
+    Bitta UPDATE ichida: ``pending_session`` → ``session``, pending tozalanadi,
+    approval yoqiladi, default tarif (yo'q bo'lsa) va birinchi approval uchun
+    default posting oralig'i beriladi. Pending sessiya Telegramda revoke
+    qilinmaydi — u aynan shu UID uchun tekshirilgan authorization.
+    """
+    cur = await _execute_write(
+        "UPDATE users SET session = pending_session, pending_session = '', "
+        "is_admin = 1, awaiting_approval = 0, "
+        "warned_at = CASE "
+        "WHEN is_admin = 1 AND tariff_expires_at IS NOT NULL "
+        "AND tariff_expires_at != '' THEN warned_at ELSE NULL END, "
+        "tariff_expires_at = COALESCE(NULLIF(tariff_expires_at, ''), ?), "
+        "interval_min = CASE WHEN is_admin = 0 THEN ? ELSE interval_min END, "
+        "updated_at = ? WHERE uid = ? AND pending_session != ''",
+        (default_expires, DEFAULT_INTERVAL_MIN, iso_now(), uid),
+    )
+    return cur.rowcount > 0
+
+
+async def clear_pending_approval(uid: int) -> bool:
+    """Pending sessiya sirri va awaiting flag'ni tozalaydi (user qoladi)."""
+    cur = await _execute_write(
+        "UPDATE users SET pending_session = '', awaiting_approval = 0, "
+        "updated_at = ? WHERE uid = ?",
+        (iso_now(), uid),
+    )
+    return cur.rowcount > 0
+
+
 async def get_pending(uid: int) -> str:
     user = await get_user(uid)
     return user.get("pending_session", "") if user else ""
@@ -357,15 +403,20 @@ async def add_admin(uid: int) -> None:
 
 
 async def approve_user(uid: int, default_expires: str | None = None) -> bool:
-    """Mavjud userni bitta SQL write bilan tasdiqlaydi va default tarif beradi."""
+    """Mavjud userni bitta SQL write bilan tasdiqlaydi va default tarif beradi.
+
+    Birinchi approvalda standart posting oralig'i ham beriladi. Allaqachon
+    tasdiqlangan userning qo'lda o'zgartirilgan intervali tegilmaydi.
+    """
     cur = await _execute_write(
         "UPDATE users SET is_admin = 1, awaiting_approval = 0, "
         "warned_at = CASE "
         "WHEN is_admin = 1 AND tariff_expires_at IS NOT NULL "
         "AND tariff_expires_at != '' THEN warned_at ELSE NULL END, "
         "tariff_expires_at = COALESCE(NULLIF(tariff_expires_at, ''), ?), "
+        "interval_min = CASE WHEN is_admin = 0 THEN ? ELSE interval_min END, "
         "updated_at = ? WHERE uid = ?",
-        (default_expires, iso_now(), uid),
+        (default_expires, DEFAULT_INTERVAL_MIN, iso_now(), uid),
     )
     return cur.rowcount > 0
 

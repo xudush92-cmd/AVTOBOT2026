@@ -17,6 +17,8 @@ from config.config import (
     RATE_LIMIT_LOGIN_WINDOW_S,
     RATE_LIMIT_MESSAGE,
     RATE_LIMIT_MODIFY,
+    RATE_LIMIT_PHONE_CODE,
+    RATE_LIMIT_PHONE_CODE_WINDOW_S,
     RATE_WINDOW_S,
 )
 
@@ -25,6 +27,7 @@ from config.config import (
 # ─────────────────────────────────────────────────────────────────────────
 LIMITS: dict[str, int] = {
     "login": RATE_LIMIT_LOGIN,  # login urinishlari
+    "phone": RATE_LIMIT_PHONE_CODE,  # bitta telefon uchun kod so'rovlari
     "command": RATE_LIMIT_COMMAND,  # /start va h.k.
     "message": RATE_LIMIT_MESSAGE,  # oddiy xabarlar
     "modify": RATE_LIMIT_MODIFY,  # guruh/post o'zgartirish
@@ -32,6 +35,7 @@ LIMITS: dict[str, int] = {
 
 WINDOWS: dict[str, int] = {
     "login": RATE_LIMIT_LOGIN_WINDOW_S,  # Telegram auth: 3 marta / soat
+    "phone": RATE_LIMIT_PHONE_CODE_WINDOW_S,  # telefon kodi: 3 marta / soat
     "command": RATE_WINDOW_S,
     "message": RATE_WINDOW_S,
     "modify": RATE_WINDOW_S,

@@ -44,7 +44,13 @@ from config.config import (
 )
 from core import database as db
 from core.logger import log
-from core.session_manager import revoke_telegram_session
+from core.session_manager import (
+    MISMATCH,
+    TEMPORARY,
+    VALID,
+    revoke_telegram_session,
+    validate_telegram_session_owner,
+)
 from core.update_locks import user_operation_lock, user_update_lock
 from core.utils import (
     calc_expires,
@@ -1166,6 +1172,28 @@ async def action_approve(update: Update, admin_uid: int, target: int) -> None:
         await _action_approve_locked(update, admin_uid, target)
 
 
+async def _send_newly_approved_menu(target: int, text: str) -> None:
+    """Tasdiqlangan userga to'g'ridan-to'g'ri asosiy menyuni yuboradi."""
+    running = False
+    with contextlib.suppress(Exception):
+        from bot.menu import worker_manager
+
+        running = bool(worker_manager and worker_manager.is_running(target))
+    with contextlib.suppress(Exception):
+        await application.bot.send_message(
+            target,
+            text,
+            reply_markup=KB.kb_main(running=running),
+        )
+
+
+async def _count_approval_referral(target: int) -> None:
+    with contextlib.suppress(Exception):
+        from bot.referral import on_referral_counted
+
+        await on_referral_counted(target)
+
+
 async def _action_approve_locked(update: Update, admin_uid: int, target: int) -> None:
     q = update.callback_query
     user = await db.get_user(target)
@@ -1175,22 +1203,91 @@ async def _action_approve_locked(update: Update, admin_uid: int, target: int) ->
             reply_markup=await user_card_markup(target) if user else KB.kb_admin_back(),
         )
         return
+
     pending = await db.get_pending(target)
     if pending:
-        # Eski versiyadan qolgan pending sessiyaning UID bindingiga ishonmaymiz.
-        # Telegramda revoke qilib, approvaldan keyin yangi login talab qilamiz.
-        if not await revoke_telegram_session(pending, target):
+        # Pending sessiyaning UID bindingiga ishonmaymiz: avval Telegramning
+        # o'zidan `get_me()` orqali egasini tekshiramiz.
+        verdict = await validate_telegram_session_owner(pending, target)
+
+        if verdict == TEMPORARY:
+            # FloodWait/tarmoq xatosi: pending sessiya saqlanadi va revoke
+            # qilinmaydi — admin keyinroq yana tasdiqlashi mumkin.
             await q.edit_message_text(
-                "❌ Eski pending authorization bekor qilinmadi. Xavfsizlik "
-                "uchun ariza hozircha tasdiqlanmadi.",
+                "⏳ Telegram vaqtincha javob bermadi (FloodWait/tarmoq).\n\n"
+                "Pending sessiya va ariza saqlab qolindi. Birozdan keyin "
+                "yana ✅ Tasdiqlash tugmasini bosing.",
                 reply_markup=await user_card_markup(target),
             )
             return
+
+        if verdict == MISMATCH:
+            # Pending authorization boshqa akkauntga tegishli: avval uni
+            # Telegramda bekor qilamiz, keyin pending holatni tozalaymiz.
+            if not await revoke_telegram_session(pending, target):
+                await q.edit_message_text(
+                    "❌ Pending authorization Telegramda bekor qilinmadi. "
+                    "Xavfsizlik uchun ariza hozircha tasdiqlanmadi.",
+                    reply_markup=await user_card_markup(target),
+                )
+                return
+            await db.clear_pending_approval(target)
+            log(
+                f"⚠️ Admin {admin_uid} → Approve {target}: pending sessiya "
+                "boshqa akkauntga tegishli edi, revoke qilindi",
+                "warning",
+            )
+            await q.edit_message_text(
+                "⚠️ Pending sessiya boshqa Telegram akkauntiga tegishli edi.\n\n"
+                "Authorization Telegramda bekor qilindi, pending holat "
+                "tozalandi. Foydalanuvchi qaytadan Login qilishi kerak.",
+                reply_markup=await user_card_markup(target),
+            )
+            with contextlib.suppress(Exception):
+                await application.bot.send_message(
+                    target,
+                    T.PENDING_SESSION_MISMATCH,
+                    reply_markup=KB.kb_login(),
+                )
+            return
+
+        if verdict == VALID:
+            # Sessiya aynan shu UID uchun tasdiqlandi: uni revoke qilmasdan
+            # atomik tarzda pending_session → session ko'chiramiz.
+            if not await db.approve_pending_user(
+                target, calc_expires(DEFAULT_DURATION_DAYS)
+            ):
+                await q.edit_message_text(
+                    "⚠️ Ariza eskirgan yoki allaqachon ko'rib chiqilgan.",
+                    reply_markup=await user_card_markup(target),
+                )
+                return
+            log(
+                f"✅ Admin {admin_uid} → Approve {target} "
+                "(pending sessiya faollashtirildi)"
+            )
+            await q.edit_message_text(
+                T.approval_result_text(target, session_activated=True),
+                reply_markup=await user_card_markup(target),
+            )
+            await _send_newly_approved_menu(target, T.USER_APPROVED_ACTIVE)
+            await _count_approval_referral(target)
+            return
+
+        # verdict == INVALID: pending yaroqsiz/revoked — uni tozalab, legacy
+        # tasdiqlashga o'tamiz (foydalanuvchi bir marta Login qiladi).
         await db.del_pending(target)
+        log(
+            f"ℹ️ Admin {admin_uid} → Approve {target}: pending sessiya "
+            "yaroqsiz, tozalandi",
+            "warning",
+        )
+
+    # ── Legacy tasdiqlash: pending sessiya yo'q (yoki yaroqsiz) ──
     await db.approve_user(target, calc_expires(DEFAULT_DURATION_DAYS))
     log(f"✅ Admin {admin_uid} → Approve {target}")
     await q.edit_message_text(
-        f"✅ {target} tasdiqlandi. Tarif: {DEFAULT_DURATION_DAYS} kun.",
+        T.approval_result_text(target, session_activated=False),
         reply_markup=await user_card_markup(target),
     )
     with contextlib.suppress(Exception):
@@ -1199,10 +1296,7 @@ async def _action_approve_locked(update: Update, admin_uid: int, target: int) ->
             T.USER_APPROVED,
             reply_markup=KB.kb_login(),
         )
-    with contextlib.suppress(Exception):
-        from bot.referral import on_referral_counted
-
-        await on_referral_counted(target)
+    await _count_approval_referral(target)
 
 
 async def action_reject(update: Update, admin_uid: int, target: int) -> None:
@@ -1220,13 +1314,17 @@ async def _action_reject_locked(update: Update, admin_uid: int, target: int) -> 
         )
         return
     pending = await db.get_pending(target)
-    if pending and not await revoke_telegram_session(pending, target):
-        await q.edit_message_text(
-            "❌ Pending Telegram authorization bekor qilinmadi. "
-            "Xavfsizlik uchun ariza hozircha o'chirilmadi.",
-            reply_markup=await user_card_markup(target),
-        )
-        return
+    if pending:
+        # Avval Telegramda xavfsiz revoke qilamiz; FloodWait/tarmoq xatosida
+        # user va pending ma'lumotlari saqlanadi (keyin qayta urinish mumkin).
+        if not await revoke_telegram_session(pending, target):
+            await q.edit_message_text(
+                "❌ Pending Telegram authorization bekor qilinmadi. "
+                "Xavfsizlik uchun ariza hozircha o'chirilmadi.",
+                reply_markup=await user_card_markup(target),
+            )
+            return
+        await db.clear_pending_approval(target)
     await cleanup_login(target)
     await db.delete_user(target)
     wipe_directory(MEDIA_DIR / str(target))

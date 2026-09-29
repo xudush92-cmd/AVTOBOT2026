@@ -6,7 +6,13 @@ Bu fayl orqali botdagi har bir xabar matnini bir joydan boshqarish mumkin.
 
 from __future__ import annotations
 
-from config.config import ADMIN_CONTACT_PHONE, MAX_INTERVAL_MIN, MIN_INTERVAL_MIN
+from config.config import (
+    ADMIN_CONTACT_PHONE,
+    DEFAULT_DURATION_DAYS,
+    DEFAULT_INTERVAL_MIN,
+    MAX_INTERVAL_MIN,
+    MIN_INTERVAL_MIN,
+)
 
 # ─────────────────────────────────────────────────────────────────────────
 # UMUMIY
@@ -14,11 +20,14 @@ from config.config import ADMIN_CONTACT_PHONE, MAX_INTERVAL_MIN, MIN_INTERVAL_MI
 WELCOME_SHORT = (
     "🤖 AVTOBOT\n\n"
     "Telegram guruhlaringizga reklama postlarini avtomatik joylashtiruvchi bot.\n\n"
-    "📌 Boshlash:\n"
-    "1. 🔑 Login bosib ism-familiyangizni bitta xabarda kiriting\n"
-    "2. Telefon raqamingizni kiriting\n"
-    "3. Admin tasdiqlashini kuting\n"
-    "4. Tasdiqdan keyin 🔑 Login bosib kodni tugmalarda kiriting\n\n"
+    "📌 Boshlash (🔑 Login yoki /start):\n"
+    "1. Ism va familiyangizni bitta xabarda kiriting\n"
+    "2. Telefon raqamingizni kiriting — Telegram kodi darhol so'raladi\n"
+    "3. Kodni faqat botdagi RAQAMLI TUGMALAR orqali kiriting (matn qabul "
+    "qilinmaydi); kerak bo'lsa 📷 QR Login yoki 2FA ishlatiladi\n"
+    "4. Login tugagach so'rov admin tasdig'iga tushadi\n"
+    "5. Admin tasdiqlagach sessiya avtomatik faollashadi — kodni qayta "
+    "kiritish shart emas\n\n"
     f"📱 Yordam: {ADMIN_CONTACT_PHONE}"
 )
 
@@ -37,7 +46,8 @@ BLOCKED = f"🚫 Bot to'xtatildi.\n\nAdmin bilan bog'laning: {ADMIN_CONTACT_PHON
 ASK_FULL_NAME = (
     "📋 RO'YXATDAN O'TISH (1/2)\n\n"
     "👤 Ism va familiyangizni bitta xabarda kiriting:\n\n"
-    "Masalan: Akmal Karimov"
+    "Masalan: Akmal Karimov\n\n"
+    "➡️ Keyingi qadam: telefon raqami va Telegram tasdiq kodi."
 )
 
 FULL_NAME_INVALID = (
@@ -50,6 +60,16 @@ FULL_NAME_ACCEPTED = (
     "📋 RO'YXATDAN O'TISH (2/2)\n\n"
     "📱 Telegram telefon raqamingizni yuboring:\n\n"
     "Format: +998XXXXXXXXX"
+)
+
+# Telefon qabul qilingach kod darhol so'raladi; admin tasdig'i keyin keladi.
+REGISTRATION_CODE_REQUEST = (
+    "✅ {phone} qabul qilindi.\n\n"
+    "🔑 Endi Telegram tasdiq kodi darhol so'raladi. Kodni botdagi "
+    "RAQAMLI TUGMALAR orqali kiriting — matn ko'rinishidagi kod qabul "
+    "qilinmaydi.\n\n"
+    "⏳ Login tugagach so'rovingiz admin tasdig'iga tushadi. Tasdiqdan keyin "
+    "kodni QAYTA kiritish shart emas."
 )
 
 
@@ -208,15 +228,27 @@ PASSWORD_WRONG = "❌ Noto'g'ri parol. Qaytadan kiriting:"
 # ─────────────────────────────────────────────────────────────────────────
 REGISTRATION_PENDING = (
     "✅ Ro'yxatdan o'tish so'rovingiz qabul qilindi!\n\n"
-    "⏳ Avval admin sizni tasdiqlaydi. Shundan keyin 🔑 Login bosib "
-    "Telegram kodini so'raysiz.\n\n"
+    "⏳ Login yakunlandi va sessiya xavfsiz saqlandi. Endi admin tasdig'i "
+    "kutilmoqda — kodni qayta kiritish shart emas.\n\n"
     f"📞 Tezroq tasdiqlanish uchun: {ADMIN_CONTACT_PHONE}"
 )
 
 LOGIN_SUCCESS_PENDING = (
     "✅ Login muvaffaqiyatli!\n\n"
-    "⏳ So'rovingiz admin tasdiqini kutmoqda.\n\n"
+    "🔐 Sessiya xavfsiz (shifrlangan) holatda saqlandi.\n"
+    "⏳ Endi so'rovingiz admin tasdiqini kutmoqda.\n\n"
+    "ℹ️ Admin tasdiqlagach sessiya avtomatik faollashadi — qayta Login "
+    "bosish yoki kod kiritish shart emas.\n\n"
     f"📞 Tezroq tasdiqlanish uchun: {ADMIN_CONTACT_PHONE}"
+)
+
+# Admin tasdiqlagan sessiya boshqa akkauntga tegishli chiqsa.
+PENDING_SESSION_MISMATCH = (
+    "⚠️ Xavfsizlik tekshiruvi: so'ralgan sessiya boshqa Telegram akkauntiga "
+    "tegishli bo'lgani uchun u bekor qilindi.\n\n"
+    "🔑 Iltimos, qaytadan Login qiling va kodni botdagi raqamli tugmalar "
+    "orqali kiriting.\n\n"
+    f"📱 Yordam: {ADMIN_CONTACT_PHONE}"
 )
 
 LOGIN_SUCCESS_APPROVED = (
@@ -238,21 +270,58 @@ LOGIN_NOT_APPROVED = (
 # ADMINGA XABAR (yangi user)
 # ─────────────────────────────────────────────────────────────────────────
 def new_user_notification(name: str, phone: str, username: str, uid: int) -> str:
-    """Adminga yangi foydalanuvchi haqida xabar."""
+    """Adminga yangi foydalanuvchi haqida xabar.
+
+    Login allaqachon tugagan: sessiya ``pending_session`` sifatida saqlangan,
+    shuning uchun tasdiqdan keyin foydalanuvchi kodni qayta kiritmaydi.
+    """
     user_line = f"@{username}" if username else "username yo'q"
     return (
         "🔔 Yangi foydalanuvchi ro'yxatdan o'tdi\n\n"
         f"👤 Ism: {name}\n"
         f"📱 Telefon: {phone}\n"
         f"📎 {user_line}\n"
-        f"🆔 ID: {uid}"
+        f"🆔 ID: {uid}\n\n"
+        "🔐 Telegram logini yakunlangan — sessiya shifrlangan pending "
+        "holatda tayyor.\n"
+        f"📅 Tarif: {DEFAULT_DURATION_DAYS} kun\n"
+        f"⏱ Posting oralig'i: {DEFAULT_INTERVAL_MIN} daqiqa\n"
+        "✅ Tasdiqlagach kodni qayta kiritish shart emas."
     )
+
+
+def approval_result_text(uid: int, *, session_activated: bool) -> str:
+    """Admin tasdiqlash natijasini aniq ko'rsatadi (tarif va interval bilan)."""
+    lines = [
+        f"✅ {uid} tasdiqlandi.",
+        "",
+        f"📅 Tarif: {DEFAULT_DURATION_DAYS} kun",
+        f"⏱ Posting oralig'i: {DEFAULT_INTERVAL_MIN} daqiqa",
+    ]
+    if session_activated:
+        lines.append("🔐 Pending sessiya faollashtirildi — kod qayta so'ralmaydi.")
+    else:
+        lines.append(
+            "🔑 Sessiya yo'q: foydalanuvchi bir marta 🔑 Login bosib kodni "
+            "kiritishi kerak."
+        )
+    return "\n".join(lines)
 
 
 USER_APPROVED = (
     "✅ Hisobingiz tasdiqlandi!\n\n"
-    "Endi botdan foydalanishingiz mumkin.\n"
-    "🔑 Login bosing va kodni kiriting."
+    f"📅 Tarif: {DEFAULT_DURATION_DAYS} kun\n"
+    f"⏱ Posting oralig'i: {DEFAULT_INTERVAL_MIN} daqiqa\n\n"
+    "🔑 Endi bir marta Login bosing va kodni botdagi raqamli tugmalar orqali "
+    "kiriting."
+)
+
+# Pending sessiya aynan o'sha UID uchun tekshirilib faollashtirilganda yuboriladi.
+USER_APPROVED_ACTIVE = (
+    "✅ Hisobingiz tasdiqlandi va sessiya faollashtirildi!\n\n"
+    f"📅 Tarif: {DEFAULT_DURATION_DAYS} kun\n"
+    f"⏱ Posting oralig'i: {DEFAULT_INTERVAL_MIN} daqiqa\n\n"
+    "ℹ️ Kodni qayta kiritish shart emas — botdan foydalanishingiz mumkin."
 )
 
 USER_REJECTED = (
@@ -290,6 +359,13 @@ def rate_limit_text(minutes: int) -> str:
         f"⏳ Juda ko'p so'rov yubordingiz.\n\n"
         f"{minutes} daqiqa kuting va qaytadan urinib ko'ring."
     )
+
+
+# Telefon bo'yicha kod so'rovi limiti (3 ta / soat).
+PHONE_CODE_LIMIT_REACHED = (
+    "⏳ Bu telefon raqami uchun kod so'rovlari limiti tugadi.\n\n"
+    "{minutes} daqiqadan keyin qaytadan 🔑 Login bosing."
+)
 
 
 # ─────────────────────────────────────────────────────────────────────────
