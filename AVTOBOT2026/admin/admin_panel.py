@@ -239,7 +239,7 @@ async def show_expired(update: Update) -> None:
 
     text = (
         f"🕓 MUDDATI TUGAGANLAR ({len(expired)} ta)\n\n"
-        "Muddatni uzaytirish uchun foydalanuvchini tanlang:"
+        "Yangi muddat berish uchun foydalanuvchini tanlang:"
     )
     kb = KB.kb_users_list(expired)
     with contextlib.suppress(Exception):

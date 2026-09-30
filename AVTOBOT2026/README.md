@@ -14,7 +14,8 @@ Telegram guruhlariga reklama postlarini avtomatik joylashtiruvchi bot.
 - ✅ Referal tizimi
 - ✅ Super admin paneli (to'liq nazorat)
 - ✅ Ommaviy xabar yuborish (broadcast)
-- ✅ Muddat tizimi (admin qo'lda uzaytiradi)
+- ✅ Muddat tizimi (admin yangi muddat beradi — oldingi muddat bekor bo'lib,
+  yangisi hozirdan boshlab hisoblanadi)
 - ✅ Bloklash / blokdan chiqarish
 - ✅ Anti-spam himoya
 - ✅ Oddiy registratsiya: ism → telefon → Telegram kodi → admin tasdiqi
@@ -106,6 +107,32 @@ izchil snapshot yaratadi.
 Sessiya hamda pending-sessiya qiymatlari hech qachon log, admin xabari yoki
 DB eksportida ko'rsatilmaydi; SQLite eksport `session` va `pending_session`
 ustunlarini bo'shatib, `VACUUM` qiladi.
+
+### Tarif muddati (yangi muddat oldingisini bekor qiladi)
+
+Foydalanuvchi kartasidagi **⏰ Tarif muddati** orqali berilgan muddat
+**hozirdan boshlab** hisoblanadi va oldingi muddatni **bekor qiladi** — u
+mavjud muddat ustiga **qo'shilmaydi** (tayyor `1/7/30/90 kun` tugmalari ham,
+**✏️ Qo'lda kiritish** ham):
+
+| Holat | Natija |
+| --- | --- |
+| Tasdiqda 30 kun berilgan, admin yana `30 kun` beradi | hozirdan **30 kun** (60 emas) |
+| 20 kun qolgan userga `30 kun` | hozirdan **30 kun** (50 emas) |
+| 90 kun qolgan userga `7 kun` | hozirdan **7 kun** (oldingisi bekor) |
+| Muddati tugagan yoki cheksiz userga `N kun` | hozirdan **N kun** |
+| Bir xil tugmani ikki marta bosish | muddat ikki barobar bo'lmaydi |
+| `♾ Cheksiz` | muddat cheklovi olib tashlanadi |
+
+- Admin xabarida **bekor qilingan oldingi muddat** ko'rsatiladi; userga esa
+  yangi sana yuboriladi.
+- Yangi muddat berilganda `warned_at` tozalanadi — "oxirgi kun"
+  ogohlantirishi yangi muddat uchun qayta ishlaydi.
+- Tasdiqlash (approve) va qayta Login mavjud muddat ustiga kun **qo'shmaydi**
+  va uni almashtirmaydi: standart `DEFAULT_DURATION_DAYS` (30 kun) faqat userda
+  muddat yozilmagan bo'lsagina beriladi.
+- Kod: `admin/admin_actions.py` → `give_new_term()` (tugma ham, qo'lda
+  kiritish ham shu yagona funksiyadan foydalanadi).
 
 ### Super admin orqali foydalanuvchi qo'shish
 

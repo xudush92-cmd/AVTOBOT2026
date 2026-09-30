@@ -13,6 +13,7 @@ from config.config import (
     MAX_INTERVAL_MIN,
     MIN_INTERVAL_MIN,
 )
+from core.utils import format_expires
 
 # ─────────────────────────────────────────────────────────────────────────
 # UMUMIY
@@ -629,6 +630,27 @@ EXPIRED_TEXT = (
     "Muddatingiz tugadi. Posting to'xtatildi.\n\n"
     f"📱 Davom ettirish uchun: {ADMIN_CONTACT_PHONE}"
 )
+
+
+def new_term_admin_text(days: int, new_expires: str, previous: str | None) -> str:
+    """Admin yangi muddat berganda natija xabari.
+
+    Yangi muddat hozirdan boshlab hisoblanadi va oldingi muddatni BEKOR
+    qiladi (ustiga qo'shilmaydi); shuning uchun bekor qilingan muddat
+    ham ko'rsatiladi.
+    """
+    return (
+        f"✅ Yangi muddat berildi: {days} kun\n"
+        f"📅 Tugash sanasi: {new_expires[:10]}\n"
+        f"♻️ Oldingi muddat bekor qilindi: {format_expires(previous)}\n\n"
+        "Yangi muddat hozirdan boshlab hisoblanadi — oldingi muddat "
+        "ustiga qo'shilmaydi."
+    )
+
+
+def new_term_user_text(new_expires: str) -> str:
+    """Userga yangi tarif muddati haqida xabar."""
+    return f"✅ Tarifingiz yangilandi!\n\n📅 Yangi muddat: {new_expires[:10]}"
 
 
 # ─────────────────────────────────────────────────────────────────────────

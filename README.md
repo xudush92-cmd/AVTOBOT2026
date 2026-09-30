@@ -21,6 +21,11 @@ Kod `AVTOBOT2026/` papkasida; to'liq hujjat: [`AVTOBOT2026/README.md`](AVTOBOT20
    pending holat tozalanadi; vaqtinchalik Telegram/tarmoq xatosida pending
    sessiya saqlab qolinadi.
 
+Tarif muddati: admin **⏰ Tarif muddati** orqali yangi muddat bersa, u
+**hozirdan boshlab** hisoblanadi va oldingi muddatni **bekor qiladi** (ustiga
+qo'shilmaydi) — 30 kunlik userga yana 30 kun berilsa, u 60 emas, 30 kun oladi.
+Tasdiqlash va qayta Login muddat ustiga kun qo'shmaydi.
+
 Limitlar: UID bo'yicha login **3 ta/soat** (yangi va tasdiqlanmagan userlar
 ham, `/start` orqali aylanib o'tilmaydi) va telefon raqami bo'yicha kod
 so'rovi **3 ta/soat** (`send_code_request()`dan oldin tekshiriladi).
