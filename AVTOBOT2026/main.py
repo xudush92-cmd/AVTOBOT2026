@@ -675,6 +675,8 @@ async def handle_admin_fsm(update: Update, uid: int, step: str, text: str) -> No
         return
 
     # ── MUDDATNI QO'LDA KIRITISH ──
+    # Yangi muddat hozirdan boshlab hisoblanadi va oldingi muddatni bekor
+    # qiladi (mavjud muddat ustiga qo'shilmaydi).
     if step == "admin_set_expire":
         if not target:
             Login.user_states.pop(uid, None)
@@ -691,33 +693,24 @@ async def handle_admin_fsm(update: Update, uid: int, step: str, text: str) -> No
 
         Login.user_states.pop(uid, None)
 
-        from datetime import datetime, timedelta, timezone
+        result = await AA.give_new_term(uid, int(target), days)
+        if result is None:
+            await msg.reply_text(
+                "❌ Foydalanuvchi endi mavjud emas. Amal bekor qilindi.",
+                reply_markup=KB.kb_admin_panel(),
+            )
+            return
 
-        current = await db.get_tariff_expires(target)
-        if current:
-            try:
-                dt = datetime.strptime(current, "%Y-%m-%d %H:%M:%S").replace(
-                    tzinfo=timezone.utc
-                )
-                dt = max(dt, datetime.now(timezone.utc))
-            except Exception:
-                dt = datetime.now(timezone.utc)
-        else:
-            dt = datetime.now(timezone.utc)
-
-        new_iso = (dt + timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
-        await db.set_tariff_expires(target, new_iso)
-        log(f"⏰ Admin {uid} → {target} +{days} kun")
-
+        previous, new_expires = result
         await msg.reply_text(
-            f"✅ Muddat uzaytirildi: +{days} kun\nYangi muddat: {new_iso[:10]}",
+            T.new_term_admin_text(days, new_expires, previous),
             reply_markup=await AA.user_card_markup(target),
         )
 
         with contextlib.suppress(Exception):
             await application.bot.send_message(
                 target,
-                f"✅ Tarifingiz uzaytirildi!\n\n📅 Yangi muddat: {new_iso[:10]}",
+                T.new_term_user_text(new_expires),
             )
         return
 

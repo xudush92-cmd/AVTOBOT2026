@@ -6,7 +6,7 @@ Funksiyalar:
 - Sessiya ochish (admin nomidan)
 - Guruh qo'shish (admin nomidan)
 - Post qo'shish (admin nomidan)
-- Muddat uzaytirish
+- Tarif muddatini belgilash (yangi muddat oldingisini bekor qiladi)
 - Bloklash / o'chirish
 - Start / Stop
 """
@@ -1040,24 +1040,60 @@ async def handle_interval(update: Update, admin_uid: int, data: str) -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# MUDDAT UZAYTIRISH
+# TARIF MUDDATI (YANGI MUDDAT OLDINGISINI BEKOR QILADI)
 # ─────────────────────────────────────────────────────────────────────────
 async def action_show_expire(update: Update, admin_uid: int, target: int) -> None:
-    """Muddat uzaytirish tugmalarini ko‘rsatadi."""
+    """Tarif muddatini belgilash tugmalarini ko‘rsatadi."""
     q = update.callback_query
     expires = await db.get_tariff_expires(target)
 
     await q.edit_message_text(
-        f"⏰ Muddat uzaytirish\n\n"
+        "⏰ Tarif muddati\n\n"
         f"Foydalanuvchi: {target}\n"
         f"Hozirgi muddat: {format_expires(expires)}\n\n"
-        "Yangi muddat variantini tanlang:",
+        "Yangi muddatni tanlang.\n"
+        "ℹ️ Yangi muddat hozirdan boshlab hisoblanadi va oldingi muddatni "
+        "bekor qiladi — u hozirgi muddat ustiga qo'shilmaydi.",
         reply_markup=KB.kb_expire_options(target),
     )
 
 
+async def give_new_term(
+    admin_uid: int, target: int, days: int
+) -> tuple[str | None, str] | None:
+    """Foydalanuvchiga YANGI muddat beradi; oldingi muddat bekor qilinadi.
+
+    Yangi muddat har doim HOZIRDAN boshlab hisoblanadi (``now + days``) va
+    mavjud muddat (hali tugamagan bo'lsa ham) ustiga QO'SHILMAYDI: 30 kunlik
+    muddatli userga yana 30 kun berilsa, u 60 emas, 30 kun oladi. Yangi
+    qiymat oldingisiga bog'liq emas, shuning uchun bir xil tugmani ikki marta
+    bosish muddatni ikki barobar qilmaydi. ``warned_at`` tozalanadi — oxirgi
+    kun ogohlantirishi yangi muddat uchun qayta ishlaydi.
+
+    Chaqiruvchi ``user_operation_lock(target)``ni ushlab turishi kerak.
+
+    Returns:
+        ``(oldingi_muddat, yangi_muddat)``; user mavjud bo'lmasa ``None``.
+        ``oldingi_muddat`` — userda muddat yo'q (cheksiz) bo'lsa ``None``.
+    """
+    user = await db.get_user(target)
+    if not user:
+        return None
+
+    previous = user.get("tariff_expires_at") or None
+    new_expires = calc_expires(days)
+    if not await db.set_tariff_expires(target, new_expires):
+        return None
+
+    log(
+        f"⏰ Admin {admin_uid} → {target} yangi muddat: {days} kun "
+        "(oldingi muddat bekor qilindi)"
+    )
+    return previous, new_expires
+
+
 async def handle_expire(update: Update, admin_uid: int, data: str) -> None:
-    """Muddat uzaytirish callback'i."""
+    """Tarif muddati callback'i: yangi muddat oldingisini almashtiradi."""
     q = update.callback_query
 
     if admin_uid != SUPER_ADMIN:
@@ -1106,8 +1142,10 @@ async def handle_expire(update: Update, admin_uid: int, data: str) -> None:
         await q.edit_message_text(
             f"✏️ Muddatni qo'lda kiritish\n\n"
             f"Foydalanuvchi: {target}\n\n"
-            f"Necha kun qo'shmoqchisiz? (raqamda)\n\n"
-            f"Masalan: 30",
+            "Necha kun muddat bermoqchisiz? (raqamda)\n"
+            "Yangi muddat hozirdan boshlab hisoblanadi, oldingi muddat "
+            "bekor bo'ladi.\n\n"
+            "Masalan: 30",
             reply_markup=KB.kb_admin_section_back(target),
         )
         return
@@ -1123,44 +1161,25 @@ async def handle_expire(update: Update, admin_uid: int, data: str) -> None:
         )
         return
 
-    from datetime import datetime, timedelta, timezone
-
-    new_iso = ""
     async with user_operation_lock(target):
-        exists = bool(await db.get_user(target))
-        if exists:
-            current = await db.get_tariff_expires(target)
-            if current:
-                try:
-                    dt = datetime.strptime(current, "%Y-%m-%d %H:%M:%S").replace(
-                        tzinfo=timezone.utc
-                    )
-                    dt = max(dt, datetime.now(timezone.utc))
-                except Exception:
-                    dt = datetime.now(timezone.utc)
-            else:
-                dt = datetime.now(timezone.utc)
-
-            new_dt = dt + timedelta(days=days)
-            new_iso = new_dt.strftime("%Y-%m-%d %H:%M:%S")
-            await db.set_tariff_expires(target, new_iso)
-    if not exists:
+        result = await give_new_term(admin_uid, target, days)
+    if result is None:
         await q.edit_message_text(
             "❌ Foydalanuvchi endi mavjud emas.",
             reply_markup=KB.kb_admin_back(),
         )
         return
 
-    log(f"⏰ Admin {admin_uid} → {target} +{days} kun")
+    previous, new_expires = result
     await q.edit_message_text(
-        f"✅ Muddat uzaytirildi: +{days} kun\nYangi muddat: {new_iso[:10]}",
+        T.new_term_admin_text(days, new_expires, previous),
         reply_markup=await user_card_markup(target),
     )
 
     with contextlib.suppress(Exception):
         await application.bot.send_message(
             target,
-            f"✅ Tarifingiz uzaytirildi!\n\n📅 Yangi muddat: {new_iso[:10]}",
+            T.new_term_user_text(new_expires),
         )
 
 

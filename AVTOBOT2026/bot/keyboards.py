@@ -607,12 +607,12 @@ def kb_expire_options(uid: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
             [
-                InlineKeyboardButton("+1 kun", callback_data=f"exp:{uid}:1"),
-                InlineKeyboardButton("+7 kun", callback_data=f"exp:{uid}:7"),
+                InlineKeyboardButton("1 kun", callback_data=f"exp:{uid}:1"),
+                InlineKeyboardButton("7 kun", callback_data=f"exp:{uid}:7"),
             ],
             [
-                InlineKeyboardButton("+30 kun", callback_data=f"exp:{uid}:30"),
-                InlineKeyboardButton("+90 kun", callback_data=f"exp:{uid}:90"),
+                InlineKeyboardButton("30 kun", callback_data=f"exp:{uid}:30"),
+                InlineKeyboardButton("90 kun", callback_data=f"exp:{uid}:90"),
             ],
             [InlineKeyboardButton("♾ Cheksiz", callback_data=f"exp:{uid}:forever")],
             [
