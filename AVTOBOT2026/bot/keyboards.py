@@ -51,6 +51,7 @@ def kb_groups_menu() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         [
             [KeyboardButton(T.BTN_ADD_GROUP), KeyboardButton(T.BTN_DEL_GROUP)],
+            [KeyboardButton(T.BTN_GROUP_INTERVAL)],
             [KeyboardButton(T.BTN_BACK)],
         ],
         resize_keyboard=True,
@@ -218,6 +219,84 @@ def kb_groups_delete(
             nav.append(InlineKeyboardButton("➡️", callback_data=f"delg:page:{page + 1}"))
         rows.append(nav)
     rows.append([InlineKeyboardButton(T.ACTION_CANCEL, callback_data="delg:cancel")])
+    return InlineKeyboardMarkup(rows)
+
+
+def kb_group_interval_picker(
+    groups: list[dict],
+    global_interval: int,
+    page: int = 0,
+    page_size: int = 10,
+) -> InlineKeyboardMarkup:
+    max_page = max(0, (len(groups) - 1) // page_size)
+    page = min(max(page, 0), max_page)
+    start = page * page_size
+    rows: list[list[InlineKeyboardButton]] = []
+    for item in groups[start : start + page_size]:
+        group_id = int(item["id"])
+        value = str(item["value"])
+        interval = item.get("interval_min")
+        label = f"{int(interval)} daq" if interval is not None else f"Umumiy {global_interval} daq"
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    f"{value[:26]} · {label}",
+                    callback_data=f"gint:select:{group_id}",
+                )
+            ]
+        )
+    if max_page:
+        nav = []
+        if page > 0:
+            nav.append(
+                InlineKeyboardButton("⬅️", callback_data=f"gint:list:{page - 1}")
+            )
+        nav.append(
+            InlineKeyboardButton(f"{page + 1}/{max_page + 1}", callback_data="noop")
+        )
+        if page < max_page:
+            nav.append(
+                InlineKeyboardButton("➡️", callback_data=f"gint:list:{page + 1}")
+            )
+        rows.append(nav)
+    rows.append([InlineKeyboardButton("⬅️ Guruhlar", callback_data="gint:back")])
+    return InlineKeyboardMarkup(rows)
+
+
+def kb_group_interval_options(
+    group_id: int,
+    current_interval: int | None,
+) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = []
+    values = [5, 10, 15, 30, 60, 120]
+    for start in range(0, len(values), 3):
+        row = []
+        for minutes in values[start : start + 3]:
+            mark = "✅ " if current_interval == minutes else ""
+            row.append(
+                InlineKeyboardButton(
+                    f"{mark}{minutes} daq",
+                    callback_data=f"gint:set:{group_id}:{minutes}",
+                )
+            )
+        rows.append(row)
+    rows.extend(
+        [
+            [
+                InlineKeyboardButton(
+                    "✏️ Qo'lda kiritish",
+                    callback_data=f"gint:manual:{group_id}",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    "↩️ Umumiy intervalni ishlatish",
+                    callback_data=f"gint:reset:{group_id}",
+                )
+            ],
+            [InlineKeyboardButton("⬅️ Guruhlar", callback_data="gint:list:0")],
+        ]
+    )
     return InlineKeyboardMarkup(rows)
 
 
@@ -445,7 +524,7 @@ def kb_user_card(
     rows.append(
         [
             InlineKeyboardButton(
-                "⏱ Posting oralig'i", callback_data=f"uc:interval:{uid}"
+                "⏱ Umumiy interval", callback_data=f"uc:interval:{uid}"
             ),
             InlineKeyboardButton("⏰ Tarif muddati", callback_data=f"uc:expire:{uid}"),
         ]
@@ -505,12 +584,18 @@ def kb_admin_groups(
             group_id, value = int(item["id"]), str(item["value"])
         else:
             group_id, value = offset, str(item)
+        interval = item.get("interval_min") if isinstance(item, dict) else None
+        interval_label = f"{int(interval)} daq" if interval is not None else "Umumiy"
         rows.append(
             [
                 InlineKeyboardButton(
-                    f"🗑 {value[:35]}",
+                    f"🗑 {value[:26]}",
                     callback_data=f"uc:delg:{uid}:{group_id}:{page}",
-                )
+                ),
+                InlineKeyboardButton(
+                    f"⏱ {interval_label}",
+                    callback_data=f"uc:gint:{uid}:{group_id}",
+                ),
             ]
         )
     if max_page:
@@ -529,6 +614,48 @@ def kb_admin_groups(
         rows.append(nav)
     rows.append(
         [InlineKeyboardButton("⬅️ Foydalanuvchi", callback_data=f"uc:back:{uid}")]
+    )
+    return InlineKeyboardMarkup(rows)
+
+
+def kb_admin_group_interval(
+    uid: int,
+    group_id: int,
+    current_interval: int | None,
+) -> InlineKeyboardMarkup:
+    rows: list[list[InlineKeyboardButton]] = []
+    values = [5, 10, 15, 30, 60, 120]
+    for start in range(0, len(values), 3):
+        row = []
+        for minutes in values[start : start + 3]:
+            mark = "✅ " if current_interval == minutes else ""
+            row.append(
+                InlineKeyboardButton(
+                    f"{mark}{minutes} daq",
+                    callback_data=f"uc:gint:{uid}:{group_id}:{minutes}",
+                )
+            )
+        rows.append(row)
+    rows.extend(
+        [
+            [
+                InlineKeyboardButton(
+                    "✏️ Qo'lda kiritish",
+                    callback_data=f"uc:gint:{uid}:{group_id}:manual",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    "↩️ Umumiy intervalni ishlatish",
+                    callback_data=f"uc:gint:{uid}:{group_id}:general",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    "⬅️ Guruhlar", callback_data=f"uc:groups:{uid}"
+                )
+            ],
+        ]
     )
     return InlineKeyboardMarkup(rows)
 

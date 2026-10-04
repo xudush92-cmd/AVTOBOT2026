@@ -55,6 +55,7 @@ from core.update_locks import user_operation_lock, user_update_lock
 from core.utils import (
     calc_expires,
     format_expires,
+    is_valid_interval,
     safe_unlink,
     truncate,
     wipe_directory,
@@ -361,6 +362,9 @@ async def _handle_user_card_target_locked(
         page = _callback_page(parts, 3)
         await action_show_groups(update, target, page)
         return
+    if action == "gint":
+        await action_group_interval(update, admin_uid, target, parts)
+        return
     if action == "posts":
         page = _callback_page(parts, 3)
         await action_show_posts(update, target, page)
@@ -509,7 +513,7 @@ async def show_user_card(update: Update, target: int) -> None:
         f"📊 Holat: {state}\n\n"
         f"💬 Guruhlar: {chats} ta\n"
         f"📝 Postlar: {posts} ta\n"
-        f"⏱ Taxminiy posting oralig'i: {interval} daqiqa"
+        f"⏱ Umumiy posting oralig'i: {interval} daqiqa"
     )
 
     kb = KB.kb_user_card(
@@ -825,17 +829,148 @@ async def action_show_groups(update: Update, target: int, page: int = 0) -> None
     page = min(max(page, 0), max_page)
     start = page * page_size
     visible = groups[start : start + page_size]
+    global_interval = await db.get_interval(target)
     lines = [f"💬 GURUHLAR — {target} ({len(groups)} ta)\n"]
     if visible:
         for index, group in enumerate(visible, start + 1):
-            lines.append(f"{index}. {group['value']}")
-        lines.append("\nGuruhni o'chirish uchun uning 🗑 tugmasini bosing.")
+            interval = group.get("interval_min")
+            mode = (
+                f"alohida {int(interval)} daq"
+                if interval is not None
+                else f"umumiy {global_interval} daq"
+            )
+            lines.append(f"{index}. {group['value']} — {mode}")
+        lines.append("\n🗑 guruhni o'chiradi, ⏱ intervalini sozlaydi.")
     else:
         lines.append(T.GROUPS_EMPTY)
     await q.edit_message_text(
         "\n".join(lines),
         reply_markup=KB.kb_admin_groups(target, groups, page, page_size),
     )
+
+
+async def _render_group_interval(
+    update: Update,
+    target: int,
+    group_id: int,
+    note: str = "",
+) -> None:
+    q = update.callback_query
+    group = await db.get_chat_record(target, group_id)
+    if not group:
+        await q.edit_message_text(
+            "❌ Guruh topilmadi yoki o'chirilgan.",
+            reply_markup=await user_card_markup(target),
+        )
+        return
+
+    global_interval = await db.get_interval(target)
+    custom_interval = group.get("interval_min")
+    selected = (
+        f"Umumiy ({global_interval} daqiqa)"
+        if custom_interval is None
+        else f"Alohida ({int(custom_interval)} daqiqa)"
+    )
+    text = (
+        f"⏱ GURUH INTERVALI\n\n"
+        f"Foydalanuvchi: {target}\n"
+        f"Guruh: {group['value']}\n"
+        f"Hozirgi sozlama: {selected}\n"
+        f"Umumiy interval: {global_interval} daqiqa\n\n"
+        "Alohida intervalni tanlang yoki umumiy intervalga qaytaring."
+    )
+    if note:
+        text = f"{note}\n\n{text}"
+    await q.edit_message_text(
+        text,
+        reply_markup=KB.kb_admin_group_interval(
+            target, group_id, custom_interval
+        ),
+    )
+
+
+async def action_group_interval(
+    update: Update,
+    admin_uid: int,
+    target: int,
+    parts: list[str],
+) -> None:
+    """Super admin tanlangan foydalanuvchi guruhining intervalini boshqaradi."""
+    if admin_uid != SUPER_ADMIN or len(parts) < 4:
+        return
+    q = update.callback_query
+    try:
+        group_id = int(parts[3])
+    except ValueError:
+        await q.edit_message_text("❌ Guruh ID noto'g'ri.")
+        return
+
+    group = await db.get_chat_record(target, group_id)
+    if not group:
+        await q.edit_message_text("❌ Guruh topilmadi yoki o'chirilgan.")
+        return
+
+    if len(parts) == 4:
+        await _render_group_interval(update, target, group_id)
+        return
+
+    choice = parts[4]
+    if choice == "manual":
+        login_states[admin_uid] = {
+            "step": "admin_set_group_interval",
+            "ts": time.time(),
+            "target_uid": target,
+            "group_id": group_id,
+        }
+        await q.edit_message_text(
+            "✏️ GURUH INTERVALINI KIRITISH\n\n"
+            f"Foydalanuvchi: {target}\n"
+            f"Guruh: {group['value']}\n\n"
+            f"Intervalni daqiqada kiriting (5–{MAX_INTERVAL_MIN}).\n"
+            "Masalan: 45",
+            reply_markup=KB.kb_admin_section_back(target, "groups"),
+        )
+        return
+
+    if choice == "general":
+        minutes = None
+    else:
+        try:
+            minutes = int(choice)
+        except ValueError:
+            return
+        if not is_valid_interval(minutes):
+            await q.edit_message_text(
+                f"❌ Interval {T.MIN_INTERVAL_MIN}–{MAX_INTERVAL_MIN} daqiqa bo'lishi kerak.",
+                reply_markup=KB.kb_admin_group_interval(
+                    target, group_id, group.get("interval_min")
+                ),
+            )
+            return
+
+    async with user_operation_lock(target):
+        exists = bool(await db.get_user(target))
+        saved = (
+            await db.set_chat_interval(target, group_id, minutes)
+            if exists
+            else False
+        )
+    if not exists or not saved:
+        await q.edit_message_text(
+            "❌ Foydalanuvchi yoki guruh endi mavjud emas.",
+            reply_markup=KB.kb_admin_back(),
+        )
+        return
+
+    if minutes is None:
+        log(f"⏱ Admin {admin_uid} → {target} guruh {group_id}: umumiy interval")
+        note = "✅ Guruh umumiy intervalga qaytarildi."
+    else:
+        log(
+            f"⏱ Admin {admin_uid} → {target} guruh {group_id}: {minutes} daqiqa"
+        )
+        note = f"✅ Alohida interval {minutes} daqiqaga o'rnatildi."
+    await _render_group_interval(update, target, group_id, note)
 
 
 async def action_show_posts(update: Update, target: int, page: int = 0) -> None:
@@ -967,11 +1102,12 @@ async def action_show_interval(update: Update, target: int) -> None:
     q = update.callback_query
     current = await db.get_interval(target)
     await q.edit_message_text(
-        "⏱ TAXMINIY POSTING ORALIG'I\n\n"
+        "⏱ UMUMIY POSTING ORALIG'I\n\n"
         f"Foydalanuvchi: {target}\n"
-        f"Hozirgi oraliq: taxminan {current} daqiqa\n\n"
+        f"Hozirgi umumiy oraliq: taxminan {current} daqiqa\n\n"
+        "Alohida interval o'rnatilgan guruhlarga bu qiymat ta'sir qilmaydi. "
         "Anti-spam uchun real vaqt 5 daqiqagacha farq qilishi mumkin. "
-        "Bu sozlama tarif muddatidan alohida. Yangi oraliqni tanlang:",
+        "Yangi umumiy oraliqni tanlang:",
         reply_markup=KB.kb_admin_interval(target),
     )
 
@@ -1002,7 +1138,7 @@ async def handle_interval(update: Update, admin_uid: int, data: str) -> None:
             "target_uid": target,
         }
         await q.edit_message_text(
-            "✏️ POSTING ORALIG'INI KIRITISH\n\n"
+            "✏️ UMUMIY POSTING ORALIG'INI KIRITISH\n\n"
             f"Foydalanuvchi: {target}\n\n"
             f"Oraliqni daqiqada kiriting (5–{MAX_INTERVAL_MIN}).\n"
             "Masalan: 45",
@@ -1033,7 +1169,8 @@ async def handle_interval(update: Update, admin_uid: int, data: str) -> None:
         return
     log(f"⏱ Admin {admin_uid} → {target} interval={minutes}")
     await q.edit_message_text(
-        f"✅ Taxminiy posting oralig'i {minutes} daqiqaga o'rnatildi.\n"
+        f"✅ Umumiy posting oralig'i {minutes} daqiqaga o'rnatildi.\n"
+        "Alohida sozlangan guruhlar o'z intervalini saqlaydi.\n"
         "Anti-spam uchun real vaqt 5 daqiqagacha farq qiladi.",
         reply_markup=await user_card_markup(target),
     )

@@ -10,7 +10,7 @@ Telegram guruhlariga reklama postlarini avtomatik joylashtiruvchi bot.
 - ✅ Matn, rasm va rasm+caption
 - ✅ Har bir post Telegram formatlashni saqlaydi (bold, italic, link)
 - ✅ Bulk guruh qo'shish (bir vaqtda bir nechta)
-- ✅ Taxminiy posting oralig'i — 5–10080 daqiqa; anti-spam jitteri ±5 daqiqa
+- ✅ Umumiy posting oralig'i va guruh uchun alohida interval — 5–10080 daqiqa; anti-spam jitteri ±5 daqiqa
 - ✅ Referal tizimi
 - ✅ Super admin paneli (to'liq nazorat)
 - ✅ Ommaviy xabar yuborish (broadcast)
@@ -30,10 +30,18 @@ Telegram guruhlariga reklama postlarini avtomatik joylashtiruvchi bot.
 
 - `python-telegram-bot` — bot menyusi va foydalanuvchi bilan muloqot.
 - `Telethon` — foydalanuvchi sessiyasi bilan guruhlarga post yuborish.
-- `SQLite` — user, shifrlangan sessiya, guruh va postlarni saqlash.
+- `SQLite` — user, shifrlangan sessiya, guruh, guruhga xos interval/navbat va postlarni saqlash.
 
-Posting oralig'i aniq sekundli jadval emas: har siklda sozlangan qiymatga
-`±5 daqiqa` tasodifiy anti-spam farqi qo'shiladi (minimum 5 daqiqa saqlanadi).
+Posting oralig'i aniq sekundli jadval emas: foydalanuvchining umumiy
+intervali (5–10080 daqiqa) barcha guruhlarga boshlang'ich qiymat bo'ladi;
+**Guruhlar → ⏱ Guruh intervali** orqali alohida guruh uchun override berish
+mumkin; super admin buni user kartasi → **Guruhlar** bo'limidan ham boshqaradi.
+Override olib tashlansa, guruh umumiy intervalni meros qilib oladi.
+Har bir guruhning navbatdagi yuborish vaqti SQLite'da saqlanadi, shuning uchun
+restartda jadval tiklanadi. Har yuborishdan keyingi intervalga `±5 daqiqa`
+tasodifiy anti-spam farqi qo'shiladi (minimum 5 daqiqa saqlanadi); Telegram
+FloodWait bo'lsa, uning kutish vaqti ham hisobga olinadi. Eski DB'dagi guruhlar
+uchun migratsiya yangi ustunlarni qo'shadi, intervalni esa umumiy sozlamadan oladi.
 Guruh qo'shishda `@username`, public `t.me` linki, post linki, private invite va
 `-100...` ID qabul qilinadi. User hamda admin qo'shish oqimlari **faqat formatni**
 tekshiradi va canonical ko'rinishda saqlaydi: Telegram'ga ulanib guruhning

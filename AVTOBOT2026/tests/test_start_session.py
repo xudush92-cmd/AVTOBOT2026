@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 import sys
+import time
 import unittest
 from contextlib import contextmanager
 from pathlib import Path
@@ -262,9 +263,23 @@ class WorkerSessionRetentionTests(unittest.IsolatedAsyncioTestCase):
             patch.object(db, "get_user", new=AsyncMock(return_value={"is_admin": 1})),
             patch.object(db, "is_tariff_expired", new=AsyncMock(return_value=False)),
             patch.object(db, "get_session", new=AsyncMock(return_value="original")),
-            patch.object(db, "get_chats", new=AsyncMock(return_value=["@group"])),
+            patch.object(
+                db,
+                "get_chat_records",
+                new=AsyncMock(
+                    return_value=[
+                        {
+                            "id": 1,
+                            "value": "@group",
+                            "interval_min": None,
+                            "next_send_at": None,
+                        }
+                    ]
+                ),
+            ),
             patch.object(db, "get_posts", new=AsyncMock(return_value=[{"text": "hi"}])),
             patch.object(db, "get_interval", new=AsyncMock(return_value=60)),
+            patch.object(db, "record_chat_attempt", new=AsyncMock()) as record_attempt,
             patch.object(db, "set_running", new=AsyncMock()) as set_running,
             patch.object(db, "del_session", new=AsyncMock()) as del_session,
         ):
@@ -322,19 +337,70 @@ class WorkerSessionRetentionTests(unittest.IsolatedAsyncioTestCase):
         pool.remove.assert_not_awaited()
         del_session.assert_not_awaited()
 
+    async def test_worker_only_sends_due_groups_using_their_own_intervals(self) -> None:
+        pool = SimpleNamespace(
+            acquire=AsyncMock(return_value=SimpleNamespace()),
+            remove=AsyncMock(),
+            release=AsyncMock(),
+        )
+        stop = asyncio.Event()
+        future_group_time = time.time() + 10_000
+
+        async def fast_sleep(_stop, seconds):
+            if seconds == posting_worker.SEND_DELAY_S:
+                stop.set()
+                return True
+            return False
+
+        records = [
+            {
+                "id": 10,
+                "value": "@due_group",
+                "interval_min": 10,
+                "next_send_at": None,
+            },
+            {
+                "id": 11,
+                "value": "@not_due_yet",
+                "interval_min": 15,
+                "next_send_at": future_group_time,
+            },
+        ]
+        with (
+            self.worker_dependencies(pool),
+            patch.object(db, "get_chat_records", new=AsyncMock(return_value=records)),
+            patch.object(db, "record_chat_attempt", new=AsyncMock()) as record_attempt,
+            patch.object(
+                posting_worker, "send_post", new=AsyncMock()
+            ) as send_post,
+            patch.object(posting_worker, "sleep_or_stop", new=fast_sleep),
+        ):
+            await posting_worker.posting_loop(42, stop)
+
+        self.assertEqual(send_post.await_count, 1)
+        self.assertEqual(send_post.await_args.args[1], "@due_group")
+        record_attempt.assert_awaited_once()
+        args = record_attempt.await_args.args
+        self.assertEqual(args[:2], (42, 10))
+        self.assertEqual(args[3], 0)  # random jitter; interval olinishi DB'da atomik.
+        pool.release.assert_awaited_once_with(42)
+
     async def test_repeated_network_timeouts_do_not_delete_group(self) -> None:
         pool = SimpleNamespace(
             acquire=AsyncMock(return_value=SimpleNamespace()),
             remove=AsyncMock(),
             release=AsyncMock(),
         )
-        rounds = 0
+        attempts = 0
+        stop = asyncio.Event()
 
         async def fast_sleep(_stop, seconds):
-            nonlocal rounds
-            if seconds >= 300:  # interval: sikl yakunlandi
-                rounds += 1
-                return rounds == 4  # MAX_GROUP_FAILS (3) dan ham ko'proq
+            nonlocal attempts
+            if seconds == posting_worker.SEND_DELAY_S:
+                attempts += 1
+                if attempts == 4:  # Guruh o'chirilish chegarasidan ko'proq.
+                    stop.set()
+                    return True
             return False
 
         with (
@@ -347,7 +413,7 @@ class WorkerSessionRetentionTests(unittest.IsolatedAsyncioTestCase):
             patch.object(posting_worker, "sleep_or_stop", new=fast_sleep),
             patch.object(db, "remove_chat_by_value", new=AsyncMock()) as remove_chat,
         ):
-            await posting_worker.posting_loop(42, asyncio.Event())
+            await posting_worker.posting_loop(42, stop)
         self.assertEqual(send_post.await_count, 4)
         remove_chat.assert_not_awaited()
         del_session.assert_not_awaited()
