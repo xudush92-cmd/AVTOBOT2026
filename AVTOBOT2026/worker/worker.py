@@ -6,7 +6,7 @@ Har bir foydalanuvchi uchun:
 2. Postlarni oladi (rotation bilan)
 3. Har bir guruhga yuboradi
 4. Xatolarni kuzatadi
-5. Interval kutadi
+5. Har bir guruhning navbatdagi vaqtini kutadi
 """
 
 from __future__ import annotations
@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import random
+import time
 
 from telethon import TelegramClient
 from telethon.errors import (
@@ -49,7 +50,6 @@ from telethon.tl.types import (
 from config.config import (
     JITTER_S,
     MAX_GROUP_FAILS,
-    MIN_INTERVAL_MIN,
     SEND_DELAY_S,
     START_JITTER_S,
     SUPER_ADMIN,
@@ -186,37 +186,26 @@ async def sleep_or_stop(stop: asyncio.Event, seconds: float) -> bool:
 # POSTING SIKL (har bir worker uchun)
 # ─────────────────────────────────────────────────────────────────────────
 async def posting_loop(uid: int, stop: asyncio.Event) -> None:
-    """
-    Asosiy posting sikli.
+    """Guruhlarning umumiy va alohida intervaliga ko'ra navbat bilan post yuboradi.
 
-    Ishlash:
-    - 0-60 soniya tasodifiy kechikish (start jitter)
-    - Har sikl:
-        1. Guruhlarni olish
-        2. Postlarni olish
-        3. Navbatdagi postni tanlash (rotation)
-        4. Har bir guruhga yuborish
-        5. Xatolarni kuzatish
-        6. Interval kutish
+    ``groups.interval_min`` bo'sh bo'lsa foydalanuvchining umumiy intervali
+    ishlatiladi. ``next_send_at`` restartdan keyin ham navbatni saqlaydi.
     """
     log(f"🟢 Worker:{uid} ishga tushdi")
 
-    # ── START JITTER ──
     first_delay = random.randint(0, START_JITTER_S)
     if first_delay:
         log(f"⏳ Worker:{uid} start jitter {first_delay}s")
         if await sleep_or_stop(stop, first_delay):
             return
 
-    # Post indeksi (rotation uchun)
     post_index = 0
-    # Har bir guruh uchun ketma-ket xato hisoblagichi
     group_fails: dict[str, int] = {}
+    scheduler_poll_s = 60
 
     try:
         while not stop.is_set():
-            # Har siklda ruxsatlarni qayta tekshiramiz: blok/tarif/sessiya
-            # uzoq ishlayotgan worker ichida ham darhol kuchga kiradi.
+            # Uzoq ishlayotgan worker ham ruxsat/tarif o'zgarishini tekshiradi.
             user = await db.get_user(uid)
             if (
                 not user
@@ -234,17 +223,38 @@ async def posting_loop(uid: int, stop: asyncio.Event) -> None:
                 log(f"❌ Worker:{uid} sessiya yo'q — to'xtaydi", "warning")
                 break
 
-            # Ma'lumotlarni olish
-            chats = await db.get_chats(uid)
+            chats = await db.get_chat_records(uid)
             posts = await db.get_posts(uid)
-            interval = await db.get_interval(uid)
 
             if not chats or not posts:
                 if await sleep_or_stop(stop, 30):
                     break
                 continue
 
-            # Client olish
+            now = time.time()
+            due_chats: list[dict] = []
+            next_times: list[float] = []
+            for chat_record in chats:
+                next_at = chat_record.get("next_send_at")
+                try:
+                    next_at = float(next_at) if next_at is not None else None
+                except (TypeError, ValueError):
+                    next_at = None
+                if next_at is None or next_at <= now:
+                    due_chats.append(chat_record)
+                else:
+                    next_times.append(next_at)
+
+            if not due_chats:
+                wait_s = (
+                    min(scheduler_poll_s, max(1.0, min(next_times) - now))
+                    if next_times
+                    else scheduler_poll_s
+                )
+                if await sleep_or_stop(stop, wait_s):
+                    break
+                continue
+
             try:
                 client = await client_pool.acquire(uid, session)
             except SessionInvalidError:
@@ -273,19 +283,21 @@ async def posting_loop(uid: int, stop: asyncio.Event) -> None:
                     break
                 continue
 
-            # Yuborish
             try:
-                # Navbatdagi post
-                post_index %= len(posts)
-                post = posts[post_index]
+                post = posts[post_index % len(posts)]
                 post_index += 1
-
                 ok, fail = 0, 0
                 removed_groups: list[str] = []
 
-                for chat in chats:
+                for chat_record in due_chats:
                     if stop.is_set():
                         break
+
+                    chat = str(chat_record["value"])
+                    group_id = int(chat_record["id"])
+                    jitter_s = random.randint(-JITTER_S, JITTER_S)
+                    flood_wait_until: float | None = None
+                    attempted_at: float | None = None
 
                     try:
                         await asyncio.wait_for(
@@ -295,11 +307,11 @@ async def posting_loop(uid: int, stop: asyncio.Event) -> None:
                         group_fails[chat] = 0
                         log(f"✅ {uid} → {chat}")
 
-                    except FloodWaitError as e:
-                        wait_s = int(getattr(e, "seconds", 30)) + 5
+                    except FloodWaitError as exc:
+                        wait_s = int(getattr(exc, "seconds", 30)) + 5
+                        attempted_at = time.time()
+                        flood_wait_until = attempted_at + wait_s
                         log(f"⏳ {uid} → {chat} FloodWait {wait_s}s", "warning")
-                        if await sleep_or_stop(stop, wait_s):
-                            break
 
                     except (
                         ChatWriteForbiddenError,
@@ -308,11 +320,11 @@ async def posting_loop(uid: int, stop: asyncio.Event) -> None:
                         UsernameNotOccupiedError,
                         UsernameInvalidError,
                         ValueError,
-                    ) as e:
+                    ) as exc:
                         fail += 1
                         group_fails[chat] = group_fails.get(chat, 0) + 1
                         log(
-                            f"❌ {uid} → {chat}: {type(e).__name__} "
+                            f"❌ {uid} → {chat}: {type(exc).__name__} "
                             f"({group_fails[chat]}/{MAX_GROUP_FAILS})",
                             "warning",
                         )
@@ -321,12 +333,12 @@ async def posting_loop(uid: int, stop: asyncio.Event) -> None:
 
                     except asyncio.TimeoutError:
                         # Tarmoq uzilishi guruh yoki sessiya yaroqsizligini
-                        # anglatmaydi; avtomatik o'chirishga hisoblamaymiz.
+                        # anglatmaydi; navbatdagi urinishgacha interval saqlanadi.
                         fail += 1
                         log(f"⏱ {uid} → {chat} vaqtincha timeout", "warning")
 
-                    except (AuthKeyUnregisteredError, UserDeactivatedBanError) as e:
-                        log(f"🚫 {uid} sessiya yaroqsiz: {type(e).__name__}", "error")
+                    except (AuthKeyUnregisteredError, UserDeactivatedBanError) as exc:
+                        log(f"🚫 {uid} sessiya yaroqsiz: {type(exc).__name__}", "error")
                         await db.set_running(uid, False)
                         await client_pool.remove(uid)
                         with contextlib.suppress(Exception):
@@ -337,14 +349,34 @@ async def posting_loop(uid: int, stop: asyncio.Event) -> None:
                             )
                         return
 
-                    except Exception as e:
+                    except Exception as exc:
                         fail += 1
-                        log(f"❌ {uid} → {chat}: {type(e).__name__}", "error")
+                        log(f"❌ {uid} → {chat}: {type(exc).__name__}", "error")
+
+                    if attempted_at is None:
+                        attempted_at = time.time()
+                    next_send_at = await db.record_chat_attempt(
+                        uid,
+                        group_id,
+                        attempted_at,
+                        jitter_s,
+                        flood_wait_until,
+                    )
+                    if next_send_at is not None:
+                        wait_s = max(0, int(next_send_at - time.time()))
+                        log(f"⏳ {uid} → {chat} navbat: {wait_s}s")
+
+                    if flood_wait_until is not None:
+                        if await sleep_or_stop(
+                            stop, max(0, flood_wait_until - time.time())
+                        ):
+                            break
 
                     if not stop.is_set():
                         await sleep_or_stop(stop, SEND_DELAY_S)
 
-                # Xato bergan guruhlarni o'chirish
+                # Ketma-ket muvaffaqiyatsiz yuborilgan guruhlar eski qoidadagidek
+                # MAX_GROUP_FAILS urinishdan keyin ro'yxatdan olib tashlanadi.
                 for bad in removed_groups:
                     await db.remove_chat_by_value(uid, bad)
                     group_fails.pop(bad, None)
@@ -360,27 +392,19 @@ async def posting_loop(uid: int, stop: asyncio.Event) -> None:
                             "Guruh ro'yxatdan AVTOMATIK o'chirildi.",
                         )
 
-                log(f"📊 {uid} ✅{ok} ❌{fail} / {len(chats)}")
+                log(f"📊 {uid} ✅{ok} ❌{fail} / {len(due_chats)} navbatda")
 
             finally:
                 await client_pool.release(uid)
 
-            # Keyingi sikl
-            delay = interval * 60 + random.randint(-JITTER_S, JITTER_S)
-            delay = max(MIN_INTERVAL_MIN * 60, delay)
-            log(f"⏳ {uid} keyingi tur {delay}s ({interval} daq)")
-
-            if await sleep_or_stop(stop, delay):
-                break
-
     except asyncio.CancelledError:
         pass
-    except Exception as e:
-        log(f"💥 Worker:{uid} kutilmagan xato: {type(e).__name__}", "error")
+    except Exception as exc:
+        log(f"💥 Worker:{uid} kutilmagan xato: {type(exc).__name__}", "error")
         with contextlib.suppress(Exception):
             await application.bot.send_message(
                 SUPER_ADMIN,
-                f"⚠️ Worker xato\nUID: {uid}\n{type(e).__name__}",
+                f"⚠️ Worker xato\nUID: {uid}\n{type(exc).__name__}",
             )
     finally:
         await db.set_running(uid, False)

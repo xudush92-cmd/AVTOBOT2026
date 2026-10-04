@@ -271,6 +271,11 @@ async def route_menu_button(update: Update, text: str) -> bool:
         await G.begin_delete_groups(update)
         return True
 
+    # ⏱ Guruh bo'yicha interval
+    if text == T.BTN_GROUP_INTERVAL:
+        await Tm.begin_set_group_interval(update)
+        return True
+
     # 📝 Post qo'shish
     if text == T.BTN_ADD_POST:
         await P.begin_add_post(update)

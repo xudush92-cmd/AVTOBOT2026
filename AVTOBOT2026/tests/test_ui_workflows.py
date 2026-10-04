@@ -21,8 +21,11 @@ import main  # noqa: E402
 from admin import admin_actions  # noqa: E402
 from bot import texts as T  # noqa: E402
 from bot.keyboards import (  # noqa: E402
+    kb_admin_group_interval,
     kb_admin_groups,
     kb_admin_posts,
+    kb_group_interval_options,
+    kb_group_interval_picker,
     kb_db_panel,
     kb_expire_options,
     kb_groups_menu,
@@ -84,6 +87,7 @@ class CompactMenuTests(unittest.TestCase):
 
         self.assertIn(T.BTN_ADD_GROUP, reply_texts(kb_groups_menu()))
         self.assertIn(T.BTN_DEL_GROUP, reply_texts(kb_groups_menu()))
+        self.assertIn(T.BTN_GROUP_INTERVAL, reply_texts(kb_groups_menu()))
         self.assertIn(T.BTN_ADD_POST, reply_texts(kb_posts_menu()))
         self.assertIn(T.BTN_DEL_POST, reply_texts(kb_posts_menu()))
 
@@ -178,9 +182,32 @@ class SelectedUserControlsTests(unittest.IsolatedAsyncioTestCase):
                 "uc:addg:2001",
                 "uc:delg:2001:41:0",
                 "uc:delg:2001:99:0",
+                "uc:gint:2001:41",
+                "uc:gint:2001:99",
                 "uc:back:2001",
             }
             <= groups
+        )
+
+        user_picker = callback_data(
+            kb_group_interval_picker(
+                [{"id": 41, "value": "@one", "interval_min": None}], 60
+            )
+        )
+        self.assertIn("gint:select:41", user_picker)
+        user_options = callback_data(kb_group_interval_options(41, 30))
+        self.assertTrue(
+            {"gint:set:41:30", "gint:manual:41", "gint:reset:41"}
+            <= user_options
+        )
+        admin_options = callback_data(kb_admin_group_interval(2001, 41, 30))
+        self.assertTrue(
+            {
+                "uc:gint:2001:41:30",
+                "uc:gint:2001:41:manual",
+                "uc:gint:2001:41:general",
+            }
+            <= admin_options
         )
 
         posts = callback_data(
@@ -204,10 +231,17 @@ class SelectedUserControlsTests(unittest.IsolatedAsyncioTestCase):
             callback_query=SimpleNamespace(edit_message_text=AsyncMock())
         )
         records = [{"id": 41, "uid": 2001, "value": "@one", "created_at": "2026-01-01"}]
-        with patch.object(
-            admin_actions.db,
-            "get_chat_records",
-            new=AsyncMock(return_value=records),
+        with (
+            patch.object(
+                admin_actions.db,
+                "get_chat_records",
+                new=AsyncMock(return_value=records),
+            ),
+            patch.object(
+                admin_actions.db,
+                "get_interval",
+                new=AsyncMock(return_value=60),
+            ),
         ):
             await admin_actions.action_show_groups(update, 2001)
 
@@ -237,6 +271,11 @@ class SelectedUserControlsTests(unittest.IsolatedAsyncioTestCase):
                 admin_actions.db,
                 "get_chat_records",
                 new=AsyncMock(return_value=[]),
+            ),
+            patch.object(
+                admin_actions.db,
+                "get_interval",
+                new=AsyncMock(return_value=60),
             ),
         ):
             await admin_actions.action_delete_group(
@@ -270,6 +309,45 @@ class SelectedUserControlsTests(unittest.IsolatedAsyncioTestCase):
                 ["uc", "delp", "2001", "51", "0"],
             )
         delete_post.assert_awaited_once_with(2001, 51)
+
+    async def test_admin_can_set_a_selected_group_interval(self) -> None:
+        update = SimpleNamespace(
+            callback_query=SimpleNamespace(edit_message_text=AsyncMock())
+        )
+        before = {"id": 41, "uid": 2001, "value": "@one", "interval_min": None}
+        after = {**before, "interval_min": 30}
+        with (
+            patch.object(
+                admin_actions.db,
+                "get_chat_record",
+                new=AsyncMock(side_effect=[before, after]),
+            ),
+            patch.object(
+                admin_actions.db,
+                "get_user",
+                new=AsyncMock(return_value={"uid": 2001}),
+            ),
+            patch.object(
+                admin_actions.db,
+                "get_interval",
+                new=AsyncMock(return_value=60),
+            ),
+            patch.object(
+                admin_actions.db,
+                "set_chat_interval",
+                new=AsyncMock(return_value=True),
+            ) as set_interval,
+        ):
+            await admin_actions.action_group_interval(
+                update,
+                SUPER_ADMIN,
+                2001,
+                ["uc", "gint", "2001", "41", "30"],
+            )
+
+        set_interval.assert_awaited_once_with(2001, 41, 30)
+        text = update.callback_query.edit_message_text.await_args.args[0]
+        self.assertIn("Alohida interval 30 daqiqaga o'rnatildi", text)
 
     async def test_admin_can_set_selected_users_posting_interval(self) -> None:
         update = SimpleNamespace(

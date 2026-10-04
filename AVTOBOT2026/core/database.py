@@ -14,7 +14,13 @@ from typing import Any
 
 import aiosqlite
 
-from config.config import DB_PATH, DEFAULT_INTERVAL_MIN, SUPER_ADMIN
+from config.config import (
+    DB_PATH,
+    DEFAULT_INTERVAL_MIN,
+    MAX_INTERVAL_MIN,
+    MIN_INTERVAL_MIN,
+    SUPER_ADMIN,
+)
 from core.logger import log
 from core.session_crypto import decrypt_session, encrypt_session, ensure_session_cipher
 from core.utils import iso_now
@@ -52,6 +58,21 @@ def _decode_user(row: aiosqlite.Row | dict | None) -> dict | None:
 async def _migrate_schema() -> None:
     """Eski DB'larni ma'lumot yo'qotmasdan joriy xavfsiz formatga o'tkazadi."""
     conn = _conn()
+
+    # Har bir guruhning ixtiyoriy intervali va navbatdagi yuborish vaqtini
+    # saqlaymiz. Faqat yangi ustunlar qo'shiladi: eski guruhlar uchun
+    # ``interval_min = NULL`` bo'lib, foydalanuvchining umumiy intervali ishlaydi.
+    async with conn.execute("PRAGMA table_info(groups)") as cur:
+        group_columns = {row["name"] for row in await cur.fetchall()}
+    for name, sql_type in (
+        ("interval_min", "INTEGER"),
+        ("last_attempt_at", "REAL"),
+        ("next_send_at", "REAL"),
+        ("flood_wait_until", "REAL"),
+    ):
+        if name not in group_columns:
+            await conn.execute(f"ALTER TABLE groups ADD COLUMN {name} {sql_type}")
+    await conn.commit()
 
     # Eski bazada bir telefon bir nechta UID'da bo'lsa, eng ishonchli yozuvni
     # saqlab, qolganlar telefonini bo'shatamiz. Sessiyalar o'chirilmaydi.
@@ -506,12 +527,52 @@ async def get_interval(uid: int) -> int:
     return int(user.get("interval_min", 60)) if user else 60
 
 
+def _rescheduled_group_due(
+    last_attempt_at: float | None,
+    interval_min: int,
+    flood_wait_until: float | None,
+) -> float | None:
+    """Sozlama o'zgarganda guruh navbatini xavfsiz qayta hisoblaydi."""
+    if last_attempt_at is None:
+        return None  # Hali urinilmagan guruh navbatga darhol tayyor.
+    next_at = float(last_attempt_at) + int(interval_min) * 60
+    if flood_wait_until is not None:
+        next_at = max(next_at, float(flood_wait_until))
+    return next_at
+
+
 async def set_interval(uid: int, minutes: int) -> bool:
-    cur = await _execute_write(
-        "UPDATE users SET interval_min = ?, updated_at = ? WHERE uid = ?",
-        (minutes, iso_now(), uid),
-    )
-    return cur.rowcount > 0
+    """Umumiy intervalni saqlab, umumiy intervalni ishlatuvchi guruhlarni sozlaydi."""
+    minutes = int(minutes)
+    if not MIN_INTERVAL_MIN <= minutes <= MAX_INTERVAL_MIN:
+        raise ValueError("Posting intervali ruxsat etilgan oraliqdan tashqarida")
+
+    async with _write_lock:
+        try:
+            cur = await _conn().execute(
+                "UPDATE users SET interval_min = ?, updated_at = ? WHERE uid = ?",
+                (minutes, iso_now(), uid),
+            )
+            if cur.rowcount:
+                async with _conn().execute(
+                    "SELECT id, last_attempt_at, flood_wait_until FROM groups "
+                    "WHERE uid = ? AND interval_min IS NULL",
+                    (uid,),
+                ) as group_cur:
+                    groups = await group_cur.fetchall()
+                for group in groups:
+                    next_at = _rescheduled_group_due(
+                        group["last_attempt_at"], minutes, group["flood_wait_until"]
+                    )
+                    await _conn().execute(
+                        "UPDATE groups SET next_send_at = ? WHERE id = ? AND uid = ?",
+                        (next_at, group["id"], uid),
+                    )
+            await _conn().commit()
+            return cur.rowcount > 0
+        except Exception:
+            await _conn().rollback()
+            raise
 
 
 async def set_running(uid: int, running: bool) -> bool:
@@ -532,14 +593,116 @@ async def get_all_running() -> list[int]:
 # ─────────────────────────────────────────
 async def get_chat_records(uid: int) -> list[dict]:
     async with _conn().execute(
-        "SELECT id, uid, value, created_at FROM groups WHERE uid = ? ORDER BY id",
+        "SELECT id, uid, value, created_at, interval_min, last_attempt_at, "
+        "next_send_at, flood_wait_until FROM groups WHERE uid = ? ORDER BY id",
         (uid,),
     ) as cur:
         return [dict(row) for row in await cur.fetchall()]
 
 
+async def get_chat_record(uid: int, group_id: int) -> dict | None:
+    async with _conn().execute(
+        "SELECT id, uid, value, created_at, interval_min, last_attempt_at, "
+        "next_send_at, flood_wait_until FROM groups WHERE uid = ? AND id = ?",
+        (uid, group_id),
+    ) as cur:
+        row = await cur.fetchone()
+        return dict(row) if row else None
+
+
 async def get_chats(uid: int) -> list[str]:
     return [row["value"] for row in await get_chat_records(uid)]
+
+
+async def set_chat_interval(
+    uid: int, group_id: int, minutes: int | None
+) -> bool:
+    """Guruh intervalini o'rnatadi; None bo'lsa userning umumiy intervali ishlaydi."""
+    if minutes is not None:
+        minutes = int(minutes)
+        if not MIN_INTERVAL_MIN <= minutes <= MAX_INTERVAL_MIN:
+            raise ValueError("Guruh intervali ruxsat etilgan oraliqdan tashqarida")
+
+    async with _write_lock:
+        try:
+            async with _conn().execute(
+                "SELECT interval_min FROM users WHERE uid = ?", (uid,)
+            ) as cur:
+                user = await cur.fetchone()
+            if not user:
+                await _conn().commit()
+                return False
+
+            async with _conn().execute(
+                "SELECT last_attempt_at, flood_wait_until FROM groups "
+                "WHERE uid = ? AND id = ?",
+                (uid, group_id),
+            ) as cur:
+                group = await cur.fetchone()
+            if not group:
+                await _conn().commit()
+                return False
+
+            effective_interval = (
+                minutes if minutes is not None else int(user["interval_min"] or 60)
+            )
+            next_at = _rescheduled_group_due(
+                group["last_attempt_at"],
+                effective_interval,
+                group["flood_wait_until"],
+            )
+            cur = await _conn().execute(
+                "UPDATE groups SET interval_min = ?, next_send_at = ? "
+                "WHERE uid = ? AND id = ?",
+                (minutes, next_at, uid, group_id),
+            )
+            await _conn().commit()
+            return cur.rowcount > 0
+        except Exception:
+            await _conn().rollback()
+            raise
+
+
+async def record_chat_attempt(
+    uid: int,
+    group_id: int,
+    attempted_at: float,
+    jitter_s: int = 0,
+    flood_wait_until: float | None = None,
+) -> float | None:
+    """Urinishdan keyingi navbatni joriy interval bilan atomik saqlaydi."""
+    async with _write_lock:
+        try:
+            async with _conn().execute(
+                "SELECT g.interval_min, u.interval_min AS global_interval "
+                "FROM groups g JOIN users u ON u.uid = g.uid "
+                "WHERE g.uid = ? AND g.id = ?",
+                (uid, group_id),
+            ) as cur:
+                row = await cur.fetchone()
+            if not row:
+                await _conn().commit()
+                return None
+
+            interval = int(row["interval_min"] or row["global_interval"] or 60)
+            delay_s = max(
+                MIN_INTERVAL_MIN * 60,
+                interval * 60 + int(jitter_s),
+            )
+            next_send_at = float(attempted_at) + delay_s
+            if flood_wait_until is not None:
+                next_send_at = max(next_send_at, float(flood_wait_until))
+
+            await _conn().execute(
+                "UPDATE groups SET last_attempt_at = ?, next_send_at = ?, "
+                "flood_wait_until = ? WHERE uid = ? AND id = ?",
+                (attempted_at, next_send_at, flood_wait_until, uid, group_id),
+            )
+            await _conn().commit()
+            return next_send_at
+        except Exception:
+            await _conn().rollback()
+            raise
 
 
 async def add_chat(uid: int, value: str) -> tuple[bool, str]:

@@ -55,6 +55,7 @@ from core.rate_limit import RateLimiter
 from core.update_locks import user_operation_lock, user_update_lock
 from core.utils import (
     is_valid_full_name,
+    is_valid_interval,
     is_valid_phone,
     prune_old_backups,
     prune_orphan_media,
@@ -271,6 +272,7 @@ async def _on_message_locked(
         "admin_add_group",
         "admin_add_post",
         "admin_set_interval",
+        "admin_set_group_interval",
         "admin_set_expire",
         "admin_broadcast",
         "admin_user_message",
@@ -350,7 +352,13 @@ async def _on_message_locked(
         return
 
     # ── FSM: add_group / add_post / set_interval ──
-    if step in ("add_group", "add_post", "set_interval", "set_interval_confirm"):
+    if step in (
+        "add_group",
+        "add_post",
+        "set_interval",
+        "set_interval_confirm",
+        "set_group_interval",
+    ):
         menu_buttons = {
             T.BTN_START,
             T.BTN_STOP,
@@ -358,6 +366,7 @@ async def _on_message_locked(
             T.BTN_POSTS,
             T.BTN_ADD_GROUP,
             T.BTN_DEL_GROUP,
+            T.BTN_GROUP_INTERVAL,
             T.BTN_ADD_POST,
             T.BTN_DEL_POST,
             T.BTN_TIMER,
@@ -378,7 +387,7 @@ async def _on_message_locked(
             return
         if text == T.BTN_BACK:
             Login.user_states.pop(uid, None)
-            if step == "add_group":
+            if step in ("add_group", "set_group_interval"):
                 markup = KB.kb_groups_menu()
             elif step == "add_post":
                 markup = KB.kb_posts_menu()
@@ -427,6 +436,19 @@ async def _on_message_locked(
                     )
                     return
                 await handle_set_interval(update, text)
+            return
+        if step == "set_group_interval":
+            from bot.timer import handle_set_group_interval
+
+            async with user_operation_lock(uid):
+                if not await _can_mutate_user_resources(uid):
+                    Login.user_states.pop(uid, None)
+                    await msg.reply_text(
+                        "❌ Hisob yoki sessiya endi faol emas.",
+                        reply_markup=KB.kb_login(),
+                    )
+                    return
+                await handle_set_group_interval(update, text)
             return
 
     # ── LOGIN TUGMASI ──
@@ -668,9 +690,46 @@ async def handle_admin_fsm(update: Update, uid: int, step: str, text: str) -> No
         await db.set_interval(target, minutes)
         log(f"⏱ Admin {uid} → {target} interval={minutes}")
         await msg.reply_text(
-            f"✅ Taxminiy posting oralig'i {minutes} daqiqaga o'rnatildi.\n"
+            f"✅ Umumiy posting oralig'i {minutes} daqiqaga o'rnatildi.\n"
+            "Alohida sozlangan guruhlar o'z intervalini saqlaydi.\n"
             "Anti-spam uchun real vaqt 5 daqiqagacha farq qiladi.",
             reply_markup=await AA.user_card_markup(target),
+        )
+        return
+
+    # ── GURUH INTERVALINI QO'LDA KIRITISH ──
+    if step == "admin_set_group_interval":
+        if not target:
+            Login.user_states.pop(uid, None)
+            await msg.reply_text("❌ Xatolik.")
+            return
+
+        try:
+            group_id = int(state.get("group_id"))
+            minutes = int(text.strip())
+            if not is_valid_interval(minutes):
+                raise ValueError
+        except (TypeError, ValueError):
+            await msg.reply_text(
+                f"❌ {T.MIN_INTERVAL_MIN}–{MAX_INTERVAL_MIN} orasida butun daqiqa kiriting."
+            )
+            return
+
+        saved = await db.set_chat_interval(int(target), group_id, minutes)
+        Login.user_states.pop(uid, None)
+        if not saved:
+            await msg.reply_text(
+                "❌ Guruh topilmadi yoki sozlama saqlanmadi.",
+                reply_markup=await AA.user_card_markup(int(target)),
+            )
+            return
+        log(f"⏱ Admin {uid} → {target} guruh {group_id}: {minutes} daqiqa")
+        await msg.reply_text(
+            f"✅ {target} foydalanuvchisining guruh intervali "
+            f"{minutes} daqiqaga o'rnatildi.",
+            reply_markup=KB.kb_admin_groups(
+                int(target), await db.get_chat_records(int(target))
+            ),
         )
         return
 

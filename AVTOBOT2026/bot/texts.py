@@ -379,6 +379,7 @@ BTN_GROUPS = "💬 Guruhlar"
 BTN_POSTS = "📝 Postlar"
 BTN_ADD_GROUP = "➕ Guruh qo'shish"
 BTN_DEL_GROUP = "➖ Guruh o'chirish"
+BTN_GROUP_INTERVAL = "⏱ Guruh intervali"
 BTN_ADD_POST = "➕ Post qo'shish"
 BTN_DEL_POST = "🗑 Post o'chirish"
 BTN_TIMER = "⏱ Posting oralig'i"
@@ -399,7 +400,8 @@ START_CONFIRM = (
     "▶️ Postingni boshlaymizmi?\n\n"
     "💬 {groups} ta guruhga\n"
     "📝 {posts} ta postdan navbatma-navbat\n"
-    "⏰ Keyingi sikl taxminan har {interval} daqiqada.\n"
+    "⏰ Umumiy interval: taxminan {interval} daqiqa.\n"
+    "Alohida sozlangan guruhlar o'z intervalida ishlaydi.\n"
     "ℹ️ Anti-spam uchun 5 daqiqagacha tasodifiy farq bo'lishi mumkin."
 )
 
@@ -413,7 +415,8 @@ START_DONE = (
     "✅ Posting boshlandi!\n\n"
     "💬 {groups} ta guruh\n"
     "📝 {posts} ta post\n"
-    "⏰ Taxminiy oraliq: {interval} daqiqa\n"
+    "⏰ Umumiy interval: taxminan {interval} daqiqa\n"
+    "Alohida sozlangan guruhlar o'z intervalida ishlaydi.\n"
     "ℹ️ Anti-spam farqi: 5 daqiqagacha"
 )
 
@@ -468,7 +471,7 @@ def status_text(
         f"📅 Muddat: {expires}\n\n"
         f"💬 Guruhlar: {groups}\n"
         f"📝 Postlar: {posts}\n"
-        f"⏱ Posting oralig'i: taxminan {interval} daqiqa"
+        f"⏱ Umumiy posting oralig'i: taxminan {interval} daqiqa"
     )
 
 
@@ -476,6 +479,11 @@ def status_text(
 # GURUHLAR
 # ─────────────────────────────────────────────────────────────────────────
 GROUPS_EMPTY = "❌ Guruhlar yo'q. ➕ Guruh qo'shish orqali qo'shing."
+GROUP_INTERVALS_EMPTY = "❌ Guruhlar yo'q. Avval guruh qo'shing."
+GROUP_INTERVAL_PICK = (
+    "⏱ Intervalini sozlash uchun guruhni tanlang.\n"
+    "Umumiy intervalni o'zgartirish uchun «Posting oralig'i» menyusidan foydalaning."
+)
 
 
 def groups_list(groups: list[str]) -> str:
@@ -562,8 +570,9 @@ POST_NOT_FOUND = "❌ Post topilmadi."
 # ─────────────────────────────────────────────────────────────────────────
 def ask_interval(current: int) -> str:
     return (
-        f"⏱ POSTING ORALIG'I\n\n"
-        f"Hozirgi: taxminan {current} daqiqa\n\n"
+        f"⏱ UMUMIY POSTING ORALIG'I\n\n"
+        f"Hozirgi umumiy oraliq: taxminan {current} daqiqa\n"
+        f"Alohida interval berilmagan guruhlarda shu qiymat ishlaydi.\n\n"
         f"Yangi qiymatni kiriting (daqiqada):\n"
         f"{MIN_INTERVAL_MIN}–{MAX_INTERVAL_MIN} daqiqa. Anti-spam uchun real vaqt "
         f"5 daqiqagacha farq qilishi mumkin."
@@ -579,7 +588,8 @@ INTERVAL_INVALID_NUMBER = "❌ Faqat butun son kiriting. Qaytadan:"
 
 def interval_set(minutes: int) -> str:
     return (
-        f"✅ Taxminiy posting oralig'i: {minutes} daqiqa.\n"
+        f"✅ Umumiy posting oralig'i {minutes} daqiqaga o'rnatildi.\n"
+        "Alohida sozlangan guruhlar o'z intervalini saqlaydi.\n"
         "ℹ️ Anti-spam uchun real vaqt 5 daqiqagacha farq qilishi mumkin."
     )
 

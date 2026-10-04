@@ -86,7 +86,15 @@ async def _handle_callback_locked(update: Update, uid: int) -> None:
             )
             return
 
-        ordinary_prefixes = ("go:", "stop:", "intv:", "delg:", "delp:", "self:")
+        ordinary_prefixes = (
+            "go:",
+            "stop:",
+            "intv:",
+            "gint:",
+            "delg:",
+            "delp:",
+            "self:",
+        )
         if uid != SUPER_ADMIN and data.startswith(ordinary_prefixes):
             # Admin lifecycle amali central tekshiruvdan keyin lock kutayotgan
             # paytda targetni o'zgartirishi mumkin. Shu sabab auth target lock
@@ -120,6 +128,10 @@ async def _handle_callback_locked(update: Update, uid: int) -> None:
                     await _handle_stop_confirmation_locked(update, uid, data)
                 elif data.startswith(("intv:yes:", "intv:no:")):
                     await _handle_intv_confirmation_locked(update, uid, data)
+                elif data.startswith("gint:"):
+                    from bot import timer
+
+                    await timer.handle_group_interval_callback(update, uid, data)
                 elif data.startswith("delg:"):
                     await _handle_del_group_locked(update, uid, data)
                 elif data.startswith("delp:"):

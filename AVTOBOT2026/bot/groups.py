@@ -242,7 +242,7 @@ async def check_group_access(session_str: str, group: str) -> tuple[bool, str]:
 async def show_groups(update: Update) -> None:
     """Guruhlar ro'yxatini ko'rsatish."""
     uid = update.effective_user.id
-    chats = await db.get_chats(uid)
+    chats = await db.get_chat_records(uid)
 
     if not chats:
         await update.message.reply_text(
@@ -251,9 +251,17 @@ async def show_groups(update: Update) -> None:
         )
         return
 
-    lines = [f"💬 GURUHLAR ({len(chats)} ta):"] + [
-        f"{index}. {chat}" for index, chat in enumerate(chats, 1)
-    ]
+    global_interval = await db.get_interval(uid)
+    lines = [f"💬 GURUHLAR ({len(chats)} ta):"]
+    for index, group in enumerate(chats, 1):
+        interval = group.get("interval_min")
+        mode = (
+            f"alohida {int(interval)} daq"
+            if interval is not None
+            else f"umumiy {global_interval} daq"
+        )
+        lines.append(f"{index}. {group['value']} — {mode}")
+    lines.append("\n⏱ «Guruh intervali» orqali har birini alohida sozlang.")
     chunks: list[str] = []
     current = ""
     for line in lines:
