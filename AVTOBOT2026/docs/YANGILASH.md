@@ -18,14 +18,20 @@ Barcha yangi funksiya testlangan: **233 test** (`python -m unittest discover -s 
 
 ## 2. Chiqarish tartibi
 
+> ℹ️ Repozitoriyada systemd unit yoki Dockerfile yo'q — bot odatda
+> `python main.py` (screen/tmux orqali) yoki siz qo'ygan servis bilan yuriladi.
+> Quyidagi buyruqlarda servis nomini o'zingizniki bilan almashtiring.
+
 ```bash
 cd /opt/avtobot/AVTOBOT2026        # loyiha papkangiz
 
-# 1) ZAXIRA — majburiy (baza + media ro'yxati + konfiguratsiya)
-systemctl stop avtobot              # yoki docker stop / kill -TERM
+# 0) Python 3.10+ va joy borligini tekshirish
+python3 -V; df -h . | tail -1
+
+# 1) ZAXIRA — majburiy (baza + konfiguratsiya; media hajmini qayd eting)
+systemctl stop avtobot              # yoki: pkill -TERM -f "python.*main.py"
 cp data/avtobot.db data/avtobot.db.$(date +%F-%H%M)
 tar czf backup-files.$(date +%F).tar.gz data config/.env
-# media hajmini qayd etib oling (keyin solishtirish uchun)
 du -sh media data logs
 
 # 2) KODNI YANGILASH
@@ -44,7 +50,14 @@ nano .env
 
 # 5) START
 systemctl start avtobot && journalctl -u avtobot -f
+# servis bo'lmasa:
+#   screen -S avtobot -d -m python main.py
+#   tail -f logs/avtobot.log
 ```
+
+Baza fayli yozish uchun yoziladigan holatda bo'lishi kerak (`data/` va
+`logs/` papkalari bot ishlaydigan foydalanuvchiga tegishli bo'lsin):
+`ls -ld data logs media`.
 
 ## 3. Logda ko'rish kerak bo'lgan birinchi qatorlar
 
@@ -113,7 +126,7 @@ sqlite3 data/avtobot.db "SELECT uid, SUM(ok), COUNT(*) FROM send_logs GROUP BY u
 
 ```bash
 systemctl stop avtobot
-git checkout c0ff414            # yangi bosqichdan oldingi commit
+git checkout c0ff414            # yangi bosqichdan oldingi commit (yoki main)
 cp data/avtobot.db.$(date +%F-%H%M) data/avtobot.db   # zarur bo'lsagina
 systemctl start avtobot
 ```
