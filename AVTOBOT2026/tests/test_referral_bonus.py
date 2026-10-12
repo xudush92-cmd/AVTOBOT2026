@@ -7,7 +7,7 @@ Qamlov:
   referal haqiqatan ishlay boshlagach beriladi;
 - bir marta — takroriy chaqiruv bonusni ikkinchi marta qo'shmaydi;
 - cheksiz tarifga ega referrerga kun qo'shilmaydi (lekin holat belgilanadi);
-- oylik chegala (cap) ishlaydi;
+- oylik cap faqat o'rnatilganda ishlaydi (standart 0 = cheklovsiz);
 - firibgar aniqlansa bonus kun qaytarib olinadi (clawback);
 - referrer bloklangan paytda tasdiqlansa hisob yo'qolmaydi — blokdan chiqqach
   qayta hisoblanadi;
@@ -70,8 +70,8 @@ class ReferralTestCase(unittest.IsolatedAsyncioTestCase):
         self._patches = [
             patch("core.utils.now_utc", return_value=FROZEN_NOW),
             patch.object(login, "application", self.app),
-            patch.object(RF, "REFERRAL_BONUS_DAYS", 3),
-            patch.object(RF, "REFERRAL_BONUS_MONTHLY_CAP_DAYS", 30),
+            patch.object(RF, "REFERRAL_BONUS_DAYS", 15),
+            patch.object(RF, "REFERRAL_BONUS_MONTHLY_CAP_DAYS", 0),
             patch.object(RF, "REFERRAL_QUALIFY_MIN_SENDS", 1),
             patch.object(RF, "REFERRAL_DAILY_ALERT", 3),
         ]
@@ -187,14 +187,14 @@ class ReferralTestCase(unittest.IsolatedAsyncioTestCase):
         await db.log_send(REFERRED, True, group_id=int(record[0]["id"]))
         self.assertTrue(await RF.maybe_grant_referral_bonus(REFERRED))
         user = await db.get_user(REFERRER)
-        self.assertEqual(int(user["referral_bonus_days"]), 3)
-        self.assertEqual(user["tariff_expires_at"], iso_after(13))
+        self.assertEqual(int(user["referral_bonus_days"]), 15)
+        self.assertEqual(user["tariff_expires_at"], iso_after(25))
 
         # Ikkinchi marta — takroriy mukofot bo'lmasligi kerak.
         await db.log_send(REFERRED, True, group_id=int(record[0]["id"]))
         self.assertFalse(await RF.maybe_grant_referral_bonus(REFERRED))
         user = await db.get_user(REFERRER)
-        self.assertEqual(int(user["referral_bonus_days"]), 3)
+        self.assertEqual(int(user["referral_bonus_days"]), 15)
         self.assertEqual(len(self.sent_to(REFERRER)), 2)
 
     async def test_worker_hook_grants_bonus(self) -> None:
@@ -213,20 +213,34 @@ class ReferralTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(int(user["referral_bonus_days"] or 0), 0)
         self.assertIn("cheksiz", self.sent_to(REFERRER)[-1])
 
-    async def test_monthly_cap_limits_bonus(self) -> None:
-        with patch.object(RF, "REFERRAL_BONUS_MONTHLY_CAP_DAYS", 4):
+    async def test_no_cap_by_default_every_friend_counts(self) -> None:
+        # Cap 0 = cheklovsiz: har bir do'st uchun to'liq 15 kun.
+        await self.register()
+        await self.make_active()
+        self.assertTrue(await RF.maybe_grant_referral_bonus(REFERRED))
+        await self.register(8002)
+        await self.make_active(8002)
+        self.assertTrue(await RF.maybe_grant_referral_bonus(8002))
+        await self.register(8003)
+        await self.make_active(8003)
+        self.assertTrue(await RF.maybe_grant_referral_bonus(8003))
+        user = await db.get_user(REFERRER)
+        self.assertEqual(int(user["referral_bonus_days"]), 45)
+
+    async def test_monthly_cap_limits_bonus_when_set(self) -> None:
+        with patch.object(RF, "REFERRAL_BONUS_MONTHLY_CAP_DAYS", 20):
             await self.register()
             await self.make_active()
             self.assertTrue(await RF.maybe_grant_referral_bonus(REFERRED))
             first = await db.get_user(REFERRER)
-            self.assertEqual(int(first["referral_bonus_days"]), 3)
+            self.assertEqual(int(first["referral_bonus_days"]), 15)
 
             await self.register(8002)
             await self.make_active(8002)
             self.assertTrue(await RF.maybe_grant_referral_bonus(8002))
             second = await db.get_user(REFERRER)
-            # Chegara 4 kun: 3 ta berilgan, keyingisiga faqat 1 kun qoladi.
-            self.assertEqual(int(second["referral_bonus_days"]), 4)
+            # Chegara 20 kun: 15 ta berilgan, keyingisiga faqat 5 kun qoladi.
+            self.assertEqual(int(second["referral_bonus_days"]), 20)
 
     # ── 3. Clawback va tiklash ──
     async def test_revoking_bonus_claws_back_days(self) -> None:
@@ -237,7 +251,7 @@ class ReferralTestCase(unittest.IsolatedAsyncioTestCase):
         result = await RF.revoke_referral_bonus(REFERRED, "soxta akkaunt")
         self.assertIsNotNone(result)
         self.assertEqual(int(result["referrer_uid"]), REFERRER)
-        self.assertEqual(int(result["bonus_days"]), 3)
+        self.assertEqual(int(result["bonus_days"]), 15)
 
         referrer = await db.get_user(REFERRER)
         self.assertEqual(int(referrer["referral_bonus_days"]), 0)

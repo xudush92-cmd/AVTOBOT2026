@@ -125,12 +125,11 @@ ACTIVE_HOURS_DEFAULT: str = (os.getenv("ACTIVE_HOURS_DEFAULT", "") or "").strip(
 # ─────────────────────────────────────────────────────────────────────────
 # REFERAL MUKOFOTI VA ANTI-FRAUD
 # ─────────────────────────────────────────────────────────────────────────
-# Har bir FAOL (kriteriyani bosgan) referal uchun referrerga qo'shiladigan kun.
-REFERRAL_BONUS_DAYS: int = max(0, _int("REFERRAL_BONUS_DAYS", 3))
-# Bir oyda beriladigan maksimal bonus kun (firibgarlik ta'sirini cheklash).
-REFERRAL_BONUS_MONTHLY_CAP_DAYS: int = max(
-    REFERRAL_BONUS_DAYS, _int("REFERRAL_BONUS_MONTHLY_CAP_DAYS", 30)
-)
+# Har bir FAOL (kriteriyani bosgan) do'st uchun referrerga qo'shiladigan kun.
+# Har bir do'st uchun bir marta beriladi; do'stlar soniga cheklov yo'q.
+REFERRAL_BONUS_DAYS: int = max(0, _int("REFERRAL_BONUS_DAYS", 15))
+# Oylik maksimal bonus kun. 0 = cheklovsiz (standart).
+REFERRAL_BONUS_MONTHLY_CAP_DAYS: int = max(0, _int("REFERRAL_BONUS_MONTHLY_CAP_DAYS", 0))
 # Mukofot uchun referal kamida shuncha marta muvaffaqiyatli post yuborishi kerak.
 REFERRAL_QUALIFY_MIN_SENDS: int = max(1, _int("REFERRAL_QUALIFY_MIN_SENDS", 1))
 # Kunlik shunchadan ortiq referal → anomaliya deb adminga xabar.

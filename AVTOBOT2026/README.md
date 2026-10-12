@@ -175,8 +175,8 @@ to'xtatish”** tugmasi bilan bekor qilish mumkin.
   limit va **tungi tanaffus** (faol soatlar) qo'yishi mumkin — akkaunt Telegram
   chekloviga uchlamasin.
 - **👥 Referal** — taklif havolasi, faol referallar ro'yxati va **bonus kunlar**
-  (mukofot faqat do'stingiz haqiqatan ishlay boshlagach beriladi), oylik
-  chegara, firibgarlik aniqlansa bonus qaytarib olinadi.
+  (har bir faol do'st uchun 15 kun; mukofot faqat do'stingiz haqiqatan ishlay
+  boshlagach beriladi; cheklovsiz), firibgarlik aniqlansa bonus qaytarib olinadi.
 - **⚡ Tez tasdiqlash** (`AUTO_APPROVE_ENABLED=1` bo'lsa) — past riskli arizalar
   admin navbatini kutmasdan tasdiqlanadi; har bir avto-tasdiq adminga xabar
   qilinadi.
