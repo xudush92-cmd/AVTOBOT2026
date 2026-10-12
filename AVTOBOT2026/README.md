@@ -16,7 +16,7 @@ Telegram guruhlariga reklama postlarini avtomatik joylashtiruvchi bot.
 - ✅ Ommaviy xabar yuborish (broadcast)
 - ✅ Muddat tizimi (admin yangi muddat beradi — oldingi muddat bekor bo'lib,
   yangisi hozirdan boshlab hisoblanadi)
-- ✅ To'lov (qo'lda tasdiqlash + kvitansiya): paket narxi, izoh kodi, admin navbati — `PAYMENTS_ENABLED=1` bilan yoqiladi (standart o'chiq)
+- ✅ To'lov (qo'lda tasdiqlash + kvitansiya): oylik narx, izoh kodi, admin navbati — `PAYMENTS_ENABLED=1` bilan yoqiladi (standart o'chiq)
 - ✅ Bloklash / blokdan chiqarish
 - ✅ Anti-spam himoya
 - ✅ Oddiy registratsiya: ism → telefon → Telegram kodi → admin tasdiqi
@@ -170,9 +170,10 @@ to'xtatish”** tugmasi bilan bekor qilish mumkin.
 - **⏱ Interval har bir guruhga alohida** — umumiy sozlamani saqlab qolgan holda.
 - **📈 Hisobot** — bugun/hafta yuborishlari, xatolar sababi, qaysi guruhda
   muammo borligi va keyingi yuborish vaqti.
-- **📦 Tarif paketlari va limitlar** — SINOV/START/PRO/BUSINESS (guruh, post,
-  kunlik yuborish soni), kunlik limit va **tungi tanaffus** (faol soatlar) —
-  akkaunt Telegram chekloviga uchlamasin.
+- **💳 Yagona oylik obuna** — bitta tarif, cheklovlarsiz (guruh, post va
+  kunlik yuborish soni cheklanmagan). Admin istasa foydalanuvchiga individual
+  limit va **tungi tanaffus** (faol soatlar) qo'yishi mumkin — akkaunt Telegram
+  chekloviga uchlamasin.
 - **👥 Referal** — taklif havolasi, faol referallar ro'yxati va **bonus kunlar**
   (mukofot faqat do'stingiz haqiqatan ishlay boshlagach beriladi), oylik
   chegara, firibgarlik aniqlansa bonus qaytarib olinadi.

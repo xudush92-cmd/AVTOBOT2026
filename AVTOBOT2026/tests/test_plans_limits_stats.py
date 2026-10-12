@@ -1,8 +1,8 @@
 """Tarif paketlari, limitlar, kunlik/tungi cheklov va yuborish hisoboti.
 
 Qamlov:
-- paketsiz (eski) foydalanuvchi uchun limitlar = cheksiz;
-- paket berilsa guruh/post soni shu paketga qadaladi;
+- yagona oylik obuna (OYLIK) cheklovsiz: guruh/post/kunlik limit yo'q;
+- admin qo'lda limit qo'ysa (set_user_limits), guruh/post soni shu limitga qadaladi;
 - kunlik limit va faol soatlar workerga «kutiladi» degan buyruq beradi,
   lekin navbatni buzmaydi;
 - yuborish jurnali (send_logs) hisobot, guruh salomatligi va ETA uchun
@@ -88,10 +88,19 @@ class PlanLimitsStatsTestCase(unittest.IsolatedAsyncioTestCase):
             ok, reason, _ = await db.add_post(self.UID, f"post {index}", [], None)
             self.assertTrue(ok, reason)
 
-    async def test_plan_caps_groups_and_posts(self) -> None:
-        limits = await db.set_plan(self.UID, "SINOV")
-        self.assertEqual(limits["max_groups"], 5)
-        self.assertEqual(limits["max_posts"], 2)
+    async def test_single_plan_has_no_caps(self) -> None:
+        limits = await db.set_plan(self.UID, "OYLIK")
+        self.assertEqual(limits["max_groups"], 0)
+        self.assertEqual(limits["max_posts"], 0)
+        self.assertEqual(limits["daily_limit"], 0)
+        for index in range(12):
+            ok, reason = await db.add_chat(self.UID, f"@group{index}")
+            self.assertTrue(ok, reason)
+            ok, reason, _ = await db.add_post(self.UID, f"post {index}", [], None)
+            self.assertTrue(ok, reason)
+
+    async def test_manual_limit_caps_groups_and_posts(self) -> None:
+        self.assertTrue(await db.set_user_limits(self.UID, max_groups=5, max_posts=2))
 
         for index in range(5):
             ok, _ = await db.add_chat(self.UID, f"@group{index}")
@@ -108,14 +117,14 @@ class PlanLimitsStatsTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(post_id)
 
     async def test_manual_limits_override_plan_label(self) -> None:
-        await db.set_plan(self.UID, "PRO")
+        await db.set_plan(self.UID, "OYLIK")
         self.assertTrue(
             await db.set_user_limits(
                 self.UID, max_groups=7, daily_limit=10, active_hours="09:00-18:00"
             )
         )
         limits = await db.get_limits(self.UID)
-        self.assertEqual(limits["plan"], "PRO")
+        self.assertEqual(limits["plan"], "OYLIK")
         self.assertEqual(limits["max_groups"], 7)
         self.assertEqual(limits["daily_limit"], 10)
         self.assertEqual(limits["active_hours"], "09:00-18:00")
@@ -258,7 +267,7 @@ class PlanLimitsStatsTestCase(unittest.IsolatedAsyncioTestCase):
 
     # ── 4. UI matnlari ──
     async def test_status_snapshot_and_texts(self) -> None:
-        await db.set_plan(self.UID, "SINOV")
+        await db.set_plan(self.UID, "OYLIK")
         await db.add_chat(self.UID, "@g1")
         await db.add_post(self.UID, "e'lon", [], None)
         await db.set_interval(self.UID, 45)
@@ -266,7 +275,7 @@ class PlanLimitsStatsTestCase(unittest.IsolatedAsyncioTestCase):
         snapshot = await menu._status_snapshot(self.UID)
         self.assertEqual(len(snapshot["chats"]), 1)
         self.assertEqual(snapshot["interval"], 45)
-        self.assertEqual(snapshot["limits"]["max_groups"], 5)
+        self.assertEqual(snapshot["limits"]["max_groups"], 0)
 
         status = T.status_text(
             running=False,
@@ -325,7 +334,7 @@ class PlanLimitsStatsTestCase(unittest.IsolatedAsyncioTestCase):
             expires=format_expires(snapshot["expires"]),
             daily_left="1/30",
         )
-        self.assertIn("Sinov", plan)
+        self.assertIn("Oylik obuna", plan)
 
     async def test_next_step_hint_points_to_missing_piece(self) -> None:
         self.assertIn("Guruh", T.status_next_step(0, 3))
@@ -373,7 +382,7 @@ class PlanLimitsStatsTestCase(unittest.IsolatedAsyncioTestCase):
         from types import SimpleNamespace
         from unittest.mock import AsyncMock
 
-        await db.set_plan(self.UID, "PRO")
+        await db.set_plan(self.UID, "OYLIK")
         await db.add_chat(self.UID, "@g1")
         await db.add_post(self.UID, "e'lon", [], None)
         await db.log_send(self.UID, True, group_id=1)
@@ -390,7 +399,7 @@ class PlanLimitsStatsTestCase(unittest.IsolatedAsyncioTestCase):
         for fn, heading in (
             (menu.show_status, "STATUS"),
             (menu.show_report, "HISOBOT"),
-            (menu.show_plan, "PAKET"),
+            (menu.show_plan, "OBUNA"),
         ):
             with self.subTest(fn=fn.__name__):
                 text = await render(fn)

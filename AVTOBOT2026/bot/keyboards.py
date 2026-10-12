@@ -82,7 +82,7 @@ def kb_referral(link: str) -> InlineKeyboardMarkup:
                     "📨 Do'stlarga yuborish", callback_data="ref:share"
                 ),
             ],
-            [InlineKeyboardButton("📦 Paket va limitlar", callback_data="ref:plan")],
+            [InlineKeyboardButton("💳 Obuna", callback_data="ref:plan")],
         ]
     )
 
@@ -416,7 +416,7 @@ def kb_plan_pay(plans: list[tuple[str, int]]) -> InlineKeyboardMarkup:
         rows.append(
             [
                 InlineKeyboardButton(
-                    f"💳 {T.plan_label(plan)} — {T.fmt_som(amount)}",
+                    f"💳 Oylik obuna — {T.fmt_som(amount)}",
                     callback_data=f"pay:new:{plan}",
                 )
             ]

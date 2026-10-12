@@ -42,11 +42,11 @@ from bot import menu  # noqa: E402
 from bot import payments as P  # noqa: E402
 from bot import texts as T  # noqa: E402
 from config import config as CFG  # noqa: E402
-from config.config import SUPER_ADMIN, _parse_plan_prices  # noqa: E402
+from config.config import SUPER_ADMIN  # noqa: E402
 from core import database as db  # noqa: E402
 from core import session_crypto  # noqa: E402
 
-PRICES = {"START": 150000, "PRO": 300000}
+PRICES = {"OYLIK": 300000}
 UID = 4101
 OTHER = 4102
 ADMIN_UID = SUPER_ADMIN
@@ -172,7 +172,7 @@ class PaymentTestCase(unittest.IsolatedAsyncioTestCase):
             **extra,
         )
 
-    async def start(self, uid: int, plan: str = "PRO") -> dict:
+    async def start(self, uid: int, plan: str = "OYLIK") -> dict:
         update, _q = cb_update(uid, f"pay:new:{plan}")
         await P.handle_pay_callback(update, uid, f"pay:new:{plan}")
         payment = await db.get_open_payment(uid)
@@ -226,8 +226,8 @@ class PaymentsDisabledTests(PaymentTestCase):
         self.assertEqual(await P.queue_line(), "")
 
     async def test_start_payment_is_refused(self) -> None:
-        update, _q = cb_update(UID, "pay:new:PRO")
-        await P.handle_pay_callback(update, UID, "pay:new:PRO")
+        update, _q = cb_update(UID, "pay:new:OYLIK")
+        await P.handle_pay_callback(update, UID, "pay:new:OYLIK")
         self.assertEqual(await db.get_payment_history(UID), [])
         self.assertEqual(_q.message.replies[-1][0], T.PAY_DISABLED)
 
@@ -245,16 +245,23 @@ class PaymentsDisabledTests(PaymentTestCase):
 # ─────────────────────────────────────────────────────────────────────────
 # KONFIGURATSIYA
 # ─────────────────────────────────────────────────────────────────────────
-class PlanPriceParsingTests(unittest.TestCase):
-    def test_valid_entries_are_kept_and_bad_ones_skipped(self) -> None:
-        parsed = _parse_plan_prices("start:150000, PRO:300 000,XXX:5,BUSINESS:abc,PRO,BUSINESS:0")
-        self.assertEqual(parsed, {"START": 150000, "PRO": 300000})
-
-    def test_empty_value_gives_no_prices(self) -> None:
-        self.assertEqual(_parse_plan_prices(""), {})
-
-
 class SchemaMigrationTests(PaymentTestCase):
+    async def test_single_plan_migration_runs_once(self) -> None:
+        # Eski bazani imitatsiya: bayroq yo'q, foydalanuvchida eski paket/limit bor.
+        await db._conn().execute("DELETE FROM app_meta WHERE key = 'single_plan_v1'")
+        await db._conn().execute("UPDATE users SET plan = 'PRO', max_groups = 5, max_posts = 9, daily_limit = 3 WHERE uid = ?", (UID,))
+        await db._conn().commit()
+
+        await db._migrate_single_plan()
+        user = await db.get_user(UID)
+        self.assertEqual((user["plan"], user["max_groups"], user["max_posts"], user["daily_limit"]), ("OYLIK", 0, 0, 0))
+
+        # Admin keyin qo'lda limit qo'ysa, ikkinchi ishga tushirish uni o'chirmaydi.
+        await db._conn().execute("UPDATE users SET max_groups = 7 WHERE uid = ?", (UID,))
+        await db._conn().commit()
+        await db._migrate_single_plan()
+        self.assertEqual((await db.get_user(UID))["max_groups"], 7)
+
     async def test_new_columns_and_table_exist(self) -> None:
         async with db._conn().execute("PRAGMA table_info(users)") as cur:
             user_cols = {row["name"] for row in await cur.fetchall()}
@@ -272,38 +279,38 @@ class ClientFlowTests(PaymentTestCase):
         update = msg_update(UID, FakeMessage())
         await menu.show_plan(update)
         text, markup = update.message.replies[-1]
-        self.assertIn("TO'LOV NARXLARI", text)
+        self.assertIn("OYLIK OBUNA", text)
         self.assertIn("300 000 so'm", text)
         callbacks = all_callbacks(markup)
-        self.assertIn("pay:new:START", callbacks)
-        self.assertIn("pay:new:PRO", callbacks)
+        self.assertIn("pay:new:OYLIK", callbacks)
+        self.assertEqual(sum(1 for c in callbacks if c.startswith("pay:new:")), 1)
         self.assertIn("pay:status", callbacks)
 
     async def test_pressing_pay_creates_one_pending_request(self) -> None:
-        payment = await self.start(UID, "PRO")
+        payment = await self.start(UID, "OYLIK")
         self.assertEqual(payment["status"], "pending")
         self.assertEqual(payment["amount"], 300000)
         self.assertEqual(payment["days"], CFG.PAYMENT_DAYS)
-        self.assertEqual(payment["reference"], f"{CFG.PAY_REF_PREFIX}-{UID}-PRO")
+        self.assertEqual(payment["reference"], f"{CFG.PAY_REF_PREFIX}-{UID}-OYLIK")
 
         # Ikkinchi bosish yangi so'rov ochmaydi — ochiq so'rovni ko'rsatadi.
-        await self.start(UID, "PRO")
+        await self.start(UID, "OYLIK")
         history = await db.get_payment_history(UID)
         self.assertEqual(len(history), 1)
 
     async def test_instruction_contains_card_and_reference(self) -> None:
-        update, q = cb_update(UID, "pay:new:START")
-        await P.handle_pay_callback(update, UID, "pay:new:START")
+        update, q = cb_update(UID, "pay:new:OYLIK")
+        await P.handle_pay_callback(update, UID, "pay:new:OYLIK")
         text, markup = q.message.replies[-1]
         self.assertIn("8600 1234 5678 9012", text)
-        self.assertIn("150 000 so'm", text)
-        self.assertIn(f"{CFG.PAY_REF_PREFIX}-{UID}-START", text)
+        self.assertIn("300 000 so'm", text)
+        self.assertIn(f"{CFG.PAY_REF_PREFIX}-{UID}-OYLIK", text)
         self.assertIn(f"pay:cancel:{(await db.get_open_payment(UID))['id']}", all_callbacks(markup))
 
     async def test_unapproved_user_cannot_start_payment(self) -> None:
         await self.seed(OTHER, expires=None, session="", is_admin=0)
-        update, q = cb_update(OTHER, "pay:new:PRO")
-        await P.handle_pay_callback(update, OTHER, "pay:new:PRO")
+        update, q = cb_update(OTHER, "pay:new:OYLIK")
+        await P.handle_pay_callback(update, OTHER, "pay:new:OYLIK")
         self.assertIsNone(await db.get_open_payment(OTHER))
         self.assertIn("Hisob faol emas", q.message.replies[-1][0])
 
@@ -314,7 +321,7 @@ class ClientFlowTests(PaymentTestCase):
         self.assertIn("narx belgilanmagan", q.message.replies[-1][0])
 
     async def test_receipt_is_attached_and_card_sent_to_admin(self) -> None:
-        payment = await self.start(UID, "PRO")
+        payment = await self.start(UID, "OYLIK")
         await self.send_receipt(UID)
 
         stored = await db.get_payment(payment["id"])
@@ -337,7 +344,7 @@ class ClientFlowTests(PaymentTestCase):
         self.application.bot.send_photo.assert_not_awaited()
 
     async def test_second_receipt_after_first_is_refused(self) -> None:
-        await self.start(UID, "PRO")
+        await self.start(UID, "OYLIK")
         await self.send_receipt(UID, b"first")
         msg = FakeMessage(photo=[FakePhoto(b"second", "X")])
         self.assertTrue(await P.handle_receipt(msg_update(UID, msg)))
@@ -346,16 +353,16 @@ class ClientFlowTests(PaymentTestCase):
 
     async def test_same_receipt_used_twice_is_flagged(self) -> None:
         await self.seed(OTHER, expires=iso(5), session="s2")
-        await self.start(UID, "PRO")
+        await self.start(UID, "OYLIK")
         await self.send_receipt(UID, b"SAME-RECEIPT")
-        await self.start(OTHER, "START")
+        await self.start(OTHER, "OYLIK")
         await self.send_receipt(OTHER, b"SAME-RECEIPT")
 
         caption = self.application.bot.send_photo.await_args_list[-1].kwargs["caption"]
         self.assertIn("yana 1 ta so'rovda", caption)
 
     async def test_status_shows_current_and_history(self) -> None:
-        await self.start(UID, "PRO")
+        await self.start(UID, "OYLIK")
         update, q = cb_update(UID, "pay:status")
         await P.handle_pay_callback(update, UID, "pay:status")
         text = q.message.replies[-1][0]
@@ -363,7 +370,7 @@ class ClientFlowTests(PaymentTestCase):
         self.assertIn("Oxirgi to'lovlar", text)
 
     async def test_user_can_cancel_own_request_and_proof_is_removed(self) -> None:
-        payment = await self.start(UID, "PRO")
+        payment = await self.start(UID, "OYLIK")
         await self.send_receipt(UID)
         proof = (await db.get_payment(payment["id"]))["proof_path"]
 
@@ -376,7 +383,7 @@ class ClientFlowTests(PaymentTestCase):
 
     async def test_user_cannot_cancel_someone_elses_request(self) -> None:
         await self.seed(OTHER, expires=iso(5), session="s2")
-        payment = await self.start(OTHER, "START")
+        payment = await self.start(OTHER, "OYLIK")
         update, _q = cb_update(UID, f"pay:cancel:{payment['id']}")
         await P.handle_pay_callback(update, UID, f"pay:cancel:{payment['id']}")
         self.assertEqual((await db.get_payment(payment["id"]))["status"], "pending")
@@ -386,7 +393,7 @@ class ClientFlowTests(PaymentTestCase):
 # ADMIN: TASDIQLASH / RAD ETISH
 # ─────────────────────────────────────────────────────────────────────────
 class AdminDecisionTests(PaymentTestCase):
-    async def _ready_request(self, uid: int = UID, plan: str = "PRO") -> int:
+    async def _ready_request(self, uid: int = UID, plan: str = "OYLIK") -> int:
         payment = await self.start(uid, plan)
         await self.send_receipt(uid, f"proof-{payment['id']}".encode())
         return int(payment["id"])
@@ -401,8 +408,8 @@ class AdminDecisionTests(PaymentTestCase):
         self.assertLess(abs((expires - expected).total_seconds()), 120)
 
         user = await db.get_user(UID)
-        self.assertEqual(user["plan"], "PRO")
-        self.assertEqual(user["max_groups"], CFG.PLAN_DEFS["PRO"]["max_groups"])
+        self.assertEqual(user["plan"], "OYLIK")
+        self.assertEqual(user["max_groups"], CFG.PLAN_DEFS["OYLIK"]["max_groups"])
         self.assertEqual(user["paid_total"], 300000)
         self.assertIsNotNone(user["paid_last_at"])
         self.assertEqual((await db.get_payment(pid))["status"], "approved")
@@ -439,7 +446,7 @@ class AdminDecisionTests(PaymentTestCase):
         self.assertTrue(any("rad etildi" in t for t in self.sent_to_user(UID)))
 
         # Rad etilgan so'rovdan keyin yangi so'rov ochish mumkin.
-        new_payment = await self.start(UID, "START")
+        new_payment = await self.start(UID, "OYLIK")
         self.assertNotEqual(new_payment["id"], pid)
 
     async def test_approve_after_reject_does_not_pay(self) -> None:
@@ -457,7 +464,7 @@ class AdminDecisionTests(PaymentTestCase):
         self.assertEqual((await db.get_user(UID))["paid_total"], 0)
 
     async def test_approve_cancelled_request_is_refused(self) -> None:
-        payment = await self.start(UID, "PRO")
+        payment = await self.start(UID, "OYLIK")
         await self.send_receipt(UID)
         update, _q = cb_update(UID, f"pay:cancel:{payment['id']}")
         await P.handle_pay_callback(update, UID, f"pay:cancel:{payment['id']}")
@@ -467,8 +474,8 @@ class AdminDecisionTests(PaymentTestCase):
 
     async def test_queue_lists_only_receipts_waiting_for_decision(self) -> None:
         await self.seed(OTHER, expires=iso(5), session="s2")
-        await self.start(UID, "PRO")  # kvitansiyasiz — navbatda bo'lmaydi
-        pid = await self._ready_request(OTHER, "START")
+        await self.start(UID, "OYLIK")  # kvitansiyasiz — navbatda bo'lmaydi
+        pid = await self._ready_request(OTHER, "OYLIK")
         queue = await db.payment_queue()
         self.assertEqual([row["id"] for row in queue], [pid])
         self.assertIn("1 ta", await P.queue_line())
@@ -514,7 +521,7 @@ class JanitorTests(PaymentTestCase):
         await db._conn().commit()
 
     async def test_request_without_receipt_expires_after_ttl(self) -> None:
-        payment = await self.start(UID, "PRO")
+        payment = await self.start(UID, "OYLIK")
         await self._backdate_request(payment["id"], CFG.PAYMENT_REQUEST_TTL_MIN + 5)
         summary = await P.janitor_tick()
 
@@ -523,7 +530,7 @@ class JanitorTests(PaymentTestCase):
         self.assertTrue(any("muddati o'tdi" in t for t in self.sent_to_user(UID)))
 
     async def test_request_with_receipt_is_not_expired_by_ttl(self) -> None:
-        payment = await self.start(UID, "PRO")
+        payment = await self.start(UID, "OYLIK")
         await self.send_receipt(UID)
         await self._backdate_request(payment["id"], CFG.PAYMENT_REQUEST_TTL_MIN + 500)
         await P.janitor_tick()
@@ -552,7 +559,7 @@ class JanitorTests(PaymentTestCase):
         self.assertIsNone((await db.get_user(UID))["pay_reminded_at"])
 
     async def _ready_request_for(self, uid: int) -> int:
-        payment = await self.start(uid, "PRO")
+        payment = await self.start(uid, "OYLIK")
         await self.send_receipt(uid, b"reminder-proof")
         return int(payment["id"])
 
@@ -597,7 +604,7 @@ class AdminPanelWiringTests(PaymentTestCase):
         self.assertIn("Kutilayotgan to'lovlar: 1 ta", line)
 
     async def _ready_request_for_panel(self) -> None:
-        payment = await self.start(UID, "PRO")
+        payment = await self.start(UID, "OYLIK")
         await self.send_receipt(UID, b"panel")
         self.assertIsNotNone(payment)
 
@@ -621,7 +628,7 @@ class MainRoutingTests(PaymentTestCase):
     async def test_photo_with_open_request_becomes_receipt(self) -> None:
         import main
 
-        await self.start(UID, "PRO")
+        await self.start(UID, "OYLIK")
         msg = FakeMessage(photo=[FakePhoto(b"routed-receipt")])
         with patch.object(main.rate_limiter, "is_allowed", return_value=True):
             await main._on_message_locked(msg_update(UID, msg), SimpleNamespace(args=[]))
@@ -647,8 +654,8 @@ class MainRoutingTests(PaymentTestCase):
         update = msg_update(UID, FakeMessage())
         await main.cmd_pay(update, SimpleNamespace(args=[]))
         text, markup = update.message.replies[-1]
-        self.assertIn("TO'LOV NARXLARI", text)
-        self.assertIn("pay:new:PRO", all_callbacks(markup))
+        self.assertIn("OYLIK OBUNA", text)
+        self.assertIn("pay:new:OYLIK", all_callbacks(markup))
 
     async def test_pay_command_refused_when_disabled(self) -> None:
         import main

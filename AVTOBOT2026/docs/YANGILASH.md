@@ -87,18 +87,24 @@ shuning uchun xato bo'lsa sabov izlang, o'chirmang).
 
 ## 5. Limitlarni bosqichma-bosqich yoqish (tavsiya)
 
-Foydalanuvchi akkauntini Telegram cheklamasin uchun eng foydali sozlamalar,
-lekin ularni **birdan emas**, tartib bilan yoqing:
+> **Eslatma (yagona oylik obuna):** endi barcha foydalanuvchilar bitta
+> `OYLIK` tarifida, cheklovlarsiz. `DEFAULT_PLAN`, `USER_DAILY_LIMIT_DEFAULT`
+> va `PLAN_PRICES` sozlamalari olib tashlandi. Eski paket nomlari
+> (SINOV/START/PRO/BUSINESS) bazada ham qolmaydi — bir martalik migratsiya
+> (`app_meta`, kalit `single_plan_v1`) barcha userlarni `OYLIK` ga o'tkazadi
+> va limitlarni 0 (cheksiz) qiladi. Migratsiya qayta ishlamaydi, shuning
+> uchun keyin admin qo'lda qo'ygan limit o'chmaydi.
+
+Foydalanuvchi akkauntini Telegram cheklamasin uchun ishlatiladigan limitlar
+endi faqat **admin qo'lda** qo'yganda ishlaydi (admin panel → ⚙️ Tarif va
+limitlar, `max_groups`/`max_posts`/`daily_limit`/`active_hours`). Shuningdek
+faol soatlar oynasini global qilish uchun `ACTIVE_HOURS_DEFAULT` ishlatiladi:
 
 ```bash
-# 1-hafta: faqat himoya (eski userlarga tegmaydi, yangi userlar uchun)
-USER_DAILY_LIMIT_DEFAULT=150
+# Global faol soatlar (bo'sh = 24/7)
 ACTIVE_HOURS_DEFAULT=08:00-23:00
 
-# 2-hafta: paketchilar (admin panel → ⚙️ Tarif va limitlar orqali ham qo'yiladi)
-DEFAULT_PLAN=SINOV          # 5 guruh / 2 post / 30 yuborish-kuniga
-
-# 3-qadam: navbatni kamaytirish
+# Navbatni kamaytirish
 AUTO_APPROVE_ENABLED=1
 AUTO_APPROVE_MAX_RISK=2     # faqat past riskli arizalar
 ```
@@ -114,7 +120,7 @@ Standart holatda **o'chiq** (`PAYMENTS_ENABLED=0`): foydalanuvchi hech narsa
 ko'rmaydi, eski xatti-harakat saqlanadi. Yoqish tartibi:
 
 ```bash
-# 1) .env: PAYMENTS_ENABLED=1, PLAN_PRICES=..., PAY_CARD=..., PAY_HOLDER=...
+# 1) .env: PAYMENTS_ENABLED=1, MONTHLY_PRICE=<so'm>, PAY_CARD=..., PAY_HOLDER=...
 # 2) Ma'lumotlar bazasi zaxirasi (migratsiya yangi jadval/ustun qo'shadi — xavfsiz)
 # 3) Botni qayta ishga tushiring (systemd / screen — o'zingiz ishlatgan usulda)
 tail -f logs/avtobot.log
@@ -122,9 +128,10 @@ tail -f logs/avtobot.log
 
 **Qanday ishlaydi**
 
-* Mijoz: `📦 Paket va limitlar` (yoki `/pay`) → `💳 PRO — 300 000 so'm` →
-  summa, karta va izoh kodi `AVTO-<uid>-<PAKET>` ko'rsatiladi → kvitansiya
-  rasmini shu chatga yuboradi.
+* Mijoz: `💳 Obuna` (yoki `/pay`) → `💳 Oylik obuna — <narx> so'm` →
+  summa, karta va izoh kodi `AVTO-<uid>-OYLIK` ko'rsatiladi → kvitansiya
+  rasmini shu chatga yuboradi. Tarif yagona va cheklovsiz; `MONTHLY_PRICE`
+  bo'sh yoki 0 bo'lsa to'lov tugmasi ko'rinmaydi.
 * Admin (super admin): kvitansiya rasmi tugmalar bilan keladi —
   `✅ Tasdiqlash` (muddat uzaytiriladi: tugagan bo'lsa hozirdan, aks holda
   oxiriga qo'shiladi), `❌ Rad etish`, `👤 Karta`. Panelda `💰 To'lovlar navbati`.

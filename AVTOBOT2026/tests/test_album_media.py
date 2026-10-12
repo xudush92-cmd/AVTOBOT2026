@@ -212,7 +212,7 @@ class AlbumTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(media_kind_label(saved[0]), "📝 Matn")
 
     async def test_post_limit_blocks_extra_posts(self) -> None:
-        await db.set_plan(self.UID, "SINOV")  # max_posts = 2
+        await db.set_user_limits(self.UID, max_posts=2)
         await posts.begin_add_post(update_for(fake_message()))
         await posts.handle_add_post(update_for(fake_message("1-post")))
         await posts.begin_add_post(update_for(fake_message()))

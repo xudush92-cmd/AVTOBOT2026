@@ -246,6 +246,28 @@ async def _migrate_schema() -> None:
         log(f"🔐 {migrated} ta user sessiyasi DB ichida shifrlandi")
 
 
+async def _migrate_single_plan() -> None:
+    """Barcha paketlarni bitta oylik tarifga o'tkazadi va cheklovlarni olib tashlaydi.
+
+    Bir marta bajariladi (``app_meta`` bayrog'i). Shundan keyin admin qo'lda
+    qo'ygan qiymatlar tegilmaydi.
+    """
+    conn = _conn()
+    flag = "single_plan_v1"
+    async with conn.execute("SELECT value FROM app_meta WHERE key = ?", (flag,)) as cur:
+        if await cur.fetchone():
+            return
+    await conn.execute(
+        "UPDATE users SET plan = ?, max_groups = 0, max_posts = 0, daily_limit = 0",
+        (DEFAULT_PLAN,),
+    )
+    await conn.execute(
+        "INSERT INTO app_meta (key, value) VALUES (?, ?)", (flag, iso_now())
+    )
+    await conn.commit()
+    log("🧾 Tariflar yagona oylik obunaga o'tkazildi (cheklovlar olib tashlandi)")
+
+
 async def init_db() -> None:
     global _db
     ensure_session_cipher()
@@ -329,6 +351,10 @@ async def init_db() -> None:
         );
         CREATE INDEX IF NOT EXISTS idx_send_logs_uid_sent
             ON send_logs(uid, sent_at);
+        CREATE TABLE IF NOT EXISTS app_meta (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        );
         CREATE TABLE IF NOT EXISTS payment_requests (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             uid INTEGER NOT NULL,
@@ -359,6 +385,7 @@ async def init_db() -> None:
     """)
     await _db.commit()
     await _migrate_schema()
+    await _migrate_single_plan()
     log("Baza tayyor")
 
 

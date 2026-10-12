@@ -409,7 +409,7 @@ BTN_DEL_POST = "🗑 Post o'chirish"
 BTN_TIMER = "⏱ Posting oralig'i"
 BTN_REFERRAL = "👥 Referal"
 BTN_REPORT = "📈 Hisobot"
-BTN_PLAN = "📦 Paket va limitlar"
+BTN_PLAN = "💳 Obuna"
 BTN_ACCOUNT = "⚙️ Hisob"
 BTN_BACK = "⬅️ Orqaga"
 BTN_ADMIN_ADD_CANCEL = "❌ Sessiya yaratishni to'xtatish"
@@ -986,8 +986,8 @@ def plan_price_label(plan: str | None) -> str:
 
 def plan_text(limits: dict, interval: int, expires: str, daily_left: str) -> str:
     lines = [
-        "📦 PAKETIM VA LIMITLAR\n",
-        f"Paket: {limits.get('label') or '—'}",
+        "💳 OBUNAM\n",
+        f"Tarif: {limits.get('label') or '—'}",
         f"💬 Guruhlar: {limits.get('used_groups', 0)}",
         f"📝 Postlar: {limits.get('used_posts', 0)}",
         f"⏱ Umumiy oralig': taxminan {interval} daqiqa",
@@ -1012,7 +1012,7 @@ def plan_text(limits: dict, interval: int, expires: str, daily_left: str) -> str
     hours = (limits.get("active_hours") or "").strip()
     lines.append(f"• Ish vaqti: {hours}" if hours else "• Ish vaqti: 24/7")
     lines.append("")
-    lines.append("🚀 Paketni kengaytirish: " + ADMIN_CONTACT_PHONE)
+    lines.append("📱 Savollar: " + ADMIN_CONTACT_PHONE)
     return "\n".join(lines)
 
 
@@ -1215,13 +1215,13 @@ PAY_PROOF_RECEIVED = (
 )
 PAY_PROOF_EXPIRED = (
     "⌛ To'lov so'rovi muddati o'tdi ({ttl} daqiqa ichida kvitansiya yuborilmagan).\n"
-    "Qaytadan 📦 Paket va limitlar → 💳 orqali so'rov yarating."
+    "Qaytadan 💳 Obuna → 💳 orqali so'rov yarating."
 )
 PAY_CANCELLED = "❌ So'rov bekor qilindi."
 PAY_CANCEL_GONE = "ℹ️ Bu so'rov allaqachon yopilgan yoki topilmadi."
 PAY_REMINDER = (
     "🔔 Eslatma: {label} paketingiz muddati {until} da tugaydi ({left} kun qoldi).\n"
-    "📦 Paket va limitlar → 💳 orqali uzaytirishingiz mumkin."
+    "💳 Obuna → 💳 orqali uzaytirishingiz mumkin."
 )
 PAY_QUEUE_EMPTY = "✅ To'lovlar navbati bo'sh."
 PAY_APPROVED_USER = (
@@ -1234,7 +1234,7 @@ PAY_RESUMED_USER = "▶️ Posting avtomatik tiklandi. Holatni ⏱ tugmalaridan 
 PAY_REJECTED_USER = (
     "❌ To'lov rad etildi (so'rov #{pid}).\n\n"
     "Sabab: kvitansiya tekshiruvdan o'tmadi (summa, izoh kodi yoki karta mos emas).\n"
-    "To'g'ri kvitansiya bilan 📦 Paket va limitlar → 💳 orqali qayta so'rov yarating.\n"
+    "To'g'ri kvitansiya bilan 💳 Obuna → 💳 orqali qayta so'rov yarating.\n"
     "Savol bo'lsa: " + ADMIN_CONTACT_PHONE
 )
 PAY_QUEUE_ALERT = "⚠️ To'lovlar navbati: {count} ta kvitansiya tekshiruvni kutmoqda (eng eskisi {age} daqiqa oldin)."
@@ -1251,12 +1251,12 @@ def plan_label(plan: str) -> str:
 
 
 def plans_price_block() -> str:
-    """📦 Paket ekranidagi narxlar bloki (faqat to'lov yoqilganda)."""
-    lines = [f"💳 TO'LOV NARXLARI ({PAYMENT_DAYS} kun):"]
+    """💳 Obuna ekranidagi narx bloki (faqat to'lov yoqilganda)."""
+    lines = ["💳 OYLIK OBUNA:"]
     for plan, amount in PLAN_PRICES.items():
-        lines.append(f"{plan_label(plan)} — {fmt_som(amount)} / {PAYMENT_DAYS} kun")
+        lines.append(f"{fmt_som(amount)} / {PAYMENT_DAYS} kun — cheklovlar yo'q")
     lines.append("")
-    lines.append("Paketni tanlang, so'ng karta rekvizitlari va to'lov izohi ko'rsatiladi.")
+    lines.append("Tugmani bosing, so'ng karta rekvizitlari va to'lov izohi ko'rsatiladi.")
     return "\n".join(lines)
 
 

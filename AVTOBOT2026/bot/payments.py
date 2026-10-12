@@ -1,7 +1,7 @@
 """To'lov — A reja: qo'lda tasdiqlash + kvitansiya.
 
 Oqim:
-1. Mijoz 📦 Paket va limitlar (yoki /pay) → paket → «💳» tugmasi.
+1. Mijoz 💳 Obuna (yoki /pay) → «💳» tugmasi.
 2. Bot summa, karta rekvizitlari va izoh kodi ``AVTO-<uid>-<PAKET>`` ni
    ko'rsatadi; so'rov ``pending`` bo'lib bazaga tushadi.
 3. Mijoz kvitansiya rasmini shu chatga yuboradi → admin (super admin)ga

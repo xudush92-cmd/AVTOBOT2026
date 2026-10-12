@@ -124,8 +124,8 @@ class LegacyMigrationTestCase(unittest.IsolatedAsyncioTestCase):
         user = await db.get_user(self.UID)
         self.assertEqual(user["name"], "Ali Valiyev")
         self.assertEqual(int(user["interval_min"]), 45)
-        # Yangi ustunlar bor, lekin bo'sh = cheksiz (eski xatti-harakat).
-        self.assertEqual(user["plan"], "")
+        # Yagona oylik obuna: barcha eski userlar OYLIK, cheklovlarsiz.
+        self.assertEqual(user["plan"], "OYLIK")
         self.assertEqual(int(user["max_groups"] or 0), 0)
         self.assertEqual(int(user["daily_limit"] or 0), 0)
 
@@ -146,7 +146,7 @@ class LegacyMigrationTestCase(unittest.IsolatedAsyncioTestCase):
         )
 
         limits = await db.get_limits(self.UID)
-        self.assertEqual(limits["label"], "📦 Limitlarsiz")
+        self.assertEqual(limits["label"], "💳 Oylik obuna")
         self.assertEqual(limits["used_groups"], 2)
         self.assertEqual(limits["used_posts"], 1)
         self.assertFalse(await db.is_tariff_expired(self.UID))
@@ -212,7 +212,7 @@ class LegacyMigrationTestCase(unittest.IsolatedAsyncioTestCase):
 
         self.assertIn("STATUS", (await render(menu.show_status)).upper())
         self.assertIn("HISOBOT", (await render(menu.show_report)).upper())
-        self.assertIn("PAKET", (await render(menu.show_plan)).upper())
+        self.assertIn("OBUNA", (await render(menu.show_plan)).upper())
 
     async def test_stats_panel_survives_missing_history(self) -> None:
         await db.init_db()

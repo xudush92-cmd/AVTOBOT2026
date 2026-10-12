@@ -110,26 +110,16 @@ SEND_LOG_RETENTION_DAYS: int = max(1, _int("SEND_LOG_RETENTION_DAYS", 30))
 # ─────────────────────────────────────────────────────────────────────────
 # TARIF PAKETLARI VA LIMITLAR
 # ─────────────────────────────────────────────────────────────────────────
-# 0 qiymat = cheksiz. Limitlar faqat musbat qiymatda qo'llaniladi, shuning
-# uchun paketsiz (eski) foydalanuvchilar hech qanday cheklovga uchramaydi.
+# Yagona oylik tarif (SINOV/START/PRO/BUSINESS olib tashlangan). Cheklovlar yo'q:
+# 0 = cheksiz (guruh, post, kunlik yuborish). Admin individual limit qo'yishi mumkin.
 PLAN_DEFS: dict[str, dict] = {
-    "SINOV": {"label": "🆓 Sinov", "max_groups": 5, "max_posts": 2, "daily_limit": 30},
-    "START": {"label": "🥉 START", "max_groups": 20, "max_posts": 10, "daily_limit": 80},
-    "PRO": {"label": "🥈 PRO", "max_groups": 60, "max_posts": 0, "daily_limit": 150},
-    "BUSINESS": {
-        "label": "🥇 BUSINESS",
-        "max_groups": 200,
-        "max_posts": 0,
-        "daily_limit": 400,
-    },
+    "OYLIK": {"label": "💳 Oylik obuna", "max_groups": 0, "max_posts": 0, "daily_limit": 0},
 }
-DEFAULT_PLAN: str = (os.getenv("DEFAULT_PLAN", "") or "").strip().upper()
-if DEFAULT_PLAN not in PLAN_DEFS:
-    DEFAULT_PLAN = ""  # bo'sh = limitlarsiz (eski xatti-harakat)
+DEFAULT_PLAN: str = "OYLIK"
 
 # Telegram akkauntini cheklab qo'ymaslik uchun qo'shimcha himoya.
 # 0 = o'chirilgan. Soatlar mahalliy (server) vaqtida hisoblanadi.
-USER_DAILY_LIMIT_DEFAULT: int = max(0, _int("USER_DAILY_LIMIT_DEFAULT", 0))
+USER_DAILY_LIMIT_DEFAULT: int = 0  # cheklov yo'q (yagona oylik tarif)
 ACTIVE_HOURS_DEFAULT: str = (os.getenv("ACTIVE_HOURS_DEFAULT", "") or "").strip()
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -166,7 +156,7 @@ AUTO_APPROVE_BATCH: int = max(1, _int("AUTO_APPROVE_BATCH", 5))
 # TO'LOV (A REJA: QO'LDA TASDIQLASH + KVITANSIYA)
 # ─────────────────────────────────────────────────────────────────────────
 # O'chirilgan holatda (standart) 💳 tugmalari ko'rinmaydi va hech narsa
-# o'zgarmaydi. Yoqish uchun PAYMENTS_ENABLED=1 va PLAN_PRICES to'ldiriladi.
+# o'zgarmaydi. Yoqish uchun PAYMENTS_ENABLED=1 va MONTHLY_PRICE to'ldiriladi.
 PAYMENTS_ENABLED: bool = os.getenv("PAYMENTS_ENABLED", "0") not in {
     "0",
     "false",
@@ -175,28 +165,9 @@ PAYMENTS_ENABLED: bool = os.getenv("PAYMENTS_ENABLED", "0") not in {
 }
 
 
-def _parse_plan_prices(raw: str) -> dict[str, int]:
-    """``START:150000,PRO:300000`` → ``{"START": 150000, "PRO": 300000}``.
-
-    Noto'g'ri yozuvlar (nomi yo'q, narx musbat butun emas, paket noma'lum)
-    jim tashlab yuboriladi — bitta xato butun to'lov menyusini buzmasin.
-    """
-    prices: dict[str, int] = {}
-    for item in (raw or "").split(","):
-        if ":" not in item:
-            continue
-        name, _, amount = item.partition(":")
-        name = name.strip().upper()
-        try:
-            value = int(amount.strip().replace(" ", "").replace("_", ""))
-        except ValueError:
-            continue
-        if name in PLAN_DEFS and value > 0:
-            prices[name] = value
-    return prices
-
-
-PLAN_PRICES: dict[str, int] = _parse_plan_prices(os.getenv("PLAN_PRICES", ""))
+# Oylik obuna narxi (so'm). 0 yoki bo'sh = to'lov tugmalari ko'rinmaydi.
+MONTHLY_PRICE: int = max(0, _int("MONTHLY_PRICE", 0))
+PLAN_PRICES: dict[str, int] = {"OYLIK": MONTHLY_PRICE} if MONTHLY_PRICE > 0 else {}
 # Karta rekvizitlari (kvitansiya shu kartaga yuboriladi)
 PAY_CARD: str = (os.getenv("PAY_CARD", "") or "").strip()
 PAY_BANK: str = (os.getenv("PAY_BANK", "") or "").strip()

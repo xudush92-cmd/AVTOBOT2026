@@ -164,7 +164,7 @@ async def show_report(update: Update) -> None:
 
 
 async def show_plan(update: Update) -> None:
-    """📦 Paket va limitlar ekrani."""
+    """💳 Obuna ekrani (narx, holat, limitlar)."""
     uid = update.effective_user.id
     snapshot = await _status_snapshot(uid)
     limits = snapshot["limits"]
@@ -424,7 +424,7 @@ async def route_menu_button(update: Update, text: str) -> bool:
         await show_report(update)
         return True
 
-    # 📦 Paket va limitlar
+    # 💳 Obuna (yagona oylik to'lov)
     if text == T.BTN_PLAN:
         await show_plan(update)
         return True
