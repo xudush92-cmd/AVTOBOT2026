@@ -41,6 +41,7 @@ def kb_main(running: bool = False, super_admin: bool = False) -> ReplyKeyboardMa
             [KeyboardButton(action)],
             [KeyboardButton(status), KeyboardButton(T.BTN_GROUPS)],
             [KeyboardButton(T.BTN_POSTS), KeyboardButton(T.BTN_TIMER)],
+            [KeyboardButton(T.BTN_REPORT), KeyboardButton(T.BTN_PLAN)],
             [KeyboardButton(T.BTN_REFERRAL), KeyboardButton(T.BTN_ACCOUNT)],
         ],
         resize_keyboard=True,
@@ -52,6 +53,7 @@ def kb_groups_menu() -> ReplyKeyboardMarkup:
         [
             [KeyboardButton(T.BTN_ADD_GROUP), KeyboardButton(T.BTN_DEL_GROUP)],
             [KeyboardButton(T.BTN_GROUP_INTERVAL)],
+            [KeyboardButton(T.BTN_CHECK_GROUPS)],
             [KeyboardButton(T.BTN_BACK)],
         ],
         resize_keyboard=True,
@@ -62,9 +64,26 @@ def kb_posts_menu() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         [
             [KeyboardButton(T.BTN_ADD_POST), KeyboardButton(T.BTN_DEL_POST)],
+            [KeyboardButton(T.BTN_EDIT_POST), KeyboardButton(T.BTN_PREVIEW_POST)],
+            [KeyboardButton(T.BTN_TEST_SEND)],
             [KeyboardButton(T.BTN_BACK)],
         ],
         resize_keyboard=True,
+    )
+
+
+def kb_referral(link: str) -> InlineKeyboardMarkup:
+    """Referal sahifasi tugmalari: havolani ochish va do'stga yuborish."""
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton("🔗 Havolani ochish", url=link),
+                InlineKeyboardButton(
+                    "📨 Do'stlarga yuborish", callback_data="ref:share"
+                ),
+            ],
+            [InlineKeyboardButton("📦 Paket va limitlar", callback_data="ref:plan")],
+        ]
     )
 
 
@@ -730,6 +749,45 @@ def kb_admin_interval(uid: int) -> InlineKeyboardMarkup:
     )
 
 
+def kb_admin_plan(uid: int, plan: str = "") -> InlineKeyboardMarkup:
+    """Admin paneli: foydalanuvchiga tarif paketini va limitini qo'yish."""
+    from config.config import PLAN_DEFS
+
+    names = list(PLAN_DEFS.keys())
+    rows = []
+    for i in range(0, len(names), 2):
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    ("✅ " if (names[j] or "♾") == (plan or "♾") else "") + (
+                        names[j] if names[j] else "Cheksiz"
+                    ),
+                    callback_data=f"uc:plan:set:{uid}:{names[j] or '_'}",
+                )
+                for j in range(i, min(i + 2, len(names)))
+            ]
+        )
+    rows.append(
+        [
+            InlineKeyboardButton("0️⃣ Limitlarsiz", callback_data=f"uc:plan:lim:{uid}:off"),
+            InlineKeyboardButton("🔰 5 guruh / 30 kun", callback_data=f"uc:plan:lim:{uid}:5"),
+        ]
+    )
+    rows.append(
+        [
+            InlineKeyboardButton("🎁 +7 kun", callback_data=f"uc:plan:bonus:{uid}:7"),
+            InlineKeyboardButton("🎁 +30 kun", callback_data=f"uc:plan:bonus:{uid}:30"),
+        ]
+    )
+    rows.append(
+        [
+            InlineKeyboardButton("➖1 kun", callback_data=f"uc:plan:bonus:{uid}:-1"),
+            InlineKeyboardButton("⬅️ Kartaga", callback_data=f"uc:card:{uid}"),
+        ]
+    )
+    return InlineKeyboardMarkup(rows)
+
+
 def kb_expire_options(uid: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
@@ -897,3 +955,186 @@ def kb_account() -> InlineKeyboardMarkup:
 
 def kb_account_logout_confirm(token: str) -> InlineKeyboardMarkup:
     return kb_yes_no(f"self:logoutconfirm:{token}", "self:close")
+
+
+# ─────────────────────────────────────────
+# ALBOM / POST AMALLARI
+# ─────────────────────────────────────────
+def kb_album_done() -> InlineKeyboardMarkup:
+    """Yig'ilayotgan albomni saqlash tugmasi."""
+    return InlineKeyboardMarkup(
+        [[InlineKeyboardButton(T.BTN_ALBUM_DONE, callback_data="alb:done")]]
+    )
+
+
+def _post_picker(
+    posts: list[dict],
+    page: int,
+    action: str,
+    prefix_icon: str,
+    page_size: int = 10,
+) -> InlineKeyboardMarkup:
+    """Post ro'yxatidan birini tanlash uchun umumiy konstruktor."""
+    max_page = max(0, (len(posts) - 1) // page_size)
+    page = min(max(page, 0), max_page)
+    start = page * page_size
+    rows: list[list[InlineKeyboardButton]] = []
+    for offset, post in enumerate(posts[start : start + page_size], start):
+        text = (post.get("text") or "").strip().replace("\n", " ")
+        count = len(post.get("media") or [])
+        icon = f"🖼×{count}" if count > 1 else ("🖼" if count else "📝")
+        preview = text[:24] if text else "(media)"
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    f"{prefix_icon} {offset + 1}. {icon} {preview}",
+                    callback_data=f"{action}:{int(post.get('id', offset))}:{page}",
+                )
+            ]
+        )
+    if max_page:
+        nav: list[InlineKeyboardButton] = []
+        if page > 0:
+            nav.append(InlineKeyboardButton("⬅️", callback_data=f"{action}:page:{page - 1}"))
+        nav.append(
+            InlineKeyboardButton(
+                f"{page + 1}/{max_page + 1}", callback_data="noop"
+            )
+        )
+        if page < max_page:
+            nav.append(InlineKeyboardButton("➡️", callback_data=f"{action}:page:{page + 1}"))
+        rows.append(nav)
+    rows.append([InlineKeyboardButton(T.ACTION_CANCEL, callback_data=f"{action}:cancel")])
+    return InlineKeyboardMarkup(rows)
+
+
+def kb_posts_edit(posts: list[dict], page: int = 0) -> InlineKeyboardMarkup:
+    return _post_picker(posts, page, "ped", "✏️")
+
+
+def kb_posts_preview(posts: list[dict], page: int = 0) -> InlineKeyboardMarkup:
+    return _post_picker(posts, page, "pvw", "👁")
+
+
+def kb_posts_test(posts: list[dict], page: int = 0) -> InlineKeyboardMarkup:
+    return _post_picker(posts, page, "tstp", "🧪")
+
+
+def kb_post_options(post: dict) -> InlineKeyboardMarkup:
+    """Bitta post bo'yicha amallar: preview, sinov, link preview yoqish/o'chirish."""
+    post_id = int(post.get("id") or 0)
+    preview_on = bool(post.get("link_preview", True))
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton("👁 Ko'rinishi", callback_data=f"pvw:id:{post_id}:0"),
+                InlineKeyboardButton("🧪 Sinov", callback_data=f"tstp:id:{post_id}:0"),
+            ],
+            [
+                InlineKeyboardButton(
+                    "🔗 Link preview: " + ("✅ yoqilgan" if preview_on else "❌ o'chirilgan"),
+                    callback_data=f"lp:toggle:{post_id}",
+                )
+            ],
+            [InlineKeyboardButton("⬅️ Postlar", callback_data="pvw:back")],
+        ]
+    )
+
+
+def kb_group_picker(
+    groups: list[dict],
+    page: int,
+    action: str,
+    icon: str,
+    page_size: int = 10,
+) -> InlineKeyboardMarkup:
+    """Guruh ro'yxatidan bitta tanlash (tekshirish / sinov yuborish uchun)."""
+    max_page = max(0, (len(groups) - 1) // page_size)
+    page = min(max(page, 0), max_page)
+    start = page * page_size
+    rows: list[list[InlineKeyboardButton]] = []
+    for group in groups[start : start + page_size]:
+        value = str(group.get("value", ""))
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    f"{icon} {value[:40]}",
+                    callback_data=f"{action}:id:{int(group['id'])}:{page}",
+                )
+            ]
+        )
+    if max_page:
+        nav: list[InlineKeyboardButton] = []
+        if page > 0:
+            nav.append(InlineKeyboardButton("⬅️", callback_data=f"{action}:page:{page - 1}"))
+        nav.append(
+            InlineKeyboardButton(f"{page + 1}/{max_page + 1}", callback_data="noop")
+        )
+        if page < max_page:
+            nav.append(InlineKeyboardButton("➡️", callback_data=f"{action}:page:{page + 1}"))
+        rows.append(nav)
+    rows.append([InlineKeyboardButton(T.BTN_BACK, callback_data=f"{action}:back")])
+    return InlineKeyboardMarkup(rows)
+
+
+def kb_test_send_confirm(post_id: int, group_id: int, token: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    "✅ Ha, bitta guruhga yuborish",
+                    callback_data=f"tst:go:{post_id}:{group_id}:{token}",
+                )
+            ],
+            [InlineKeyboardButton("❌ Bekor qilish", callback_data="tst:cancel")],
+        ]
+    )
+
+
+def kb_test_group_picker(
+    groups: list[dict], post_id: int, page: int = 0, page_size: int = 10
+) -> InlineKeyboardMarkup:
+    """Sinov yuborish uchun bitta guruhni tanlash.
+
+    Callback'da post_id ham saqlanadi — shu sabab oddiy guruh tanlagichdan
+    alohida quriladi.
+    """
+    max_page = max(0, (len(groups) - 1) // page_size)
+    page = min(max(page, 0), max_page)
+    start = page * page_size
+    rows: list[list[InlineKeyboardButton]] = []
+    for group in groups[start : start + page_size]:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    f"📛 {str(group.get('value', ''))[:40]}",
+                    callback_data=f"tstg:ask:{post_id}:{int(group['id'])}",
+                )
+            ]
+        )
+    if max_page:
+        nav: list[InlineKeyboardButton] = []
+        if page > 0:
+            nav.append(
+                InlineKeyboardButton(
+                    "⬅️", callback_data=f"tstg:page:{post_id}:{page - 1}"
+                )
+            )
+        nav.append(
+            InlineKeyboardButton(f"{page + 1}/{max_page + 1}", callback_data="noop")
+        )
+        if page < max_page:
+            nav.append(
+                InlineKeyboardButton(
+                    "➡️", callback_data=f"tstg:page:{post_id}:{page + 1}"
+                )
+            )
+        rows.append(nav)
+    rows.append([InlineKeyboardButton(T.BTN_BACK, callback_data="tstg:back")])
+    return InlineKeyboardMarkup(rows)
+
+
+def kb_group_check_picker(
+    groups: list[dict], page: int = 0, page_size: int = 10
+) -> InlineKeyboardMarkup:
+    return kb_group_picker(groups, page, "gchk", "🔎")

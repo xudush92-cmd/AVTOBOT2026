@@ -10,8 +10,11 @@ from config.config import (
     ADMIN_CONTACT_PHONE,
     DEFAULT_DURATION_DAYS,
     DEFAULT_INTERVAL_MIN,
+    MAX_ALBUM_FILES,
     MAX_INTERVAL_MIN,
     MIN_INTERVAL_MIN,
+    PLAN_DEFS,
+    REFERRAL_BONUS_DAYS,
 )
 from core.utils import format_expires
 
@@ -309,12 +312,22 @@ def approval_result_text(uid: int, *, session_activated: bool) -> str:
     return "\n".join(lines)
 
 
+# Tasdiqlashdan keyin ko'rsatiladigan qisqa yo'riqnoma — yangi odam menyuni
+# o'zi izlab topmasligi uchun (to'liq matn: /help).
+APPROVAL_FIRST_STEPS = (
+    "\n\n👇 Keyingi 3 qadam:\n"
+    "1️⃣ 💬 Guruhlar → ➕ Guruh qo'shish (har biri yangi qatorda)\n"
+    "2️⃣ 📝 Postlar → ➕ Post qo'shish (bir nechta rasm = bitta albom)\n"
+    "3️⃣ ▶️ Start — va 🔎 Tekshirish bilan guruhlar tayyorligini tekshiring\n\n"
+    "💡 To'liq yo'riqnoma: /help"
+)
+
 USER_APPROVED = (
     "✅ Hisobingiz tasdiqlandi!\n\n"
     f"📅 Tarif: {DEFAULT_DURATION_DAYS} kun\n"
     f"⏱ Posting oralig'i: {DEFAULT_INTERVAL_MIN} daqiqa\n\n"
     "🔑 Endi bir marta Login bosing va kodni botdagi raqamli tugmalar orqali "
-    "kiriting."
+    "kiriting." + APPROVAL_FIRST_STEPS
 )
 
 # Pending sessiya aynan o'sha UID uchun tekshirilib faollashtirilganda yuboriladi.
@@ -323,6 +336,7 @@ USER_APPROVED_ACTIVE = (
     f"📅 Tarif: {DEFAULT_DURATION_DAYS} kun\n"
     f"⏱ Posting oralig'i: {DEFAULT_INTERVAL_MIN} daqiqa\n\n"
     "ℹ️ Kodni qayta kiritish shart emas — botdan foydalanishingiz mumkin."
+    + APPROVAL_FIRST_STEPS
 )
 
 USER_REJECTED = (
@@ -380,10 +394,16 @@ BTN_POSTS = "📝 Postlar"
 BTN_ADD_GROUP = "➕ Guruh qo'shish"
 BTN_DEL_GROUP = "➖ Guruh o'chirish"
 BTN_GROUP_INTERVAL = "⏱ Guruh intervali"
+BTN_CHECK_GROUPS = "🔎 Guruhni tekshirish"
+BTN_EDIT_POST = "✏️ Postni tahrirlash"
+BTN_PREVIEW_POST = "👁 Ko'rinishi"
+BTN_TEST_SEND = "🧪 Sinov yuborish"
 BTN_ADD_POST = "➕ Post qo'shish"
 BTN_DEL_POST = "🗑 Post o'chirish"
 BTN_TIMER = "⏱ Posting oralig'i"
 BTN_REFERRAL = "👥 Referal"
+BTN_REPORT = "📈 Hisobot"
+BTN_PLAN = "📦 Paket va limitlar"
 BTN_ACCOUNT = "⚙️ Hisob"
 BTN_BACK = "⬅️ Orqaga"
 BTN_ADMIN_ADD_CANCEL = "❌ Sessiya yaratishni to'xtatish"
@@ -457,22 +477,59 @@ def status_text(
     posts: int,
     interval: int,
     expires: str,
+    *,
+    today_ok: int | None = None,
+    today_failed: int | None = None,
+    next_eta: str = "",
+    last_error: str = "",
+    max_groups: int = 0,
+    max_posts: int = 0,
+    daily_left: str = "",
+    active_hours: str = "",
+    plan_label: str = "",
 ) -> str:
+    """📊 Status ekrani.
+
+    Yangi qatorlar (bugungi yuborishlar, keyingi navbat, limitlar) ixtiyoriy:
+    chaqiruvchi ularni bilsa ko'rsatiladi — shu sabab eski chaqiruvlar ham
+    xato bermaydi.
+    """
     if expired:
         state = "⏸ Kutish rejimi (muddat tugagan)"
     elif running:
         state = "🟢 Ishlamoqda"
     else:
         state = "🔴 To'xtatilgan"
-    return (
-        "📊 STATUS\n\n"
-        f"Holat: {state}\n"
-        f"Sessiya: ✅ Faol\n"
-        f"📅 Muddat: {expires}\n\n"
-        f"💬 Guruhlar: {groups}\n"
-        f"📝 Postlar: {posts}\n"
-        f"⏱ Umumiy posting oralig'i: taxminan {interval} daqiqa"
+
+    lines = [
+        "📊 STATUS\n",
+        f"Holat: {state}",
+        "Sessiya: ✅ Faol",
+        f"📅 Muddat: {expires}",
+    ]
+    if plan_label:
+        lines.append(f"📦 Paket: {plan_label}")
+    lines.append("")
+    lines.append(
+        f"💬 Guruhlar: {groups}" + (f"/{max_groups}" if max_groups else "")
     )
+    lines.append(f"📝 Postlar: {posts}" + (f"/{max_posts}" if max_posts else ""))
+    lines.append(f"⏱ Umumiy posting oralig'i: taxminan {interval} daqiqa")
+
+    if today_ok is not None or today_failed is not None:
+        lines.append("")
+        lines.append(
+            f"📤 Bugun yuborildi: ✅ {today_ok or 0} ta · ❌ {today_failed or 0} ta"
+        )
+    if next_eta:
+        lines.append(f"⏭ Keyingi yuborish: {next_eta}")
+    if last_error:
+        lines.append(f"⚠️ Oxirgi xato: {last_error}")
+    if daily_left:
+        lines.append(f"🧮 Kunlik limit qoldig'i: {daily_left}")
+    if active_hours:
+        lines.append(f"🕒 Ish vaqti: {active_hours}")
+    return "\n".join(lines)
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -541,11 +598,16 @@ POSTS_EMPTY = "❌ Postlar yo'q. 📝 Post qo'shish orqali qo'shing."
 POSTS_LIMIT = "❌ Maksimal {max_posts} ta post (sizning tarifingiz)."
 
 ASK_ADD_POST = (
-    "✍️ Reklama yuboring:\n\n"
-    "• Faqat matn (formatlash bilan)\n"
-    "• Rasm + caption (formatlash bilan)\n"
-    "• Faqat rasm\n\n"
-    "Bold, italic, link va barcha formatlash saqlanadi."
+    "✍️ REKLAMA POSTINI YUBORING\n\n"
+    "1️⃣ Faqat matn (formatlash bilan — bold, italic, link saqlanadi)\n"
+    "2️⃣ Bitta rasm / video / fayl (caption bilan yoki sansiz)\n"
+    f"3️⃣ {MAX_ALBUM_FILES} TAGACHA RASMNI ALBOM QILIB YUBORING\n\n"
+    "💡 Ko'p suratli e'lon: rasmlarni birga (album) tanlab, matnni caption\n"
+    "   qilib yozing yoki rasmdan keyin alohida xabar qiling.\n"
+    "   Yakunlash uchun ✅ «Tayyor» tugmasi yoki biroz kutish kifoya.\n\n"
+    "🔤 Ixtiyoriy shablonlar (har yuborishda yangilanadi):\n"
+    "   {sana} → 12.10.2026 · {vaqt} → 14:05 · {kun} → Shanba\n"
+    "   {Yangi|Ajoyib|Darhol} → tasodifiy variant (spam-ga o'xshamasligi uchun)"
 )
 
 POST_ADDED = "✅ Saqlandi (#{n})\n{kind}\n\n{preview}"
@@ -597,32 +659,120 @@ def interval_set(minutes: int) -> str:
 # ─────────────────────────────────────────────────────────────────────────
 # REFERAL
 # ─────────────────────────────────────────────────────────────────────────
-def referral_text(link: str, total: int, refs: list[dict]) -> str:
+def referral_text(
+    link: str,
+    total: int,
+    refs: list[dict],
+    *,
+    bonus_days: int = 0,
+    min_sends: int = 1,
+    granted_days: int = 0,
+    today: int = 0,
+) -> str:
+    """👥 Referal sahifasi — havola, qoidalar va ro'yxat."""
     lines = [
         "👥 SIZNING REFERALLARINGIZ\n",
-        "🔗 Sizning taklif havolangiz:",
+        "🔗 Taklif havolangiz:",
         link,
         "",
         f"✅ Faol referallar: {total} ta",
-        "(ro'yxatdan o'tib, tasdiqlangan)",
     ]
+    if bonus_days > 0:
+        lines.append(
+            f"🎁 Har bir faol referalga: +{bonus_days} kun tarif\n"
+            f"    (hozircha jami +{granted_days} kun olgansiz)"
+        )
+        lines.append(
+            f"    Shart: do'stingiz tasdiqlanishi, kamida 1 ta guruh va\n"
+            f"    1 ta post qo'shib, {min_sends} marta muvaffaqiyatli yuborishi kerak."
+        )
+    if today:
+        lines.append(f"📅 Bugun qo'shilganlar: {today} ta")
     if refs:
         lines.append("")
         lines.append("📋 Ro'yxat:")
         for i, r in enumerate(refs, 1):
-            mark = "✅" if r.get("counted") else "⏳"
+            if r.get("revoked"):
+                mark = "↩️ bekor qilindi"
+            elif r.get("qualified"):
+                mark = f"🎁 +{r.get('bonus_days') or 0} kun"
+            elif r.get("counted"):
+                mark = "⏳ faollik kutilmoqda"
+            else:
+                mark = "⏳ admin tasdig'i kutilmoqda"
             lines.append(f"{i}. {r['name']} — {mark}")
+        if bonus_days > 0:
+            lines.append("")
+            lines.append(
+                "⏳ = do'stingiz hali post yubora boshlamagan. U ishlay\n"
+                "    boshlagach bonus sizga avtomatik keladi."
+            )
     else:
         lines.append("")
         lines.append("Hozircha referal yo'q. Havolani do'stlaringizga ulashing!")
     return "\n".join(lines)
 
 
-REFERRAL_NEW = (
-    "🎉 Sizning referalingiz faollashdi!\n\n"
-    "👤 {name} ro'yxatdan o'tib, tasdiqlandi.\n"
-    "👥 Jami faol referallaringiz: {total} ta"
-)
+def referral_share_text(link: str) -> str:
+    """Do'stlarga yuboriladigan tayyor matn."""
+    return (
+        "Men Telegram guruhlarga e'lonlarimni avtomatik joylash uchun "
+        "AVTOBOT ishlataman 👇\n\n"
+        "• bir nechta guruhga bir vaqtda\n"
+        "• bir nechta rasm (albom) bilan\n"
+        "• har bir guruhga o'z oralig'ini qo'yish mumkin\n"
+        "• qachon va nechta e'lon chiqqanini ko'rsatib turadi\n\n"
+        f"🔗 Bepul boshlash: {link}"
+    )
+
+
+def referral_counted_text(
+    name: str, total: int, bonus_days: int, min_sends: int
+) -> str:
+    base = (
+        "🎉 Sizning referalingiz faollashdi!\n\n"
+        f"👤 {name} ro'yxatdan o'tib, tasdiqlandi.\n"
+        f"👥 Jami faol referallaringiz: {total} ta"
+    )
+    if bonus_days > 0:
+        base += (
+            f"\n\n🎁 Bonus {bonus_days} kun uchun shart: u kamida 1 ta guruh va\n"
+            f"1 ta post bilan {min_sends} marta e'lon yuborishi kerak.\n"
+            "Shart bajarilgach kunlar avtomatik qo'shiladi."
+        )
+    return base
+
+
+def referral_bonus_granted(name: str, days: int, total: int, expires: str) -> str:
+    return (
+        "🎁 REFERAL BONUSI berildi!\n\n"
+        f"👤 {name} birinchi e'lonlarini yubora boshladi.\n"
+        f"➕ Tarifingizga +{days} kun qo'shildi.\n"
+        f"📅 Endi muddat: {expires}\n"
+        f"👥 Jami faol referallaringiz: {total} ta"
+    )
+
+
+def referral_bonus_zero(name: str, total: int) -> str:
+    return (
+        "🎉 Referalingiz ishlay boshladi!\n\n"
+        f"👤 {name}\n"
+        f"👥 Jami faol referallaringiz: {total} ta\n\n"
+        "ℹ️ Bonus kun qo'shilmadi: sizning tarifingiz cheksiz yoki\n"
+        "oylik bonus chegarasiga yetgan bo'lsangiz."
+    )
+
+
+def referral_revoked_note(name: str, days: int, reason: str) -> str:
+    text = (
+        "⚠️ Referal hisobi bekor qilindi\n\n"
+        f"👤 {name} hisob-faydasiz yoki qoidabuzar deb topildi.\n"
+    )
+    if days > 0:
+        text += f"↩️ Olingan +{days} kun bonus tarifdan qaytarib olindi.\n"
+    if reason:
+        text += f"\nSabab: {reason}"
+    return text
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -687,3 +837,355 @@ GROUP_AUTO_REMOVED = (
 )
 
 USE_MENU_BUTTONS = "⚠️ Iltimos, menyudagi tugmalardan foydalaning."
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# ALBOM / KO'P MEDIA
+# ─────────────────────────────────────────────────────────────────────────
+POST_ALBUM_COLLECTING = (
+    "🖼 Albom yig'ilmoqda: {n} ta media.\n\n"
+    "• Yana rasm qo'shsangiz — shu postga kiritiladi\n"
+    "• Matn yuborsangiz — albomga caption bo'ladi\n"
+    "• ✅ «Tayyor» tugmasini bosing (yoki 2 soniya kuting — o'zi saqlanadi)"
+)
+
+
+def album_collecting(n: int) -> str:
+    return POST_ALBUM_COLLECTING.format(n=n)
+
+
+POST_ALBUM_CAPTION_SAVED = "✅ Caption qabul qilindi (media: {n} ta).\n\n{preview}"
+
+
+def album_caption_saved(n: int, text: str) -> str:
+    preview = " ".join((text or "").split())[:160]
+    return POST_ALBUM_CAPTION_SAVED.format(n=n, preview=preview)
+
+
+POST_ALBUM_SAVED = "✅ Albom saqlandi (#{n}) — {files} ta media"
+
+POST_UPDATED = "✏️ Post yangilandi (#{n})\n{kind}\n\n{preview}"
+
+def ask_edit_post(preview: str) -> str:
+    """Tahrirlash oynasi matni — eski postning hozirgi holatini ko'rsatadi."""
+    return (
+        "✏️ POSTNI TAHRIRLASH\n\n"
+        f"Hozirgi matn:\n{preview}\n\n"
+        "Yangi postni yuboring — eski matn shu bilan almashtiriladi.\n"
+        "Matn yuborib, media yubormasangiz — rasmlar o'zgarishsiz qoladi.\n"
+        f"{MAX_ALBUM_FILES} tagacha rasm albom qilib ham yuborish mumkin."
+    )
+
+
+ASK_EDIT_POST = "✏️ Tahrirlash uchun postni tanlang:"
+
+ASK_PREVIEW_POST = (
+    "👁 Ko'rinishini ko'rish uchun postni tanlang.\n\n"
+    "ℹ️ Post sizning shaxsiy chatingizga yuboriladi — hech qaysi guruhga "
+    "chiqmaydi. Shundan keyin 🧪 «Sinov yuborish» bilan bitta guruhga "
+    "ham yuborib ko'rishingiz mumkin."
+)
+
+BTN_ALBUM_DONE = "✅ Tayyor — postni saqlash"
+
+
+def post_added_text(n: int, kind: str, preview: str) -> str:
+    """Yangi post haqida xabar + navbatdagi qadam ko'rsatmasi."""
+    hint = ""
+    if n == 1:
+        hint = (
+            "\n\n💡 Keyingi qadam: 💬 Guruhlar bo'limidan guruh qo'shing, "
+            "so'ng ▶️ Start bosing."
+        )
+    return f"✅ Saqlandi (#{n})\n{kind}\n\n{preview}{hint}"
+
+
+def test_send_done(group: str) -> str:
+    return (
+        "🧪 Sinov yuborildi!\n\n"
+        f"📛 {group}\n\n"
+        "Guruhga kirib ko'ring — e'lon qanday chiqqanini tekshiring.\n"
+        "Hammasi yaxshi bo'lsa ▶️ Start bilan barcha guruhlarga yoqing."
+    )
+
+
+def test_send_failed(error: str) -> str:
+    return (
+        f"❌ Sinov yuborilmadi ({error}).\n\n"
+        "Ko'pincha sabab: akkaunt o'sha guruhga a'zo emas yoki unda yozish "
+        "taqiqlangan. 💬 Guruhlar → 🔎 Tekshirish bilan aniqlang."
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# GURUHLARNI TEKSHIRISH
+# ─────────────────────────────────────────────────────────────────────────
+GROUP_PICKER_CHECK = (
+    "🔎 Tekshirish uchun guruhni tanlang.\n\n"
+    "Bot sizning Telegram akkauntingiz orqali shu guruhga yozish "
+    "mumkinmi-yu yo'qmi ekanini tekshiradi (post yuborilmaydi)."
+)
+GROUPS_EMPTY_HINT = (
+    "❌ Guruhlar yo'q.\n\n"
+    "1️⃣ Akkauntingiz guruhga a'zo bo'lsin (yoki guruhga kiring)\n"
+    "2️⃣ ➕ Guruh qo'shish tugmasini bosing\n"
+    "3️⃣ @username yoki https://t.me/guruh nomini yuboring "
+    "(bir nechta bo'lsa — har biri yangi qatorda)"
+)
+
+
+def group_check_result(value: str, ok: bool, reason: str) -> str:
+    if ok:
+        return (
+            f"✅ {value}\n\n"
+            "Guruh topildi, akkaunt a'zo va yozish huquqi bor.\n"
+            "Bu guruhga posting bemalol ishlaydi."
+        )
+    from bot.groups import group_reason_text
+
+    return (
+        f"❌ {value}\n\n"
+        f"Sabab: {group_reason_text(reason)}\n\n"
+        "🔧 Nima qilish kerak:\n"
+        "• a'zo emasligingiz bo'lsa — akkauntingizni guruhga kiritish\n"
+        "• yozish taqiqlangan bo'lsa — guruh admini ruxsat berishi kerak\n"
+        "• havola noto'g'ri bo'lsa — guruhni o'chirib qaytadan qo'shing"
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# LIMITLAR / PAKETLAR
+# ─────────────────────────────────────────────────────────────────────────
+GROUPS_LIMIT_REACHED = (
+    "❌ Paket chegarasi: {max_groups} ta guruh (hozir {used} ta).\n\n"
+    "Ko'proq guruh uchun paketni kengaytiring:\n"
+    f"📱 {ADMIN_CONTACT_PHONE}"
+)
+
+POSTS_LIMIT_REACHED = "❌ Paket chegarasi: {max_posts} ta post (hozir {used} ta)."
+
+
+def plan_price_label(plan: str | None) -> str:
+    """Paket nomi bo'yicha qisqa tavsif (admin paneli uchun)."""
+    from config.config import PLAN_DEFS
+
+    definition = PLAN_DEFS.get((plan or "").strip().upper())
+    if not definition:
+        return "limitlarsiz"
+    groups = definition["max_groups"] or "∞"
+    posts = definition["max_posts"] or "∞"
+    daily = definition["daily_limit"] or "∞"
+    return f"{groups} guruh · {posts} post · kuniga {daily} marta"
+
+
+def plan_text(limits: dict, interval: int, expires: str, daily_left: str) -> str:
+    lines = [
+        "📦 PAKETIM VA LIMITLAR\n",
+        f"Paket: {limits.get('label') or '—'}",
+        f"💬 Guruhlar: {limits.get('used_groups', 0)}",
+        f"📝 Postlar: {limits.get('used_posts', 0)}",
+        f"⏱ Umumiy oralig': taxminan {interval} daqiqa",
+        f"📅 Muddat: {expires}",
+        "",
+        "📊 Cheklovlar:",
+    ]
+    max_groups = int(limits.get("max_groups") or 0)
+    max_posts = int(limits.get("max_posts") or 0)
+    daily = int(limits.get("daily_limit") or 0)
+    lines.append(
+        f"• Guruhlar: {limits.get('used_groups', 0)}/{max_groups or '∞'}"
+        if max_groups
+        else "• Guruhlar: cheksiz"
+    )
+    lines.append(
+        f"• Postlar: {limits.get('used_posts', 0)}/{max_posts or '∞'}"
+        if max_posts
+        else "• Postlar: cheksiz"
+    )
+    lines.append(f"• Kunlik yuborish: {daily_left}" if daily else "• Kunlik yuborish: cheksiz")
+    hours = (limits.get("active_hours") or "").strip()
+    lines.append(f"• Ish vaqti: {hours}" if hours else "• Ish vaqti: 24/7")
+    lines.append("")
+    lines.append("🚀 Paketni kengaytirish: " + ADMIN_CONTACT_PHONE)
+    return "\n".join(lines)
+
+
+def group_limit_message(max_groups: int, used: int) -> str:
+    return GROUPS_LIMIT_REACHED.format(max_groups=max_groups, used=used)
+
+
+def post_limit_message(max_posts: int, used: int) -> str:
+    return POSTS_LIMIT_REACHED.format(max_posts=max_posts, used=used)
+
+
+def plans_overview() -> str:
+    """Yordam matnida ko'rsatiladigan paketlar ro'yxati."""
+    lines = []
+    for name, definition in PLAN_DEFS.items():
+        groups = definition["max_groups"] or "∞"
+        posts = definition["max_posts"] or "∞"
+        daily = definition["daily_limit"] or "∞"
+        lines.append(
+            f"{definition['label']} — 💬 {groups} guruh · 📝 {posts} post · "
+            f"📤 kuniga {daily}"
+        )
+    return "\n".join(lines)
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# YUBORISH HISOBOTI
+# ─────────────────────────────────────────────────────────────────────────
+def report_text(
+    today_ok: int,
+    today_failed: int,
+    week_ok: int,
+    groups_total: int,
+    groups_failed: int,
+    next_eta: str,
+    last_error: str,
+    daily_left: str,
+    active_hours: str,
+    running: bool,
+    expired_users: list | None = None,
+    global_today: dict | None = None,
+) -> str:
+    lines = [
+        "📈 YUBORISH HISOBOTI\n",
+        f"Bugun: ✅ {today_ok} ta · ❌ {today_failed} ta",
+        f"So'nggi 7 kun: ✅ {week_ok} ta",
+        f"💬 Guruhlar: {groups_total} ta faol"
+        + (f" · ⚠️ {groups_failed} ta guruhda oxirgi urinish xato" if groups_failed else ""),
+        f"⏭ Keyingi yuborish: {next_eta}",
+    ]
+    if last_error:
+        lines.append(f"⚠️ Oxirgi xato: {last_error}")
+    if daily_left:
+        lines.append(f"📤 Kunlik limit: {daily_left}")
+    if active_hours:
+        lines.append(f"🕒 Ish vaqti: {active_hours}")
+    lines.append("")
+    lines.append("🟢 Posting ishlamoqda" if running else "🔴 Posting to'xtatilgan")
+    if global_today and (global_today.get("ok") or global_today.get("failed")):
+        ok_today = int(global_today.get("ok") or 0)
+        failed_today = int(global_today.get("failed") or 0)
+        rate = global_today.get("success_rate")
+        lines += [
+            "",
+            "🌍 Butun bot bo'yicha bugun: "
+            f"✅ {ok_today} ta · ❌ {failed_today} ta"
+            + (f" ({float(rate):.0f}% muvaffaqiyat)" if rate is not None else ""),
+        ]
+    if expired_users:
+        lines += [
+            "",
+            f"⛔ Muddati tugagan akkauntlar: {len(expired_users)} ta. "
+            "Yana 30 kun ishlatishni xohlasangiz admin bilan bog'laning: "
+            f"{ADMIN_CONTACT_PHONE}",
+        ]
+    return "\n".join(lines)
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# /help — QISQA YO'RIQNOMA
+# ─────────────────────────────────────────────────────────────────────────
+HELP_TEXT = (
+    "🤖 AVTOBOT — QISQA YO'RIQNOMA\n\n"
+    "Bot sizning Telegram akkauntingiz orqali reklama e'lonlaringizni "
+    "guruhlariga avtomatik joylashtiradi.\n\n"
+    "4 QADAM:\n"
+    "1️⃣ 💬 Guruhlar → ➕ Guruh qo'shish — @username yoki t.me havolalarini "
+    "(har biri yangi qatorda) yuboring. Akkauntingiz o'sha guruhlarda bo'lishi "
+    "va yozish huquqiga ega bo'lishi kerak.\n"
+    f"2️⃣ 📝 Postlar → ➕ Post qo'shish — matn, rasm, video yoki {MAX_ALBUM_FILES} "
+    "tagacha rasmni albom qilib yuboring.\n"
+    "3️⃣ ⏱ Posting oralig'i — nechada bir yuborilsin (5 dan 7 kungacha daqiqa). "
+    "Har bir guruhga alohida: 💬 Guruhlar → ⏱ Guruh intervali.\n"
+    "4️⃣ ▶️ Start — va 🔎 Tekshirish bilan guruhlar tayyorligini "
+    "tasdiqlang.\n\n"
+    "📈 Hisobot — necha marta yuborilgani, xatolar va keyingi navbat.\n"
+    "👥 Referal — do'stingizni taklif qiling: har bir faol do'st "
+    f"+{REFERRAL_BONUS_DAYS} kun tarif.\n"
+    "🧪 Sinov yuborish — bitta guruhga bir marta, to'liq rejimni yoqmasdan.\n\n"
+    "⚠️ Muhim:\n"
+    "• Bot guruhga o'zi kirmaydi — avval akkauntingiz a'zo bo'lsin.\n"
+    "• Juda tez oraliq + ko'p guruh Telegram tomonidan cheklovga olib keladi; "
+    "kunlik limit va tungi tanaffus sizni himoya qiladi.\n"
+    "• Sessiyangiz faqat shifrlangan holda saqlanadi, hech kimga ko'rsatilmaydi.\n\n"
+    f"📱 Yordam: {ADMIN_CONTACT_PHONE}"
+)
+
+WELCOME_GUIDE = (
+    "👋 Xush kelibsiz! 30 soniyada tayyor bo'lasiz:\n\n"
+    "1️⃣ 💬 Guruhlar → guruhlar ro'yxatini yukoring\n"
+    "2️⃣ 📝 Postlar → e'loningizni yuboring (bir nechta rasm ham bo'ladi)\n"
+    "3️⃣ ▶️ Start → va 🔎 bilan tekshiring\n\n"
+    "Istalgan payt 📊 Status yoki /help deb yozing."
+)
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# KO'RINISH VA SINOVDAN YUBORISH
+# ─────────────────────────────────────────────────────────────────────────
+def preview_sent_text(kind: str) -> str:
+    labels = {
+        "text": "📝 matnli post",
+        "media": "🖼 media + matn",
+        "album": f"🖼 albom ({MAX_ALBUM_FILES} tagacha rasm)",
+        "fallback": "⚠️ media yuborilmadi — faqat matn ko'rsatildi",
+    }
+    return (
+        "👁 KO'RINISH yuborildi\n\n"
+        f"Post turi: {labels.get(kind, kind)}\n\n"
+        "ℹ️ Bu xabar faqat sizga keldi — hech qaysi guruhga chiqmadi.\n"
+        "Guruhda barcha rasmlar va matn BITTA albom bo'lib chiqadi."
+    )
+
+
+def link_preview_changed(enabled: bool) -> str:
+    return (
+        "🔗 Link preview "
+        + ("yoqildi — havoladan keyin kartochka ko'rinadi."
+           if enabled
+           else "o'chirildi — faqat matn ko'rinadi.")
+    )
+
+
+ASK_TEST_PICK = (
+    "🧪 SINOVDAN YUBORISH\n\n"
+    "Avval postni tanlang — keyin bitta guruhni tanlaysiz.\n"
+    "ℹ️ Bu postingni ishga tushirmaydi: faqat TANLANGAN guruhga bir marta "
+    "yuboriladi."
+)
+
+
+def ask_test_group() -> str:
+    return (
+        "🧪 Qaysi guruhga sinovdan yuborilsin?\n\n"
+        "⚠️ E'lon o'sha guruhda HAMMA ko'rishi uchun chiqadi.\n"
+        "O'z guruhingiz yoki test uchun qulay guruhni tanlang."
+    )
+
+
+def test_send_ask(group: str, preview: str) -> str:
+    return (
+        "🧪 SINOVDAN YUBORISH TASDIQI\n\n"
+        f"📛 Guruh: {group}\n"
+        f"📝 Post: {preview}\n\n"
+        "Bu e'lon guruhda ko'rinadigan bo'ladi. Davom etamizmi?"
+    )
+
+
+def status_next_step(groups: int, posts: int) -> str:
+    """Bo'sh status uchun yo'riqnoma — keyingi qadamni aniq ko'rsatadi."""
+    if not groups and not posts:
+        return (
+            "👇 Boshlash uchun:\n"
+            "1️⃣ 💬 Guruhlar → ➕ Guruh qo'shish\n"
+            "2️⃣ 📝 Postlar → ➕ Post qo'shish\n"
+            "3️⃣ ▶️ Start"
+        )
+    if not groups:
+        return "👇 Keyingi qadam: 💬 Guruhlar → ➕ Guruh qo'shish"
+    if not posts:
+        return "👇 Keyingi qadam: 📝 Postlar → ➕ Post qo'shish"
+    return ""

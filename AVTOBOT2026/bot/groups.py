@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import time
 
 from telegram import Update
 from telethon import TelegramClient, utils
@@ -237,6 +238,83 @@ async def check_group_access(session_str: str, group: str) -> tuple[bool, str]:
 
 
 # ─────────────────────────────────────────────────────────────────────────
+# GURUHLARNI TEKSHIRISH (a'zolik + yozish huquqi)
+# ─────────────────────────────────────────────────────────────────────────
+async def check_one_group(uid: int, group_id: int) -> tuple[str, bool, str]:
+    """Bitta guruhni Telegram orqali tekshiradi (post yuborilmaydi).
+
+    Returns:
+        (guruh_qiymati, mumkinmi, sabab_kodi)
+    """
+    record = await db.get_chat_record(uid, group_id)
+    if not record:
+        return "", False, "not_found"
+    value = str(record["value"])
+    session = await db.get_session(uid)
+    if not session:
+        return value, False, "unauthorized"
+    ok, reason = await check_group_access(session, value)
+    return value, ok, reason
+
+
+async def begin_check_groups(update: Update) -> None:
+    """💬 Guruhlar → 🔎 Guruhni tekshirish oynasi."""
+    uid = update.effective_user.id
+    groups = await db.get_chat_records(uid)
+    if not groups:
+        await update.message.reply_text(
+            T.GROUPS_EMPTY_HINT, reply_markup=KB.kb_groups_menu()
+        )
+        return
+    await update.message.reply_text(
+        T.GROUP_PICKER_CHECK,
+        reply_markup=KB.kb_group_check_picker(groups, 0),
+    )
+
+
+async def handle_group_check_callback(
+    update: Update, uid: int, data: str
+) -> None:
+    """``gchk:id:<group_id>:<page>`` — tanlangan guruhni tekshiradi."""
+    q = update.callback_query
+    parts = data.split(":")
+    if len(parts) >= 2 and parts[1] == "back":
+        await q.edit_message_text(
+            "💬 Guruhlar menyusi", reply_markup=KB.kb_groups_menu()
+        )
+        return
+    if len(parts) >= 3 and parts[1] == "page":
+        try:
+            page = max(0, int(parts[2]))
+        except ValueError:
+            page = 0
+        groups = await db.get_chat_records(uid)
+        await q.edit_message_text(
+            T.GROUP_PICKER_CHECK, reply_markup=KB.kb_group_check_picker(groups, page)
+        )
+        return
+    if len(parts) != 4 or parts[1] != "id":
+        return
+    try:
+        group_id = int(parts[2])
+        page = max(0, int(parts[3]))
+    except ValueError:
+        return
+
+    await q.edit_message_text("⏳ Telegram orqali tekshirilmoqda...")
+    value, ok, reason = await check_one_group(uid, group_id)
+    if not value:
+        await q.edit_message_text("❌ Guruh topilmadi (ro'yxatdan o'chirilgan).")
+        return
+
+    groups = await db.get_chat_records(uid)
+    await q.edit_message_text(
+        T.group_check_result(value, ok, reason),
+        reply_markup=KB.kb_group_check_picker(groups, page),
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────
 # GURUHLAR RO'YXATI
 # ─────────────────────────────────────────────────────────────────────────
 async def show_groups(update: Update) -> None:
@@ -246,7 +324,7 @@ async def show_groups(update: Update) -> None:
 
     if not chats:
         await update.message.reply_text(
-            T.GROUPS_EMPTY,
+            T.GROUPS_EMPTY_HINT,
             reply_markup=KB.kb_groups_menu(),
         )
         return
@@ -288,7 +366,7 @@ async def begin_add_groups(update: Update) -> None:
     uid = update.effective_user.id
     from bot.login import user_states
 
-    user_states[uid] = {"step": "add_group", "ts": __import__("time").time()}
+    user_states[uid] = {"step": "add_group", "ts": time.time()}
     await update.message.reply_text(
         T.ASK_ADD_GROUP,
         reply_markup=KB.kb_input_cancel(),
@@ -347,6 +425,14 @@ async def handle_add_groups(update: Update, text: str) -> None:
             existing.add(group_key)
         elif save_reason == "duplicate":
             duplicates.append(group)
+        elif save_reason == "limit":
+            # Paket chegarasi — qolganlarini sinab ko'rishning hojati yo'q.
+            limits = await db.get_limits(uid)
+            errors.append(
+                f"{group} (❌ {T.group_limit_message(int(limits.get('max_groups') or 0), int(limits.get('used_groups') or 0))})"
+            )
+            errors.extend(f"{rest} (paket chegarasi)" for rest in groups[i:])
+            break
         else:
             errors.append(f"{group} (saqlashda xato)")
 

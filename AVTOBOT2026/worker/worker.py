@@ -49,7 +49,9 @@ from telethon.tl.types import (
 
 from config.config import (
     JITTER_S,
+    MAX_ALBUM_FILES,
     MAX_GROUP_FAILS,
+    REFERRAL_QUALIFY_MIN_SENDS,
     SEND_DELAY_S,
     START_JITTER_S,
     SUPER_ADMIN,
@@ -141,24 +143,60 @@ async def resolve_chat(client: TelegramClient, chat: str):
 # ─────────────────────────────────────────────────────────────────────────
 # POST YUBORISH
 # ─────────────────────────────────────────────────────────────────────────
+def post_media_paths(post: dict) -> list[str]:
+    """Postdagi mavjud media fayllar yo'llari (albom tartibi saqlanadi)."""
+    import os
+
+    from core.utils import normalize_media
+
+    paths: list[str] = []
+    for item in normalize_media(post):
+        path = item.get("path")
+        if path and os.path.exists(path) and path not in paths:
+            paths.append(path)
+    return paths
+
+
 async def send_post(client: TelegramClient, chat: str, post: dict) -> None:
-    """Bitta postni bitta guruhga yuboradi."""
-    text = post.get("text", "")
-    entities = dicts_to_entities(post.get("entities", []))
+    """Bitta postni bitta guruhga yuboradi (matn, bitta media yoki albom).
+
+    Shablon belgilari ({sana}, {vaqt}, {kun}, {A|B}) har bir yuborishda
+    qayta hisoblanadi — shu sabab bir xil post har safar biroz boshqacha
+    chiqadi va formatlash buzilmaydi.
+    """
+    from core.utils import render_template
+
+    text, entities_raw = render_template(
+        post.get("text") or "", post.get("entities") or []
+    )
+    entities = dicts_to_entities(entities_raw)
     target = await resolve_chat(client, chat)
 
-    photo_path = post.get("photo")
-    if photo_path:
-        import os
-
-        if os.path.exists(photo_path):
+    paths = post_media_paths(post)
+    if paths:
+        caption = text or None
+        if len(paths) > 1:
+            # Telethon ro'yxatni BITTA albom qilib yuboradi (10 tagacha).
             await client.send_file(
                 entity=target,
-                file=photo_path,
-                caption=text,
+                file=paths[:MAX_ALBUM_FILES],
+                caption=caption,
                 formatting_entities=entities or None,
+                supports_streaming=True,
             )
             return
+        await client.send_file(
+            entity=target,
+            file=paths[0],
+            caption=caption,
+            formatting_entities=entities or None,
+            supports_streaming=True,
+        )
+        return
+
+    if not text.strip():
+        # Matn ham, fayl ham yo'q (fayl o'chib ketgan bo'lishi mumkin).
+        return
 
     await client.send_message(
         entity=target,
@@ -171,6 +209,20 @@ async def send_post(client: TelegramClient, chat: str, post: dict) -> None:
 # ─────────────────────────────────────────────────────────────────────────
 # YORDAMCHI — SLEEP YOKI STOP
 # ─────────────────────────────────────────────────────────────────────────
+async def _maybe_grant_referral_bonus(uid: int) -> None:
+    """Birinchi muvaffaqiyatli yuborishdan keyin referal bonusini berish.
+
+    Mukofot faqat HAQIQI foydalanuvchi uchun: kamida 1 ta guruh, 1 ta post va
+    REFERRAL_QUALIFY_MIN_SENDS ta muvaffaqiyatli yuborish talab qilinadi.
+    """
+    try:
+        from bot.referral import maybe_grant_referral_bonus
+
+        await maybe_grant_referral_bonus(uid, REFERRAL_QUALIFY_MIN_SENDS)
+    except Exception as exc:  # mukofot yuborish siklini buzmasligi kerak
+        log(f"referal bonusi xatosi {uid}: {type(exc).__name__}", "warning")
+
+
 async def sleep_or_stop(stop: asyncio.Event, seconds: float) -> bool:
     """
     Berilgan vaqt kutadi. Stop signali kelsa — True qaytaradi.
@@ -180,6 +232,48 @@ async def sleep_or_stop(stop: asyncio.Event, seconds: float) -> bool:
         return True
     except asyncio.TimeoutError:
         return False
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# XAVFSIZ YUBORISH OYNASI (kunlik limit + tungi tanaffus)
+# ─────────────────────────────────────────────────────────────────────────
+async def posting_window_state(uid: int, user: dict) -> tuple[bool, int, str]:
+    """Hozir yuborish mumkinmi + qancha vaqt kutish kerak.
+
+    Returns:
+        (ruxsat, kutish_sekund, sabab_matni)
+    """
+    from core.utils import (
+        in_active_window,
+        seconds_until_window_open,
+        start_of_local_day_ts,
+    )
+
+    active_hours = (user.get("active_hours") or "").strip()
+    if not in_active_window(active_hours):
+        wait_s = min(3600, max(60, seconds_until_window_open(active_hours)))
+        return False, wait_s, f"Ish vaqti tashqarisida ({active_hours})"
+
+    daily_limit = int(user.get("daily_limit") or 0)
+    if daily_limit > 0:
+        sent_today = await db.count_sent_ok(uid, start_of_local_day_ts())
+        if sent_today >= daily_limit:
+            # Ertaga yarim tunga qadar kutish (maks 1 soatlik qadamlar bilan,
+            # shunda admin limiti o'zgartirsa worker darhol sezadi).
+            from datetime import timedelta
+
+            from core.utils import now_local
+
+            midnight = (now_local() + timedelta(days=1)).replace(
+                hour=0, minute=0, second=0, microsecond=0
+            )
+            wait_s = min(3600, max(60, int((midnight - now_local()).total_seconds())))
+            return (
+                False,
+                wait_s,
+                f"Kunlik limit tugadi ({sent_today}/{daily_limit})",
+            )
+    return True, 0, ""
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -283,11 +377,27 @@ async def posting_loop(uid: int, stop: asyncio.Event) -> None:
                     break
                 continue
 
+            # Kunlik limit va tungi tanaffus — guruhlar navbati buzilmaydi,
+            # shunchaki kutadi (next_send_at o'sha holicha qoladi).
+            allowed, wait_s, pause_reason = await posting_window_state(uid, user)
+            if not allowed:
+                log(f"⏸ Worker:{uid} — {pause_reason}, {wait_s}s kutadi", "warning")
+                if await sleep_or_stop(stop, wait_s):
+                    break
+                continue
+
             try:
-                post = posts[post_index % len(posts)]
-                post_index += 1
                 ok, fail = 0, 0
                 removed_groups: list[str] = []
+                post_by_group: dict[int, dict] = {}
+                for index, chat_record in enumerate(due_chats):
+                    # Post rotatsiyasi GURUHBO'YICA: bir siklda navbatdagi
+                    # guruhlarga turli e'lonlar chiqadi — bir xil matn bir
+                    # vaqtda o'nlab guruhda ko'rinishi spamga o'xshaydi.
+                    post_by_group[int(chat_record["id"])] = posts[
+                        (post_index + index) % len(posts)
+                    ]
+                post_index += len(due_chats)
 
                 for chat_record in due_chats:
                     if stop.is_set():
@@ -295,6 +405,7 @@ async def posting_loop(uid: int, stop: asyncio.Event) -> None:
 
                     chat = str(chat_record["value"])
                     group_id = int(chat_record["id"])
+                    post = post_by_group[group_id]
                     jitter_s = random.randint(-JITTER_S, JITTER_S)
                     flood_wait_until: float | None = None
                     attempted_at: float | None = None
@@ -306,12 +417,24 @@ async def posting_loop(uid: int, stop: asyncio.Event) -> None:
                         ok += 1
                         group_fails[chat] = 0
                         log(f"✅ {uid} → {chat}")
+                        await db.log_send(
+                            uid, True, group_id=group_id, post_id=post.get("id")
+                        )
+                        await db.touch_last_active(uid)
+                        await _maybe_grant_referral_bonus(uid)
 
                     except FloodWaitError as exc:
                         wait_s = int(getattr(exc, "seconds", 30)) + 5
                         attempted_at = time.time()
                         flood_wait_until = attempted_at + wait_s
                         log(f"⏳ {uid} → {chat} FloodWait {wait_s}s", "warning")
+                        await db.log_send(
+                            uid,
+                            False,
+                            group_id=group_id,
+                            post_id=post.get("id"),
+                            error=f"FloodWait {wait_s}s",
+                        )
 
                     except (
                         ChatWriteForbiddenError,
@@ -330,12 +453,26 @@ async def posting_loop(uid: int, stop: asyncio.Event) -> None:
                         )
                         if group_fails[chat] >= MAX_GROUP_FAILS:
                             removed_groups.append(chat)
+                        await db.log_send(
+                            uid,
+                            False,
+                            group_id=group_id,
+                            post_id=post.get("id"),
+                            error=type(exc).__name__,
+                        )
 
                     except asyncio.TimeoutError:
                         # Tarmoq uzilishi guruh yoki sessiya yaroqsizligini
                         # anglatmaydi; navbatdagi urinishgacha interval saqlanadi.
                         fail += 1
                         log(f"⏱ {uid} → {chat} vaqtincha timeout", "warning")
+                        await db.log_send(
+                            uid,
+                            False,
+                            group_id=group_id,
+                            post_id=post.get("id"),
+                            error="Timeout",
+                        )
 
                     except (AuthKeyUnregisteredError, UserDeactivatedBanError) as exc:
                         log(f"🚫 {uid} sessiya yaroqsiz: {type(exc).__name__}", "error")
@@ -352,6 +489,13 @@ async def posting_loop(uid: int, stop: asyncio.Event) -> None:
                     except Exception as exc:
                         fail += 1
                         log(f"❌ {uid} → {chat}: {type(exc).__name__}", "error")
+                        await db.log_send(
+                            uid,
+                            False,
+                            group_id=group_id,
+                            post_id=post.get("id"),
+                            error=type(exc).__name__,
+                        )
 
                     if attempted_at is None:
                         attempted_at = time.time()
@@ -389,7 +533,10 @@ async def posting_loop(uid: int, stop: asyncio.Event) -> None:
                             f"📛 {bad}\n\n"
                             "Sabab: bot chiqarilgan, yozish taqiqlangan yoki "
                             "guruh mavjud emas.\n"
-                            "Guruh ro'yxatdan AVTOMATIK o'chirildi.",
+                            "Guruh ro'yxatdan AVTOMATIK o'chirildi.\n\n"
+                            "💡 Qayta qo'shishdan oldin 💬 Guruhlar → "
+                            "🔎 Tekshirish orqali a'zolik va yozish "
+                            "huquqini tekshirib ko'ring.",
                         )
 
                 log(f"📊 {uid} ✅{ok} ❌{fail} / {len(due_chats)} navbatda")

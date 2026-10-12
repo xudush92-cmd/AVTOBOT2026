@@ -11,7 +11,7 @@ import asyncio
 import contextlib
 import time
 
-from telegram import Update
+from telegram import BotCommand, Update
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -24,6 +24,7 @@ from telegram.ext import (
 # Admin modullari
 from admin import admin_actions as AA
 from admin import admin_panel as AP
+from admin import auto_approve as AutoApprove
 from admin import broadcast as BC
 
 # Bot modullari
@@ -37,6 +38,7 @@ from bot import texts as T
 from config.config import (
     API_HASH,
     API_ID,
+    AUTO_APPROVE_CHECK_INTERVAL_S,
     BACKUP_RETENTION,
     BOT_TOKEN,
     CLEANUP_INTERVAL_S,
@@ -59,7 +61,6 @@ from core.utils import (
     is_valid_phone,
     prune_old_backups,
     prune_orphan_media,
-    safe_unlink,
 )
 
 # Worker
@@ -112,6 +113,37 @@ async def start_login_with_limit(update: Update, uid: int) -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────
+# /help va /status
+# ─────────────────────────────────────────────────────────────────────────
+async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Bot ichidagi qisqa yo'riqnoma (matn yozib bo'lmas foydalanuvchilar uchun)."""
+    uid = update.effective_user.id
+    async with user_update_lock(uid):
+        user = await db.get_user(uid)
+        approved = bool(user and user.get("is_admin") and not user.get("awaiting_approval"))
+        if uid == SUPER_ADMIN or not approved:
+            await update.message.reply_text(T.WELCOME_SHORT)
+            return
+        await update.message.reply_text(
+            T.HELP_TEXT,
+            reply_markup=await get_menu(uid),
+        )
+
+
+async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/status — menyu tugmasisiz ham holatni ko'rsatadi."""
+    uid = update.effective_user.id
+    async with user_update_lock(uid):
+        user = await db.get_user(uid)
+        if uid == SUPER_ADMIN or not (user and user.get("is_admin")):
+            await update.message.reply_text(T.WELCOME_SHORT, reply_markup=KB.kb_login())
+            return
+        from bot.menu import show_status
+
+        await show_status(update)
+
+
+# ─────────────────────────────────────────────────────────────────────────
 # /start COMMAND
 # ─────────────────────────────────────────────────────────────────────────
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -159,6 +191,13 @@ async def _cmd_start_locked(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     # Referral faqat yangi/tasdiqlanmagan foydalanuvchiga bir marta bog'lanadi.
     if context.args:
         arg = context.args[0]
+        if arg == "refshare":
+            # Do'stlarga yuborish uchun tayyor matn — foydalanuvchi uni
+            # forward qilib yuboradi (havolani qo'lda nusxalamasligi uchun).
+            from bot.referral import share_referral_message
+
+            await update.message.reply_text(await share_referral_message(uid))
+            return
         with contextlib.suppress(Exception):
             from bot.referral import register_referral
 
@@ -367,16 +406,28 @@ async def _on_message_locked(
             T.BTN_ADD_GROUP,
             T.BTN_DEL_GROUP,
             T.BTN_GROUP_INTERVAL,
+            T.BTN_CHECK_GROUPS,
             T.BTN_ADD_POST,
             T.BTN_DEL_POST,
+            T.BTN_EDIT_POST,
+            T.BTN_PREVIEW_POST,
+            T.BTN_TEST_SEND,
             T.BTN_TIMER,
+            T.BTN_REPORT,
+            T.BTN_PLAN,
             T.BTN_REFERRAL,
             T.BTN_ACCOUNT,
         }
         if text in menu_buttons or text.startswith(T.BTN_STATUS):
+            # Foydalanuvchi kiritish oynasini chetlab menyu tugmasini bosdi:
+            # oyna yopiladi va tugma oddiy menyudagidek bajariladi.
             Login.user_states.pop(uid, None)
             await msg.reply_text("ℹ️ Oldingi kiritish oynasi bekor qilindi.")
-            await Menu.handle_menu(update, text)
+            handled = await Menu.route_menu_button(update, text)
+            if not handled:
+                await msg.reply_text(
+                    T.USE_MENU_BUTTONS, reply_markup=await get_menu(uid)
+                )
             return
         if time.time() - state.get("ts", 0) > LOGIN_TIMEOUT_S:
             Login.user_states.pop(uid, None)
@@ -604,6 +655,13 @@ async def handle_admin_fsm(update: Update, uid: int, step: str, text: str) -> No
                 existing.add(group_key)
             elif save_reason == "duplicate":
                 duplicates.append(group)
+            elif save_reason == "limit":
+                limits = await db.get_limits(target)
+                errors.append(
+                    f"{group} (paket chegarasi: "
+                    f"{limits.get('max_groups')} ta guruh)"
+                )
+                break
             else:
                 errors.append(f"{group} (saqlashda xato)")
 
@@ -620,49 +678,50 @@ async def handle_admin_fsm(update: Update, uid: int, step: str, text: str) -> No
             Login.user_states.pop(uid, None)
             await msg.reply_text("❌ Xatolik.")
             return
+        if not await db.get_session(target):
+            Login.user_states.pop(uid, None)
+            await msg.reply_text(
+                f"❌ {target} sessiyasi yo'q.",
+                reply_markup=await AA.user_card_markup(target),
+            )
+            return
 
-        import os
-        import uuid
+        # Media yuklash va post saqlash user oqimi bilan bir xil mantikada
+        # (bot/media_ingest) — admin ham rasm, video va albom yubora oladi.
+        from bot.media_ingest import (
+            download_message_media,
+            message_text_and_entities,
+        )
 
-        from bot.posts import entity_to_dict, user_media_dir
-
-        post_text = msg.text or msg.caption or ""
-        entities_src = list(msg.entities or []) + list(msg.caption_entities or [])
-
-        photo_path = None
-        if msg.photo:
-            try:
-                photo = msg.photo[-1]
-                tg_file = await photo.get_file()
-                user_dir = user_media_dir(target)
-                photo_path = os.path.join(user_dir, f"{uuid.uuid4().hex}.jpg")
-                await tg_file.download_to_drive(custom_path=photo_path)
-            except Exception as e:
-                log(f"admin_add_post rasm xato: {type(e).__name__}", "error")
-                await msg.reply_text("❌ Rasmni saqlab bo'lmadi.")
-                return
-
-        if not post_text.strip() and not photo_path:
+        post_text, entities = message_text_and_entities(msg)
+        items, errors = await download_message_media(msg, target)
+        if errors and not items:
+            await msg.reply_text("\n".join(errors))
+            return
+        if not post_text.strip() and not items:
             await msg.reply_text("❌ Bo'sh post.")
             return
 
-        entities_dict = [entity_to_dict(e) for e in entities_src]
-        ok, reason, post_id = await db.add_post(
-            target, post_text, entities_dict, photo_path
-        )
-
         Login.user_states.pop(uid, None)
-
+        ok, reason, post_id = await db.add_post(
+            target, post_text, entities, None, items, True
+        )
         if not ok:
-            safe_unlink(photo_path)
-            await msg.reply_text("❌ Saqlanmadi.")
+            from bot.media_ingest import remove_media
+
+            with contextlib.suppress(Exception):
+                remove_media([item["path"] for item in items])
+            await msg.reply_text(
+                "❌ Saqlanmadi."
+                if reason != "limit"
+                else f"❌ Post limiti to'lgan ({await db.max_posts_for(target)} ta)."
+            )
             return
 
         await msg.reply_text(
-            f"✅ Post qo'shildi: {target} (#{post_id})",
+            f"✅ Post qo'shildi: {target} (#{post_id}, media={len(items)} ta)",
             reply_markup=KB.kb_admin_posts(target, await db.get_posts(target)),
         )
-
         with contextlib.suppress(Exception):
             await application.bot.send_message(
                 target,
@@ -895,10 +954,21 @@ async def expire_stale_logins() -> int:
 
 
 async def janitor_tick() -> int:
-    """Bir marta: stale loginlar, UID va telefon limit yozuvlarini tozalaydi."""
+    """Bir marta: stale loginlar, UID va telefon limit yozuvlarini tozalaydi.
+
+    Qo'shimcha: yig'ilib, lekin yakunlanmay qolgan albom postlari ham
+    saqlab qo'yiladi — foydalanuvchi «✅ Tayyor» tugmasini bosmasa ham
+    media yo'qolib ketmaydi.
+    """
     cleaned = 0
     with contextlib.suppress(Exception):
         cleaned = await expire_stale_logins()
+    with contextlib.suppress(Exception):
+        from bot.posts import sweep_stale_albums
+
+        swept = await sweep_stale_albums()
+        if swept:
+            log(f"🖼 {swept} ta yakunlanmay qolgan albom saqlandi")
     rate_limiter.cleanup_all()
     Login.cleanup_phone_requests()
     Login.cleanup_sms_attempts()
@@ -1010,6 +1080,40 @@ async def tariff_janitor_loop(stop: asyncio.Event) -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────
+# TEZ TASDIQLASH JANITORI
+# ─────────────────────────────────────────────────────────────────────────
+async def auto_approve_tick() -> int:
+    """Bir marta: past riskli arizalarni tasdiqlashga urinadi."""
+    with contextlib.suppress(Exception):
+        return await AutoApprove.auto_approve_once()
+    return 0
+
+
+async def auto_approve_loop(stop: asyncio.Event) -> None:
+    """``AUTO_APPROVE_ENABLED=0`` bo'lsa faqat uyquda turadi (hech narsa qilmaydi)."""
+    from config.config import AUTO_APPROVE_ENABLED
+
+    if not AUTO_APPROVE_ENABLED:
+        log("⚡ Avto-tasdiq o'chirilgan (admin navbati ishlaydi)")
+        await stop.wait()
+        return
+    log("⚡ Avto-tasdiq janitori boshlandi")
+    try:
+        while not stop.is_set():
+            try:
+                await asyncio.wait_for(
+                    stop.wait(), timeout=AUTO_APPROVE_CHECK_INTERVAL_S
+                )
+                break
+            except asyncio.TimeoutError:
+                pass
+            with contextlib.suppress(Exception):
+                await auto_approve_tick()
+    except asyncio.CancelledError:
+        pass
+
+
+# ─────────────────────────────────────────────────────────────────────────
 # CLEANUP JANITOR
 # ─────────────────────────────────────────────────────────────────────────
 async def cleanup_janitor_once() -> None:
@@ -1026,6 +1130,12 @@ async def cleanup_janitor_once() -> None:
         removed = prune_old_backups(BACKUP_RETENTION)
         if removed:
             log(f"🧹 Zaxira: {removed} ta eski nusxa o'chirildi")
+
+    # Eski yuborish yozuvlari (hisobot juda o'sib ketmasligi uchun)
+    with contextlib.suppress(Exception):
+        removed = await db.prune_send_logs()
+        if removed:
+            log(f"🧹 Hisobot: {removed} ta eski yuborish yozuvi o'chirildi")
 
     # Baza statistikasi va WAL hajmi
     with contextlib.suppress(Exception):
@@ -1140,6 +1250,7 @@ async def _main() -> None:
     AP.set_application(app)
     AA.set_application(app)
     BC.set_application(app)
+    AutoApprove.set_application(app)
 
     # Handlerlar
     app.add_handler(CommandHandler("start", cmd_start))
@@ -1147,10 +1258,26 @@ async def _main() -> None:
     app.add_handler(
         MessageHandler(
             filters.ChatType.PRIVATE
-            & (filters.TEXT | filters.PHOTO)
+            & (
+                filters.TEXT
+                | filters.PHOTO
+                | filters.VIDEO
+                | filters.AUDIO
+                | filters.Document.ALL
+            )
             & ~filters.COMMAND,
             on_message,
         )
+    )
+    app.add_handler(CommandHandler("help", cmd_help))
+    app.add_handler(CommandHandler("status", cmd_status))
+    app.add_handler(CommandHandler("statistika", cmd_status))
+    await app.set_my_commands(
+        [
+            BotCommand("start", "Botni ochish / menyu"),
+            BotCommand("help", "Qanday ishlaydi — qisqa yo'riqnoma"),
+            BotCommand("status", "Holat va kunlik hisobot"),
+        ]
     )
     app.add_error_handler(on_error)
 
@@ -1182,6 +1309,12 @@ async def _main() -> None:
         name="cleanup-janitor",
     )
 
+    approve_stop = asyncio.Event()
+    approve_task = asyncio.create_task(
+        auto_approve_loop(approve_stop),
+        name="auto-approve",
+    )
+
     # 11. Shutdown kutish
     try:
         await worker_manager.wait_shutdown()
@@ -1198,12 +1331,15 @@ async def _main() -> None:
         janitor_stop.set()
         tariff_stop.set()
         cleanup_stop.set()
+        approve_stop.set()
         with contextlib.suppress(Exception):
             await asyncio.wait_for(janitor_task, timeout=5)
         with contextlib.suppress(Exception):
             await asyncio.wait_for(tariff_task, timeout=5)
         with contextlib.suppress(Exception):
             await asyncio.wait_for(cleanup_task, timeout=5)
+        with contextlib.suppress(Exception):
+            await asyncio.wait_for(approve_task, timeout=5)
         with contextlib.suppress(Exception):
             await app.stop()
 

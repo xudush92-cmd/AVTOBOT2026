@@ -29,6 +29,50 @@ Ushbu hujjat uchta savolga javob beradi:
 > (`bot/texts.py:541`) **allaqachon yozilgan, lekin hech qayerdan chaqirilmaydi** —
 > ularni "yoqish" bir kundan kam vaqat oladi (3-bo'lim, P0.10–P0.11).
 
+## 0.1 AMALGA OSHIRISH HOLATI (2026-10-12)
+
+Yuqoridagi 10 ta harakat va **P0** ro'yxatidagi barcha bandlar kodda bor.
+Testlar: `tests/test_album_media.py`, `tests/test_plans_limits_stats.py`,
+`tests/test_referral_bonus.py`, `tests/test_post_tools_and_checks.py`
+(230 ta test, hammasi o'tadi).
+
+| Band | Holat | Qayerda amalga oshirilgan |
+| ---- | ----- | ------------------------- |
+| 1 / P0.1 — albom, video, hujjat | ✅ | `bot/media_ingest.py` (yuklash, filter, limit), `bot/posts.py` (albom yig'ish + debounce + `✅ Tayyor` tugmasi), `core/database.py` (`posts.media` JSON, `photo` ustuni bilan sinxron), `worker/worker.py` (`send_file([...])`) |
+| 2 / P0.6 — referal mukofoti | ✅ | `bot/referral.py::maybe_grant_referral_bonus` (faqat haqiqiy faollikdan keyin), `db.grant_referral_bonus` (oylik cap), `worker` hook |
+| 3 / 1.5 — referal nuqsonlari | ✅ | hisobdan chiqarish (`revoke_referral`), blokdan chiqqach qayta hisob (`pending_referrals_of` + unblock hooki), nomlar niqobi (`get_referrals`), anomaliya signali (`_flag_anomaly`) |
+| 4 / P0.3 — yuborish statistikasi | ✅ | `send_logs` jadvali, `db.log_send/send_stats/group_health/global_send_stats/next_send_eta/prune_send_logs`, `📈 Hisobot` ekrani (`bot/menu.py::show_report`) |
+| 5 / P0.4 — paketlar va guruh limiti | ✅ | `config.PLAN_DEFS` (SINOV/START/PRO/BUSINESS), `users.max_groups/max_posts/daily_limit/active_hours`, `db.set_plan`, `add_chat`/`add_post` da atomik limit tekshiruvi, `📦 Paket va limitlar` ekrani |
+| 6 / P0.5 — kunlik limit + tungi tanaffus | ✅ | `worker.posting_window_state` (oyna tashqarisida va limit tugaganda kutadi, navbat buzilmaydi) |
+| 7 / P0.8, P0.9 — `/help`, onboarding, sinov yuborish | ✅ | `main.cmd_help`, `main.cmd_status`, `T.HELP_TEXT`, `telegram` menyu buyruqlari; `🧪 Sinov` → bitta guruhga token bilan tasdiqlangan bir marta yuborish; `👁 Ko'rinish` — shaxsiy chatga preview |
+| 8 / P0.2 — postni tahrirlash | ✅ | `✏️ Tahrirlash` → post tanlagich → `posts._save_post(mode="edit")` → `db.update_post` (media yangilanmasa eski media saqlanadi) |
+| 9 / P1.4 — link preview | ✅ | `lp:toggle:<post_id>` + `db.set_post_link_preview`, worker `link_preview=` bilan yuboradi |
+| 10 / P0.7 — tez tasdiqlash | ✅ (standart o'chirilgan) | `admin/auto_approve.py`: `AUTO_APPROVE_ENABLED=1` bo'lsa, risk ≤ `AUTO_APPROVE_MAX_RISK` va sessiya UID-bindingi tekshirilgan arizalar tasdiqlanadi; har biri adminga xabar qilinadi |
+| P0.10 — 🔎 guruhni tekshirish | ✅ | `💬 Guruhlar → 🔎 Guruhni tekshirish` → `gchk:` oynasi (`check_group_access` endi ishlatiladi), sabablar: `not_member/no_write/private/not_found/flood/timeout/invalid` |
+| P0.11 — yoqilmagan cheklovlar | ✅ | `POSTS_LIMIT` endi `add_post` limiti orqali ishlaydi; `MAX_MEDIA_FILES_PER_USER` (media kvotasi) ham qo'shildi |
+| P1.3 / P1.8 / P1.9 — qisman | ✅ | post rotatsiyasi endi guruh bo'yicha; `{sana} {vaqt} {kun}` va `{A\|B}` shablonlari har yuborishda qayta hisoblanadi; tanlagichlar sahifalanadi (`:page:`) |
+| P1.5 — guruh salomatligi | ✅ | `db.group_health` + `📈 Hisobot`da "⚠️ N ta guruhda oxirgi urinish xato"; o'chirilganda "🔎 Tekshirish" maslahati |
+| P1.1, P1.2, P1.6, P1.7 (to'lov, ko'p akkaunt, kampaniya havolalari, admin grafik) | ⏳ | keyingi bosqich — bu bosqichda ataylab qoldirildi |
+
+Qo'shimcha tuzatishlar (yuqorida rejalashtirilmagan, lekin topilgan):
+
+- `KB.kb_referral` PTB 21.x'da yo'q bo'lgan `switch_pm_text` bilan
+  qurulayotgan edi (RunTimeError) — `ref:share` callback'iga almashtirildi;
+- post tanlagich callback shakli (`ped:<id>:<page>`) dispatcher tomonidan
+  tushunilmas edi — `pvw:id:<id>:<page>` bilan birga qabul qilinadi;
+- `handle_test_send_confirm` ichida `user_operation_lock` qayta olinayotgan
+  edi (o'lik tugun) — olib tashlandi;
+- `posts._send_single` fayl tutqichini yopmas edi — `with open(...)` qilindi;
+- kiritish oynasida menyu tugmasi bosilanda mavjud bo'lmagan
+  `Menu.handle_menu` chaqirilayotgan edi — `route_menu_button`ga o'zgartirildi.
+
+Migratsiya: barcha yangi ustunlar (`users.*`, `posts.media`, `posts.link_preview`,
+`referrals.qualified_at/bonus_days/revoked`, guruh navbat ustunlari)
+`_migrate_schema` orqali qo'shiladi — eski `.db` fayli bilan ham ishga tushadi,
+yangi jadval `send_logs` esa `init_db` ichida yaratiladi.
+
+---
+
 ---
 
 ## 1. REFERAT (REFERAL) TIZIMI — TO'LIQ AUDIT

@@ -23,7 +23,6 @@ from config.config import (
     DEFAULT_PLAN,
     MAX_INTERVAL_MIN,
     MIN_INTERVAL_MIN,
-    PLAN_DEFS,
     SEND_LOGS_ENABLED,
     SEND_LOG_RETENTION_DAYS,
     SUPER_ADMIN,
@@ -58,6 +57,7 @@ _USER_COLUMNS = {
     "daily_limit",
     "active_hours",
     "referral_bonus_days",
+    "referral_bonus_note",
     "last_active_at",
 }
 
@@ -115,6 +115,7 @@ async def _migrate_schema() -> None:
             ("daily_limit", "INTEGER DEFAULT 0"),
             ("active_hours", "TEXT DEFAULT ''"),
             ("referral_bonus_days", "INTEGER DEFAULT 0"),
+            ("referral_bonus_note", "TEXT DEFAULT ''"),
             ("last_active_at", "TEXT"),
         ),
     )
@@ -262,6 +263,7 @@ async def init_db() -> None:
             daily_limit INTEGER DEFAULT 0,
             active_hours TEXT DEFAULT '',
             referral_bonus_days INTEGER DEFAULT 0,
+            referral_bonus_note TEXT DEFAULT '',
             last_active_at TEXT,
             created_at TEXT,
             updated_at TEXT
@@ -759,6 +761,15 @@ async def mark_warned(uid: int) -> bool:
 async def is_warned(uid: int) -> bool:
     user = await get_user(uid)
     return bool(user and user.get("warned_at"))
+
+
+async def count_pending_users() -> int:
+    """Tasdiq navbatidagi arizalar soni (panel va statistika uchun)."""
+    async with _conn().execute(
+        "SELECT COUNT(*) AS n FROM users WHERE awaiting_approval = 1"
+    ) as cur:
+        row = await cur.fetchone()
+    return int(row["n"]) if row else 0
 
 
 async def get_expired_users() -> list[int]:
@@ -1351,7 +1362,13 @@ async def get_referrals(referrer_uid: int) -> list[dict]:
     return [
         {
             "uid": row["referred_uid"],
-            "name": row["name"] or str(row["referred_uid"]),
+            # Hali tasdiqlanmagan takliflar ismi ko'rsatilmaydi — chaqirilgan
+            # odisning shaxsiy ma'lumori referrerga uzatilmasin.
+            "name": (
+                (row["name"] or f"Foydalanuvchi {row['referred_uid']}")
+                if row["counted"]
+                else "Yangi foydalanuvchi"
+            ),
             "counted": bool(row["counted"]),
             "qualified": bool(row["qualified_at"]),
             "bonus_days": int(row["bonus_days"] or 0),
@@ -1530,6 +1547,17 @@ async def revoke_referral(uid: int) -> dict | None:
         except Exception:
             await _conn().rollback()
             raise
+
+
+async def pending_referrals_of(referrer_uid: int) -> list[int]:
+    """Tasdiqlangan, lekin referrer bloklangani uchun hisoblanmay qolgan referallar."""
+    async with _conn().execute(
+        "SELECT r.referred_uid FROM referrals r JOIN users u ON u.uid = r.referred_uid "
+        "WHERE r.referrer_uid = ? AND r.counted = 0 AND r.revoked = 0 "
+        "AND u.is_admin = 1 AND u.is_blocked = 0 ORDER BY r.id DESC LIMIT 50",
+        (referrer_uid,),
+    ) as cur:
+        return [int(row["referred_uid"]) for row in await cur.fetchall()]
 
 
 async def reconcile_referral(uid: int) -> int | None:
@@ -1752,40 +1780,62 @@ async def top_senders(since_ts: float, limit: int = 10) -> list[dict]:
 # ─────────────────────────────────────────
 # TARIF BONUSLARI (referal mukofoti)
 # ─────────────────────────────────────────
-async def add_bonus_days(uid: int, days: int) -> tuple[str | None, str | None]:
-    """Tarif muddatini ``days`` kunga UZAYTIRADI (mavjud muddat ustiga qo'shadi).
+async def add_bonus_days(
+    uid: int, days: int, *, note: str = ""
+) -> tuple[str | None, str | None]:
+    """Tarif muddatini ``days`` kunga UZAYTIRADI yoki QISQARTIRADI (bonus/sovg'a).
 
     ``give_new_term()``dan farqi: u yangi muddatni hozirdan boshlaydi va
     oldingisini bekor qiladi. Bu funksiya bonus/rewards uchun — tugamagan
-    muddatning OXIRIGA kun qo'shiladi, tugagan muddat bo'lsa hozirdan boshlanadi.
-    Cheksiz tarifga (muddat NULL) tegilmaydi.
+    muddatning OXIRIGA kun qo'shiladi, tugagan muddat bo'lsa hozirdan
+    boshlanadi. Cheksiz tarifga (muddat NULL) amalga oshmaydi.
+
+    Berilgan/puling qilingan kunlar ``referral_bonus_days`` jurnali bilan
+    birga yuritiladi — shunda avto-tasdiq va hisobotlarda kimqa necha kun
+    berilgani ko'rinadi.
 
     Returns:
-        ``(oldingi_muddat, yangi_muddat)``; cheksiz tarifda ikkinchi qiymat
-        ``None``; user mavjud bo'lmasa ``(None, None)``.
+        ``(yangi_muddat, xato)`` — xato bo'lmasa ikkinchi qiymat ``None``;
+        user mavjud bo'lmasa ``(None, "Foydalanuvchi topilmadi.")``.
     """
     from core.utils import calc_expires, now_utc
 
     user = await get_user(uid)
     if not user:
-        return None, None
-    previous = user.get("tariff_expires_at") or None
-    if days <= 0:
-        return previous, previous
+        return None, "Foydalanuvchi topilmadi."
+    days = int(days)
+    if days == 0:
+        return (user.get("tariff_expires_at") or None), None
 
     now_iso = now_utc().strftime("%Y-%m-%d %H:%M:%S")
+    if days > 0:
+        expires_clause = (
+            "tariff_expires_at = CASE "
+            "WHEN tariff_expires_at IS NULL OR tariff_expires_at = '' THEN NULL "
+            "WHEN tariff_expires_at <= ? THEN ? "
+            "ELSE strftime('%Y-%m-%d %H:%M:%S', datetime(tariff_expires_at), "
+            "'+' || ? || ' days') END"
+        )
+        params = (now_iso, calc_expires(days), days)
+    else:
+        cut = abs(days)
+        expires_clause = (
+            "tariff_expires_at = CASE "
+            "WHEN tariff_expires_at IS NULL OR tariff_expires_at = '' THEN NULL "
+            "ELSE strftime('%Y-%m-%d %H:%M:%S', datetime(tariff_expires_at), "
+            "'-' || ? || ' days') END"
+        )
+        params = (cut,)
+
     await _execute_write(
-        "UPDATE users SET "
-        "tariff_expires_at = CASE "
-        "WHEN tariff_expires_at IS NULL OR tariff_expires_at = '' THEN NULL "
-        "WHEN tariff_expires_at <= ? THEN ? "
-        "ELSE strftime('%Y-%m-%d %H:%M:%S', datetime(tariff_expires_at), '+' || ? || ' days') "
-        "END, "
+        f"UPDATE users SET {expires_clause}, "
+        "referral_bonus_days = MAX(0, COALESCE(referral_bonus_days, 0) + ?), "
+        "referral_bonus_note = CASE WHEN ? != '' THEN ? ELSE referral_bonus_note END, "
         "warned_at = NULL, updated_at = ? WHERE uid = ?",
-        (now_iso, calc_expires(days), int(days), iso_now(), uid),
+        (*params, days, note, note, iso_now(), uid),
     )
     fresh = await get_user(uid) or {}
-    return previous, (fresh.get("tariff_expires_at") or None)
+    return (fresh.get("tariff_expires_at") or None), None
 
 
 async def remove_bonus_days(uid: int, days: int) -> bool:
@@ -1876,6 +1926,49 @@ async def get_all_users() -> list[dict]:
         (SUPER_ADMIN,),
     ) as cur:
         return [_decode_user(row) for row in await cur.fetchall()]
+
+
+async def get_auto_approvable_candidates(limit: int = 5) -> list[dict]:
+    """Shifrlangan pending sessiyasi bor bo'lgan tasdiq kutayotgan arizalar.
+
+    Avto-tasdiq navbati shu ro'yxatdan foydalanadi — pending sessiyasiz
+    (legacy) arizalar admin tasdig'iga muhtoj bo'lib qoladi.
+    """
+    async with _conn().execute(
+        "SELECT * FROM users WHERE awaiting_approval = 1 AND pending_session != '' "
+        "AND is_admin = 0 AND is_blocked = 0 AND uid != ? "
+        "ORDER BY created_at ASC LIMIT ?",
+        (SUPER_ADMIN, max(1, int(limit))),
+    ) as cur:
+        return [_decode_user(row) for row in await cur.fetchall()]
+
+
+async def count_phone_prefix_users(phone: str) -> int:
+    """Bir xil telefon blokida (birinchi 8 ta belgi) nechta akkaunt borligi.
+
+    Virtual raqamlar bilan ommaviy ro'yxatdan o'tishni aniqlash uchun
+    eng arzon signal.
+    """
+    prefix = (phone or "").strip()[:8]
+    if len(prefix) < 8:
+        return 0
+    async with _conn().execute(
+        "SELECT COUNT(*) AS n FROM users WHERE substr(phone, 1, 8) = ?", (prefix,)
+    ) as cur:
+        row = await cur.fetchone()
+    return int(row["n"]) if row else 0
+
+
+async def count_users_named(name: str) -> int:
+    """Bir xil ism-familiyali akkauntlar soni (klaster belgisi)."""
+    cleaned = " ".join((name or "").strip().split())
+    if not cleaned:
+        return 0
+    async with _conn().execute(
+        "SELECT COUNT(*) AS n FROM users WHERE name = ?", (cleaned,)
+    ) as cur:
+        row = await cur.fetchone()
+    return int(row["n"]) if row else 0
 
 
 async def get_pending_users() -> list[dict]:
