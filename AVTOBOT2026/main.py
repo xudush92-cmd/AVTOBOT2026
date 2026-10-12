@@ -1328,7 +1328,7 @@ async def _main() -> None:
     ]
     if Pay.enabled():
         commands.append(BotCommand("pay", "Paketlar va to'lov"))
-    await app.set_my_commands(commands)
+    await app.bot.set_my_commands(commands)
     app.add_error_handler(on_error)
 
     # 8. Botni ishga tushirish
