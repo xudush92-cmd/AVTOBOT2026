@@ -188,8 +188,13 @@ bo'limi va `docs/` hujjatlari.
 ## 📈 RIVOJLANTIRISH
 
 Hozirgi holat auditi, referal tizimi tahlili, ko'p surat (albom) texnik rejasi,
-imkoniyatlar ro'yxati, daromad modeli va 90 kunlik yo'l xaritasi:
+imkoniyatlar ro'yxati, daromad modeli va 90 kunlik yo'l xaritasi (0.1-bo'lim —
+nima allaqachon qilingan):
 [`docs/TAKLIFLAR_ROADMAP.md`](docs/TAKLIFLAR_ROADMAP.md).
+
+Serverga chiqarish tartibi, zaxira, tekshirish ro'yxati, limitlarni bosqichma-
+bosqich yoqish va orqaga qaytish rejasi:
+[`docs/YANGILASH.md`](docs/YANGILASH.md).
 
 ---
 

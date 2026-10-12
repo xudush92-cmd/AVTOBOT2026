@@ -66,6 +66,10 @@ Qo'shimcha tuzatishlar (yuqorida rejalashtirilmagan, lekin topilgan):
 - kiritish oynasida menyu tugmasi bosilanda mavjud bo'lmagan
   `Menu.handle_menu` chaqirilayotgan edi — `route_menu_button`ga o'zgartirildi.
 
+Chiqarish tartibi va tekshirish ro'yxati alohida hujjatda:
+[`YANGILASH.md`](YANGILASH.md). Eski baza bilan migratsiya
+`tests/test_legacy_db_migration.py`da qoplangan.
+
 Migratsiya: barcha yangi ustunlar (`users.*`, `posts.media`, `posts.link_preview`,
 `referrals.qualified_at/bonus_days/revoked`, guruh navbat ustunlari)
 `_migrate_schema` orqali qo'shiladi — eski `.db` fayli bilan ham ishga tushadi,
