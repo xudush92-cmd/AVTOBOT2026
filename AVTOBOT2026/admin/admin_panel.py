@@ -83,6 +83,12 @@ async def handle_admin_callback(update: Update, uid: int, data: str) -> None:
         await show_users(update, page=page)
         return
 
+    if data == "adm:pay":
+        from bot import payments as Pay
+
+        await Pay.show_admin_queue(update)
+        return
+
     if data == "adm:pending":
         await show_pending(update, page=0)
         return
@@ -157,14 +163,18 @@ async def show_panel(update: Update) -> None:
     action_tokens.clear(SUPER_ADMIN)
 
     stats = await db.get_stats()
+    from bot import payments as Pay
+
+    pay_line = await Pay.queue_line()
     text = (
         "🖥 SUPER ADMIN PANEL\n\n"
         f"👥 Foydalanuvchilar: {stats['total_users']} ta\n"
         f"✅ Tasdiqlangan: {stats['admins']} ta\n"
         f"⏳ Kutayotgan: {stats['waiting']} ta\n"
         f"🟢 Faol: {stats['running']} ta\n"
-        f"🚫 Bloklangan: {stats['blocked']} ta\n\n"
-        "Kerakli bo'limni tanlang:"
+        f"🚫 Bloklangan: {stats['blocked']} ta\n"
+        + (f"{pay_line}\n" if pay_line else "")
+        + "\nKerakli bo'limni tanlang:"
     )
     with contextlib.suppress(Exception):
         await q.edit_message_text(text, reply_markup=KB.kb_admin_panel())

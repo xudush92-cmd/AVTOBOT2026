@@ -16,6 +16,7 @@ Telegram guruhlariga reklama postlarini avtomatik joylashtiruvchi bot.
 - ✅ Ommaviy xabar yuborish (broadcast)
 - ✅ Muddat tizimi (admin yangi muddat beradi — oldingi muddat bekor bo'lib,
   yangisi hozirdan boshlab hisoblanadi)
+- ✅ To'lov (qo'lda tasdiqlash + kvitansiya): paket narxi, izoh kodi, admin navbati — `PAYMENTS_ENABLED=1` bilan yoqiladi (standart o'chiq)
 - ✅ Bloklash / blokdan chiqarish
 - ✅ Anti-spam himoya
 - ✅ Oddiy registratsiya: ism → telefon → Telegram kodi → admin tasdiqi

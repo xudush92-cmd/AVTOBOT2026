@@ -176,6 +176,11 @@ async def _handle_callback_locked(update: Update, uid: int) -> None:
                     await G.handle_group_check_callback(update, uid, data)
             return
 
+        if data.startswith("pay:"):
+            from bot import payments as Pay
+
+            await Pay.handle_pay_callback(update, uid, data)
+            return
         if data.startswith("app:"):
             await handle_admin_approve(update, uid, data)
             return

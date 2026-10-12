@@ -372,29 +372,78 @@ def kb_admin_approve(uid: int) -> InlineKeyboardMarkup:
 
 
 def kb_admin_panel() -> InlineKeyboardMarkup:
+    from config import config as CFG
+
+    rows = [
+        [
+            InlineKeyboardButton(
+                "➕ Foydalanuvchi qo'shish", callback_data="adm:adduser"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                "⏳ Tasdiq kutilayotganlar", callback_data="adm:pending"
+            )
+        ],
+        [InlineKeyboardButton("👥 Foydalanuvchilar", callback_data="adm:users")],
+        [
+            InlineKeyboardButton(
+                "🕓 Muddati tugaganlar", callback_data="adm:expired"
+            )
+        ],
+    ]
+    if CFG.PAYMENTS_ENABLED:
+        rows.append(
+            [InlineKeyboardButton(T.BTN_PAY_QUEUE, callback_data="adm:pay")]
+        )
+    rows += [
+        [InlineKeyboardButton("📊 Statistika", callback_data="adm:stats")],
+        [InlineKeyboardButton("📢 Xabar yuborish", callback_data="adm:broadcast")],
+        [InlineKeyboardButton("🚫 Bloklanganlar", callback_data="adm:blocked")],
+        [InlineKeyboardButton("💾 Ma'lumotlar bazasi", callback_data="adm:db")],
+        [InlineKeyboardButton("🖥 Tizim holati", callback_data="adm:system")],
+    ]
+    return InlineKeyboardMarkup(rows)
+
+
+# ─────────────────────────────────────────
+# TO'LOV (A REJA)
+# ─────────────────────────────────────────
+def kb_plan_pay(plans: list[tuple[str, int]]) -> InlineKeyboardMarkup:
+    """📦 Paket ekranidagi har paket uchun 💳 tugmasi + holat tugmasi."""
+    rows: list[list[InlineKeyboardButton]] = []
+    for plan, amount in plans:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    f"💳 {T.plan_label(plan)} — {T.fmt_som(amount)}",
+                    callback_data=f"pay:new:{plan}",
+                )
+            ]
+        )
+    rows.append([InlineKeyboardButton(T.BTN_PAY_STATUS, callback_data="pay:status")])
+    return InlineKeyboardMarkup(rows)
+
+
+def kb_pay_request(pid: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
             [
-                InlineKeyboardButton(
-                    "➕ Foydalanuvchi qo'shish", callback_data="adm:adduser"
-                )
-            ],
+                InlineKeyboardButton(T.BTN_PAY_CANCEL, callback_data=f"pay:cancel:{pid}"),
+                InlineKeyboardButton(T.BTN_PAY_STATUS, callback_data="pay:status"),
+            ]
+        ]
+    )
+
+
+def kb_admin_payment(pid: int, uid: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
             [
-                InlineKeyboardButton(
-                    "⏳ Tasdiq kutilayotganlar", callback_data="adm:pending"
-                )
+                InlineKeyboardButton("✅ Tasdiqlash", callback_data=f"pay:ok:{pid}"),
+                InlineKeyboardButton("❌ Rad etish", callback_data=f"pay:no:{pid}"),
             ],
-            [InlineKeyboardButton("👥 Foydalanuvchilar", callback_data="adm:users")],
-            [
-                InlineKeyboardButton(
-                    "🕓 Muddati tugaganlar", callback_data="adm:expired"
-                )
-            ],
-            [InlineKeyboardButton("📊 Statistika", callback_data="adm:stats")],
-            [InlineKeyboardButton("📢 Xabar yuborish", callback_data="adm:broadcast")],
-            [InlineKeyboardButton("🚫 Bloklanganlar", callback_data="adm:blocked")],
-            [InlineKeyboardButton("💾 Ma'lumotlar bazasi", callback_data="adm:db")],
-            [InlineKeyboardButton("🖥 Tizim holati", callback_data="adm:system")],
+            [InlineKeyboardButton("👤 Karta", callback_data=f"pay:card:{uid}")],
         ]
     )
 

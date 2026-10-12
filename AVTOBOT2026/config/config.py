@@ -162,6 +162,58 @@ AUTO_APPROVE_CHECK_INTERVAL_S: int = max(
 )
 AUTO_APPROVE_BATCH: int = max(1, _int("AUTO_APPROVE_BATCH", 5))
 
+# ─────────────────────────────────────────────────────────────────────────
+# TO'LOV (A REJA: QO'LDA TASDIQLASH + KVITANSIYA)
+# ─────────────────────────────────────────────────────────────────────────
+# O'chirilgan holatda (standart) 💳 tugmalari ko'rinmaydi va hech narsa
+# o'zgarmaydi. Yoqish uchun PAYMENTS_ENABLED=1 va PLAN_PRICES to'ldiriladi.
+PAYMENTS_ENABLED: bool = os.getenv("PAYMENTS_ENABLED", "0") not in {
+    "0",
+    "false",
+    "no",
+    "",
+}
+
+
+def _parse_plan_prices(raw: str) -> dict[str, int]:
+    """``START:150000,PRO:300000`` → ``{"START": 150000, "PRO": 300000}``.
+
+    Noto'g'ri yozuvlar (nomi yo'q, narx musbat butun emas, paket noma'lum)
+    jim tashlab yuboriladi — bitta xato butun to'lov menyusini buzmasin.
+    """
+    prices: dict[str, int] = {}
+    for item in (raw or "").split(","):
+        if ":" not in item:
+            continue
+        name, _, amount = item.partition(":")
+        name = name.strip().upper()
+        try:
+            value = int(amount.strip().replace(" ", "").replace("_", ""))
+        except ValueError:
+            continue
+        if name in PLAN_DEFS and value > 0:
+            prices[name] = value
+    return prices
+
+
+PLAN_PRICES: dict[str, int] = _parse_plan_prices(os.getenv("PLAN_PRICES", ""))
+# Karta rekvizitlari (kvitansiya shu kartaga yuboriladi)
+PAY_CARD: str = (os.getenv("PAY_CARD", "") or "").strip()
+PAY_BANK: str = (os.getenv("PAY_BANK", "") or "").strip()
+PAY_HOLDER: str = (os.getenv("PAY_HOLDER", "") or "").strip()
+# Bir to'lov necha kunga uzaytiradi
+PAYMENT_DAYS: int = max(1, _int("PAYMENT_DAYS", 30))
+# Kvitansiya yuborilmagan so'rov shundan keyin bekor (expired) bo'ladi
+PAYMENT_REQUEST_TTL_MIN: int = max(5, _int("PAYMENT_REQUEST_TTL_MIN", 120))
+# Muddat tugashidan necha kun oldin bir marta eslatma yuborilsin
+PAYMENT_REMIND_DAYS: int = max(0, _int("PAYMENT_REMIND_DAYS", 3))
+# Kvitansiya rasmi qaror qabul qilingach shuncha kun saqlanadi, so'ng o'chadi
+PAYMENT_PROOF_RETENTION_DAYS: int = max(1, _int("PAYMENT_PROOF_RETENTION_DAYS", 14))
+# Kutayotgan (kvitansiyali) so'rovlar shuncha bo'lsa adminga ogohlantirish
+PAYMENT_QUEUE_ALERT: int = max(1, _int("PAYMENT_QUEUE_ALERT", 10))
+# Izoh kodi boshlanishi: AVTO-<uid>-<PAKET>
+PAY_REF_PREFIX: str = (os.getenv("PAY_REF_PREFIX", "AVTO") or "AVTO").strip().upper()
+
 
 
 # ─────────────────────────────────────────────────────────────────────────

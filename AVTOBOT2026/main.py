@@ -32,6 +32,7 @@ from bot import callbacks as CB
 from bot import keyboards as KB
 from bot import login as Login
 from bot import menu as Menu
+from bot import payments as Pay
 from bot import texts as T
 
 # Config
@@ -84,14 +85,16 @@ health_server: Health.HealthServer | None = None
 async def send_super_admin_panel(message) -> None:
     """Super admin uchun reklama menyusisiz boshqaruv panelini yuboradi."""
     stats = await db.get_stats()
+    pay_line = await Pay.queue_line()
     await message.reply_text(
         "🖥 SUPER ADMIN PANEL\n\n"
         f"👥 Foydalanuvchilar: {stats['total_users']} ta\n"
         f"✅ Tasdiqlangan: {stats['admins']} ta\n"
         f"⏳ Kutayotgan: {stats['waiting']} ta\n"
         f"🟢 Faol: {stats['running']} ta\n"
-        f"🚫 Bloklangan: {stats['blocked']} ta\n\n"
-        "Kerakli bo'limni tanlang:",
+        f"🚫 Bloklangan: {stats['blocked']} ta\n"
+        + (f"{pay_line}\n" if pay_line else "")
+        + "\nKerakli bo'limni tanlang:",
         reply_markup=KB.kb_admin_panel(),
     )
 
@@ -141,6 +144,20 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
         from bot.menu import show_status
 
         await show_status(update)
+
+
+async def cmd_pay(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/pay — paketlar va to'lov narxlari (📦 Paket ekranining bir xili)."""
+    uid = update.effective_user.id
+    async with user_update_lock(uid):
+        user = await db.get_user(uid)
+        if uid == SUPER_ADMIN or not (user and user.get("is_admin")):
+            await update.message.reply_text(T.WELCOME_SHORT, reply_markup=KB.kb_login())
+            return
+        if not Pay.enabled():
+            await update.message.reply_text(T.PAY_DISABLED)
+            return
+        await Menu.show_plan(update)
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -501,6 +518,10 @@ async def _on_message_locked(
                     return
                 await handle_set_group_interval(update, text)
             return
+
+    # ── TO'LOV KVITANSIYASI (faqat ochiq to'lov so'rovi bo'lsa) ──
+    if msg.photo and await Pay.handle_receipt(update):
+        return
 
     # ── LOGIN TUGMASI ──
     if text == T.BTN_LOGIN:
@@ -1014,6 +1035,7 @@ async def check_tariff_expiry() -> int:
             if client_pool:
                 await client_pool.remove(uid)
             await db.set_running(uid, False)
+            await db.set_pay_paused(uid, True)
             stopped += 1
             with contextlib.suppress(Exception):
                 await application.bot.send_message(
@@ -1075,6 +1097,31 @@ async def tariff_janitor_loop(stop: asyncio.Event) -> None:
                 await check_tariff_expiry()
             with contextlib.suppress(Exception):
                 await warn_last_day()
+    except asyncio.CancelledError:
+        pass
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# TO'LOV JANITORI (A reja)
+# ─────────────────────────────────────────────────────────────────────────
+async def payments_janitor_loop(stop: asyncio.Event) -> None:
+    """Har daqiqa: to'lov TTL, eslatma, kvitansiya tozalash, navbat ogohlantirishi.
+
+    ``PAYMENTS_ENABLED=0`` bo'lsa faqat uyquda turadi.
+    """
+    if not Pay.enabled():
+        await stop.wait()
+        return
+    log("💳 To'lov janitor boshlandi")
+    try:
+        while not stop.is_set():
+            try:
+                await asyncio.wait_for(stop.wait(), timeout=60)
+                break
+            except asyncio.TimeoutError:
+                pass
+            with contextlib.suppress(Exception):
+                await Pay.janitor_tick()
     except asyncio.CancelledError:
         pass
 
@@ -1251,6 +1298,7 @@ async def _main() -> None:
     AA.set_application(app)
     BC.set_application(app)
     AutoApprove.set_application(app)
+    Pay.set_application(app)
 
     # Handlerlar
     app.add_handler(CommandHandler("start", cmd_start))
@@ -1272,13 +1320,15 @@ async def _main() -> None:
     app.add_handler(CommandHandler("help", cmd_help))
     app.add_handler(CommandHandler("status", cmd_status))
     app.add_handler(CommandHandler("statistika", cmd_status))
-    await app.set_my_commands(
-        [
-            BotCommand("start", "Botni ochish / menyu"),
-            BotCommand("help", "Qanday ishlaydi — qisqa yo'riqnoma"),
-            BotCommand("status", "Holat va kunlik hisobot"),
-        ]
-    )
+    app.add_handler(CommandHandler("pay", cmd_pay))
+    commands = [
+        BotCommand("start", "Botni ochish / menyu"),
+        BotCommand("help", "Qanday ishlaydi — qisqa yo'riqnoma"),
+        BotCommand("status", "Holat va kunlik hisobot"),
+    ]
+    if Pay.enabled():
+        commands.append(BotCommand("pay", "Paketlar va to'lov"))
+    await app.set_my_commands(commands)
     app.add_error_handler(on_error)
 
     # 8. Botni ishga tushirish
@@ -1315,6 +1365,12 @@ async def _main() -> None:
         name="auto-approve",
     )
 
+    pay_stop = asyncio.Event()
+    pay_task = asyncio.create_task(
+        payments_janitor_loop(pay_stop),
+        name="payments-janitor",
+    )
+
     # 11. Shutdown kutish
     try:
         await worker_manager.wait_shutdown()
@@ -1332,6 +1388,9 @@ async def _main() -> None:
         tariff_stop.set()
         cleanup_stop.set()
         approve_stop.set()
+        pay_stop.set()
+        with contextlib.suppress(Exception):
+            await asyncio.wait_for(pay_task, timeout=5)
         with contextlib.suppress(Exception):
             await asyncio.wait_for(janitor_task, timeout=5)
         with contextlib.suppress(Exception):

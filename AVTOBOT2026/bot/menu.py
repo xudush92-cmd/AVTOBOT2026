@@ -179,7 +179,17 @@ async def show_plan(update: Update) -> None:
         expires=format_expires(snapshot["expires"]),
         daily_left=daily_left,
     )
-    await update.message.reply_text(text, reply_markup=KB.kb_main(running=snapshot["running"]))
+    from bot import payments as Pay
+
+    # Callback (masalan referal ekranidagi tugma) bo'lsa xabar callback'ning xabaridan.
+    query = getattr(update, "callback_query", None)
+    target = query.message if query is not None else update.message
+    price_block = Pay.plan_panel_text()
+    if price_block:
+        text = text + "\n\n" + price_block
+        await target.reply_text(text, reply_markup=Pay.plan_panel_markup())
+        return
+    await target.reply_text(text, reply_markup=KB.kb_main(running=snapshot["running"]))
 
 
 # ─────────────────────────────────────────────────────────────────────────

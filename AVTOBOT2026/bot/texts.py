@@ -13,7 +13,13 @@ from config.config import (
     MAX_ALBUM_FILES,
     MAX_INTERVAL_MIN,
     MIN_INTERVAL_MIN,
+    PAY_BANK,
+    PAY_CARD,
+    PAY_HOLDER,
+    PAYMENT_DAYS,
+    PAYMENT_REQUEST_TTL_MIN,
     PLAN_DEFS,
+    PLAN_PRICES,
     REFERRAL_BONUS_DAYS,
 )
 from core.utils import format_expires
@@ -1189,3 +1195,142 @@ def status_next_step(groups: int, posts: int) -> str:
     if not posts:
         return "👇 Keyingi qadam: 📝 Postlar → ➕ Post qo'shish"
     return ""
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# TO'LOV (A REJA) MATNLARI
+# ─────────────────────────────────────────────────────────────────────────
+BTN_PAY_STATUS = "🧾 To'lov holatim"
+BTN_PAY_CANCEL = "❌ So'rovni bekor qilish"
+BTN_PAY_QUEUE = "💰 To'lovlar navbati"
+PAY_DISABLED = "💳 To'lov hozircha yoqilmagan. Paketni o'zgartirish uchun adminga murojaat qiling: " + ADMIN_CONTACT_PHONE
+PAY_NOT_ALLOWED = "❌ Hisob faol emas. Avval tasdiqlangan hisob bilan 🔑 Login qiling."
+PAY_PLAN_UNKNOWN = "❌ Bu paket uchun narx belgilanmagan."
+PAY_PROOF_NEED_PHOTO = "📸 Kvitansiya rasmini yuboring (screenshot yoki foto). Matn yoki fayl qabul qilinmaydi."
+PAY_PROOF_ALREADY = "✅ Kvitansiyangiz allaqachon yuborilgan — admin tekshirmoqda. Boshqa rasm yubormoqchi bo'lsangiz, avval ❌ bekor qiling."
+PAY_PROOF_RECEIVED = (
+    "✅ Kvitansiya qabul qilindi (so'rov #{pid}).\n\n"
+    "Admin tekshirgach muddatingiz avtomatik uzaytiriladi va sizga xabar yuboriladi.\n"
+    "Holatni 🧾 To'lov holatim tugmasi orqali ko'rishingiz mumkin."
+)
+PAY_PROOF_EXPIRED = (
+    "⌛ To'lov so'rovi muddati o'tdi ({ttl} daqiqa ichida kvitansiya yuborilmagan).\n"
+    "Qaytadan 📦 Paket va limitlar → 💳 orqali so'rov yarating."
+)
+PAY_CANCELLED = "❌ So'rov bekor qilindi."
+PAY_CANCEL_GONE = "ℹ️ Bu so'rov allaqachon yopilgan yoki topilmadi."
+PAY_REMINDER = (
+    "🔔 Eslatma: {label} paketingiz muddati {until} da tugaydi ({left} kun qoldi).\n"
+    "📦 Paket va limitlar → 💳 orqali uzaytirishingiz mumkin."
+)
+PAY_QUEUE_EMPTY = "✅ To'lovlar navbati bo'sh."
+PAY_APPROVED_USER = (
+    "✅ TO'LOV QABUL QILINDI\n\n"
+    "📦 Paket: {label}\n"
+    "📅 Yangi muddat: {expires}\n\n"
+    "Rahmat! Muddat avtomatik uzaytirildi."
+)
+PAY_RESUMED_USER = "▶️ Posting avtomatik tiklandi. Holatni ⏱ tugmalaridan tekshirishingiz mumkin."
+PAY_REJECTED_USER = (
+    "❌ To'lov rad etildi (so'rov #{pid}).\n\n"
+    "Sabab: kvitansiya tekshiruvdan o'tmadi (summa, izoh kodi yoki karta mos emas).\n"
+    "To'g'ri kvitansiya bilan 📦 Paket va limitlar → 💳 orqali qayta so'rov yarating.\n"
+    "Savol bo'lsa: " + ADMIN_CONTACT_PHONE
+)
+PAY_QUEUE_ALERT = "⚠️ To'lovlar navbati: {count} ta kvitansiya tekshiruvni kutmoqda (eng eskisi {age} daqiqa oldin)."
+
+
+def fmt_som(amount: int | float) -> str:
+    """150000 -> '150 000 so'm'."""
+    return f"{int(amount):,}".replace(",", " ") + " so'm"
+
+
+def plan_label(plan: str) -> str:
+    definition = PLAN_DEFS.get((plan or "").upper()) or {}
+    return definition.get("label") or plan
+
+
+def plans_price_block() -> str:
+    """📦 Paket ekranidagi narxlar bloki (faqat to'lov yoqilganda)."""
+    lines = [f"💳 TO'LOV NARXLARI ({PAYMENT_DAYS} kun):"]
+    for plan, amount in PLAN_PRICES.items():
+        lines.append(f"{plan_label(plan)} — {fmt_som(amount)} / {PAYMENT_DAYS} kun")
+    lines.append("")
+    lines.append("Paketni tanlang, so'ng karta rekvizitlari va to'lov izohi ko'rsatiladi.")
+    return "\n".join(lines)
+
+
+def pay_instruction_text(payment: dict) -> str:
+    holder = f"👤 Ism: {PAY_HOLDER}\n" if PAY_HOLDER else ""
+    bank = f"🏦 Bank: {PAY_BANK}\n" if PAY_BANK else ""
+    return (
+        f"🧾 TO'LOV SO'ROVI #{payment['id']}\n\n"
+        f"📦 Paket: {plan_label(payment['plan'])}\n"
+        f"💰 Summa: {fmt_som(payment['amount'])} ({payment['days']} kun)\n\n"
+        f"💳 Karta: {PAY_CARD or '—'}\n"
+        f"{bank}{holder}\n"
+        f"📝 Izoh (o'tkazmaga aynan shu kodni yozing):\n"
+        f"{payment['reference']}\n\n"
+        "📸 To'lovdan so'ng kvitansiya rasmini (screenshot) shu chatga yuboring.\n"
+        f"⏳ {PAYMENT_REQUEST_TTL_MIN} daqiqa ichida kvitansiya yuborilmasa so'rov bekor bo'ladi."
+    )
+
+
+def pay_status_text(current: dict | None, history: list[dict]) -> str:
+    labels = {
+        "approved": "✅ Tasdiqlangan",
+        "rejected": "❌ Rad etilgan",
+        "cancelled": "🚫 Bekor qilingan",
+        "expired": "⌛ Muddati o'tgan",
+    }
+    lines = ["🧾 TO'LOV HOLATI", ""]
+    if current:
+        if current.get("proof_path"):
+            state = "⏳ Admin tekshirmoqda"
+        else:
+            state = "📸 Kvitansiya kutilmoqda"
+        lines += [
+            f"Joriy so'rov #{current['id']}: {state}",
+            f"📦 {plan_label(current['plan'])} — {fmt_som(current['amount'])}",
+            f"🔖 Izoh: {current['reference']}",
+            "",
+        ]
+    else:
+        lines += ["Ochiq so'rov yo'q.", ""]
+    if history:
+        lines.append("🕓 Oxirgi to'lovlar:")
+        for row in history:
+            label = labels.get(row["status"], row["status"])
+            when = (row.get("created_at") or "")[:16]
+            lines.append(f"• #{row['id']} {when} · {plan_label(row['plan'])} · {label}")
+    else:
+        lines.append("Hali to'lovlar yo'q.")
+    return "\n".join(lines)
+
+
+def admin_payment_caption(
+    payment: dict,
+    *,
+    user_name: str,
+    username: str,
+    expires_text: str,
+    dup_count: int,
+    blocked: bool,
+) -> str:
+    who = f"{user_name or '—'} ({payment['uid']})"
+    if username:
+        who += f" @{username}"
+    lines = [
+        f"🧾 YANGI TO'LOV #{payment['id']}",
+        "",
+        f"👤 {who}",
+        f"📦 Paket: {plan_label(payment['plan'])} — {fmt_som(payment['amount'])} / {payment['days']} kun",
+        f"🔖 Izoh kodi: {payment['reference']}",
+        f"📅 Hozirgi muddat: {expires_text}",
+    ]
+    if dup_count:
+        lines.append(f"⚠️ Bu rasm yana {dup_count} ta so'rovda ishlatilgan — tekshiring!")
+    if blocked:
+        lines.append("🚫 Foydalanuvchi bloklangan")
+    return "\n".join(lines)
+

@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import time
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -59,6 +59,10 @@ _USER_COLUMNS = {
     "referral_bonus_days",
     "referral_bonus_note",
     "last_active_at",
+    "paid_total",
+    "paid_last_at",
+    "pay_reminded_at",
+    "pay_paused",
 }
 
 
@@ -117,6 +121,16 @@ async def _migrate_schema() -> None:
             ("referral_bonus_days", "INTEGER DEFAULT 0"),
             ("referral_bonus_note", "TEXT DEFAULT ''"),
             ("last_active_at", "TEXT"),
+        ),
+    )
+    # To'lov (A reja) ustunlari — eski DB'da ham xavfsiz qo'shiladi.
+    await add_missing_columns(
+        "users",
+        (
+            ("paid_total", "INTEGER DEFAULT 0"),
+            ("paid_last_at", "TEXT"),
+            ("pay_reminded_at", "TEXT"),
+            ("pay_paused", "INTEGER DEFAULT 0"),
         ),
     )
     await add_missing_columns(
@@ -315,6 +329,33 @@ async def init_db() -> None:
         );
         CREATE INDEX IF NOT EXISTS idx_send_logs_uid_sent
             ON send_logs(uid, sent_at);
+        CREATE TABLE IF NOT EXISTS payment_requests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            uid INTEGER NOT NULL,
+            plan TEXT NOT NULL,
+            amount INTEGER NOT NULL DEFAULT 0,
+            days INTEGER NOT NULL DEFAULT 30,
+            reference TEXT DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'pending',
+            provider TEXT DEFAULT 'manual',
+            provider_txn TEXT DEFAULT '',
+            proof_path TEXT DEFAULT '',
+            proof_hash TEXT DEFAULT '',
+            reason TEXT DEFAULT '',
+            decided_by INTEGER,
+            decided_at TEXT,
+            created_at TEXT,
+            updated_at TEXT,
+            FOREIGN KEY (uid) REFERENCES users(uid) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_payments_uid ON payment_requests(uid);
+        CREATE INDEX IF NOT EXISTS idx_payments_status
+            ON payment_requests(status, created_at);
+        CREATE INDEX IF NOT EXISTS idx_payments_hash
+            ON payment_requests(proof_hash);
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_payments_provider_txn
+            ON payment_requests(provider, provider_txn)
+            WHERE provider_txn != '';
     """)
     await _db.commit()
     await _migrate_schema()
@@ -2029,3 +2070,302 @@ async def optimize_db() -> None:
             await _conn().commit()
     except Exception as exc:
         log(f"optimize_db xatosi: {type(exc).__name__}", "error")
+
+
+# ─────────────────────────────────────────
+# TO'LOV SO'ROVLARI (A reja: qo'lda tasdiqlash + kvitansiya)
+# ─────────────────────────────────────────
+# Holatlar: pending → approved | rejected | cancelled | expired.
+# "Kvitansiyali" so'rov = pending + proof_path bor (admin navbatida turadi).
+# Har bir o'tish WHERE status=... sharti bilan bajariladi, shuning uchun
+# bir xil tugmani ikki marta bosish yoki ikki admin bir vaqtda bossa ham
+# to'lov ikki marta hisobga olinmaydi.
+
+_PAYMENT_FINAL_STATUSES = ("approved", "rejected", "cancelled", "expired")
+
+
+def _payment_row(row: aiosqlite.Row | None) -> dict | None:
+    return dict(row) if row is not None else None
+
+
+async def create_payment_request(
+    uid: int, plan: str, amount: int, days: int, reference: str
+) -> int:
+    now = iso_now()
+    cur = await _execute_write(
+        "INSERT INTO payment_requests (uid, plan, amount, days, reference, "
+        "status, provider, created_at, updated_at) "
+        "VALUES (?, ?, ?, ?, ?, 'pending', 'manual', ?, ?)",
+        (uid, plan, int(amount), int(days), reference, now, now),
+    )
+    return int(cur.lastrowid)
+
+
+async def get_payment(pid: int) -> dict | None:
+    async with _conn().execute(
+        "SELECT * FROM payment_requests WHERE id = ?", (pid,)
+    ) as cur:
+        return _payment_row(await cur.fetchone())
+
+
+async def get_open_payment(uid: int) -> dict | None:
+    """Foydalanuvchining hozir kutilayotgan (pending) so'rovi, bo'lsa."""
+    async with _conn().execute(
+        "SELECT * FROM payment_requests WHERE uid = ? AND status = 'pending' "
+        "ORDER BY id DESC LIMIT 1",
+        (uid,),
+    ) as cur:
+        return _payment_row(await cur.fetchone())
+
+
+async def get_payment_history(uid: int, limit: int = 5) -> list[dict]:
+    async with _conn().execute(
+        "SELECT * FROM payment_requests WHERE uid = ? ORDER BY id DESC LIMIT ?",
+        (uid, max(1, int(limit))),
+    ) as cur:
+        return [dict(row) for row in await cur.fetchall()]
+
+
+async def set_payment_proof(pid: int, uid: int, path: str, proof_hash: str) -> bool:
+    """Kvitansiya faqat hali kvitansiyasiz pending so'rovga biriktiriladi."""
+    cur = await _execute_write(
+        "UPDATE payment_requests SET proof_path = ?, proof_hash = ?, updated_at = ? "
+        "WHERE id = ? AND uid = ? AND status = 'pending' AND proof_path = ''",
+        (path, proof_hash, iso_now(), pid, uid),
+    )
+    return cur.rowcount > 0
+
+
+async def count_proof_hash_uses(proof_hash: str, exclude_id: int | None = None) -> int:
+    """Bir xil rasm (hash) necha marta boshqa so'rovda ishlatilgan."""
+    if not proof_hash:
+        return 0
+    async with _conn().execute(
+        "SELECT COUNT(*) AS n FROM payment_requests WHERE proof_hash = ? AND id != ?",
+        (proof_hash, exclude_id if exclude_id is not None else -1),
+    ) as cur:
+        row = await cur.fetchone()
+    return int(row["n"]) if row else 0
+
+
+async def payment_queue(limit: int = 20) -> list[dict]:
+    """Admin navbati: kvitansiyasi bor, hali qaror qilinmagan so'rovlar (eskisi birinchi)."""
+    async with _conn().execute(
+        "SELECT p.*, u.name AS user_name, u.username AS user_username, "
+        "u.is_blocked AS user_blocked, u.tariff_expires_at AS user_expires "
+        "FROM payment_requests p LEFT JOIN users u ON u.uid = p.uid "
+        "WHERE p.status = 'pending' AND p.proof_path != '' "
+        "ORDER BY p.created_at ASC, p.id ASC LIMIT ?",
+        (max(1, int(limit)),),
+    ) as cur:
+        return [dict(row) for row in await cur.fetchall()]
+
+
+async def payment_queue_stats() -> dict:
+    async with _conn().execute(
+        "SELECT COUNT(*) AS n, MIN(created_at) AS oldest FROM payment_requests "
+        "WHERE status = 'pending' AND proof_path != ''"
+    ) as cur:
+        row = await cur.fetchone()
+    return {
+        "count": int(row["n"] or 0) if row else 0,
+        "oldest": row["oldest"] if row else None,
+    }
+
+
+async def approve_payment(pid: int, admin_uid: int, now: datetime | None = None) -> dict:
+    """Kvitansiyali so'rovni tasdiqlaydi va mijoz muddatini uzaytiradi.
+
+    Bitta tranzaksiyada: so'rov pending→approved, paket/limitlar, muddat
+    (tugagan bo'lsa hozirdan, aks holda oxiriga qo'shib), ``paid_total``.
+    Takroriy chaqiruv yoki allaqachon qaror qilingan so'rov hech narsani
+    o'zgartirmaydi (``ok=False``).
+
+    Returns: ``{"ok", "status", "payment", "expires", "was_paused"}``.
+    """
+    current = now or datetime.now(timezone.utc)
+    stamp = current.strftime("%Y-%m-%d %H:%M:%S")
+    async with _write_lock:
+        conn = _conn()
+        try:
+            async with conn.execute(
+                "SELECT * FROM payment_requests WHERE id = ?", (pid,)
+            ) as cur:
+                row = await cur.fetchone()
+            if row is None:
+                return {"ok": False, "status": "missing"}
+            payment = dict(row)
+            if payment["status"] != "pending" or not payment["proof_path"]:
+                return {"ok": False, "status": payment["status"], "payment": payment}
+
+            async with conn.execute(
+                "SELECT tariff_expires_at, pay_paused FROM users WHERE uid = ?",
+                (payment["uid"],),
+            ) as cur:
+                user = await cur.fetchone()
+            if user is None:
+                return {"ok": False, "status": "missing", "payment": payment}
+
+            new_expires: str | None = user["tariff_expires_at"] or None
+            if new_expires:
+                # Muddatsiz (cheksiz) tarifga tegilmaydi — faqat paket yangilanadi.
+                try:
+                    current_end = datetime.strptime(new_expires, "%Y-%m-%d %H:%M:%S").replace(
+                        tzinfo=timezone.utc
+                    )
+                except ValueError:
+                    current_end = current
+                base = current_end if current_end > current else current
+                new_expires = (base + timedelta(days=int(payment["days"] or 30))).strftime(
+                    "%Y-%m-%d %H:%M:%S"
+                )
+
+            limits = _default_limits_for_plan(payment["plan"])
+            await conn.execute(
+                "UPDATE payment_requests SET status = 'approved', decided_by = ?, "
+                "decided_at = ?, updated_at = ? WHERE id = ? AND status = 'pending'",
+                (admin_uid, stamp, stamp, pid),
+            )
+            await conn.execute(
+                "UPDATE users SET plan = ?, max_groups = ?, max_posts = ?, "
+                "daily_limit = ?, tariff_expires_at = ?, warned_at = NULL, "
+                "paid_total = COALESCE(paid_total, 0) + ?, paid_last_at = ?, "
+                "pay_reminded_at = NULL, pay_paused = 0, updated_at = ? WHERE uid = ?",
+                (
+                    limits["plan"],
+                    limits["max_groups"],
+                    limits["max_posts"],
+                    limits["daily_limit"],
+                    new_expires,
+                    int(payment["amount"] or 0),
+                    stamp,
+                    stamp,
+                    payment["uid"],
+                ),
+            )
+            await conn.commit()
+        except Exception:
+            await conn.rollback()
+            raise
+
+    payment["status"] = "approved"
+    return {
+        "ok": True,
+        "status": "approved",
+        "payment": payment,
+        "expires": new_expires,
+        "was_paused": bool(user["pay_paused"]),
+    }
+
+
+async def reject_payment(pid: int, admin_uid: int, reason: str = "") -> bool:
+    cur = await _execute_write(
+        "UPDATE payment_requests SET status = 'rejected', decided_by = ?, "
+        "decided_at = ?, updated_at = ?, reason = ? "
+        "WHERE id = ? AND status = 'pending' AND proof_path != ''",
+        (admin_uid, iso_now(), iso_now(), (reason or "")[:200], pid),
+    )
+    return cur.rowcount > 0
+
+
+async def cancel_payment(uid: int, pid: int) -> str | None:
+    """Foydalanuvchi o'z pending so'rovini bekor qiladi.
+
+    Returns: o'chirilishi kerak bo'lgan kvitansiya yo'li (yo'q bo'lsa ``""``),
+    so'rov topilmasa/allaqachon yopilgan bo'lsa ``None``.
+    """
+    async with _write_lock:
+        conn = _conn()
+        async with conn.execute(
+            "SELECT proof_path FROM payment_requests "
+            "WHERE id = ? AND uid = ? AND status = 'pending'",
+            (pid, uid),
+        ) as cur:
+            row = await cur.fetchone()
+        if row is None:
+            return None
+        await conn.execute(
+            "UPDATE payment_requests SET status = 'cancelled', updated_at = ?, "
+            "proof_path = '' WHERE id = ? AND status = 'pending'",
+            (iso_now(), pid),
+        )
+        await conn.commit()
+    return row["proof_path"] or ""
+
+
+async def expire_stale_payments(ttl_min: int) -> list[int]:
+    """Kvitansiya yubormagan, TTL'dan oshgan so'rovlarni ``expired`` qiladi.
+
+    Returns: ularning egalari (uid) ro'yxati — mijozga xabar uchun.
+    """
+
+    cutoff = (datetime.now(timezone.utc) - timedelta(minutes=ttl_min)).strftime("%Y-%m-%d %H:%M:%S")
+    async with _conn().execute(
+        "SELECT id, uid FROM payment_requests WHERE status = 'pending' "
+        "AND proof_path = '' AND created_at <= ?",
+        (cutoff,),
+    ) as cur:
+        stale = [(row["id"], row["uid"]) for row in await cur.fetchall()]
+    expired_uids: list[int] = []
+    for pid, uid in stale:
+        cur = await _execute_write(
+            "UPDATE payment_requests SET status = 'expired', updated_at = ? "
+            "WHERE id = ? AND status = 'pending' AND proof_path = ''",
+            (iso_now(), pid),
+        )
+        if cur.rowcount:
+            expired_uids.append(int(uid))
+    return expired_uids
+
+
+async def payment_proofs_to_prune(retention_days: int) -> list[dict]:
+
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=retention_days)).strftime("%Y-%m-%d %H:%M:%S")
+    async with _conn().execute(
+        "SELECT id, proof_path FROM payment_requests WHERE proof_path != '' "
+        "AND status IN ('approved', 'rejected', 'expired') AND updated_at <= ?",
+        (cutoff,),
+    ) as cur:
+        return [dict(row) for row in await cur.fetchall()]
+
+
+async def clear_payment_proof(pid: int) -> bool:
+    cur = await _execute_write(
+        "UPDATE payment_requests SET proof_path = '' WHERE id = ?", (pid,)
+    )
+    return cur.rowcount > 0
+
+
+async def payment_reminder_candidates(days: int) -> list[dict]:
+    """Muddati ``days`` kun ichida tugaydigan, hali eslatilmagan faol userlar."""
+
+    now = datetime.now(timezone.utc)
+    horizon = now + timedelta(days=days)
+    async with _conn().execute(
+        "SELECT uid, tariff_expires_at, plan FROM users WHERE is_admin = 1 "
+        "AND is_blocked = 0 AND awaiting_approval = 0 "
+        "AND tariff_expires_at IS NOT NULL AND tariff_expires_at != '' "
+        "AND tariff_expires_at > ? AND tariff_expires_at <= ? "
+        "AND pay_reminded_at IS NULL",
+        (now.strftime("%Y-%m-%d %H:%M:%S"), horizon.strftime("%Y-%m-%d %H:%M:%S")),
+    ) as cur:
+        return [dict(row) for row in await cur.fetchall()]
+
+
+async def mark_payment_reminded(uid: int) -> bool:
+    cur = await _execute_write(
+        "UPDATE users SET pay_reminded_at = ? WHERE uid = ?", (iso_now(), uid)
+    )
+    return cur.rowcount > 0
+
+
+
+async def set_pay_paused(uid: int, paused: bool) -> bool:
+    """Muddat tugagani uchun posting to'xtatilganini belgilaydi.
+
+    To'lov tasdiqlanganda shu belgi bo'lsa posting avtomatik tiklanadi.
+    """
+    cur = await _execute_write(
+        "UPDATE users SET pay_paused = ? WHERE uid = ?", (1 if paused else 0, uid)
+    )
+    return cur.rowcount > 0

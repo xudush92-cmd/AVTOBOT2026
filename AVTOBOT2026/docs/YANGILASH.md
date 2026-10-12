@@ -108,6 +108,47 @@ Masalan 60 guruh va 30 daqiqa interval = 60 × 30 = 1800 kunlik urinish — bu
 juda ko'p; intervalni kamida 60–90 daqiqaga qo'ying yoki kunlik limitni
 150–200 atrofida ushlang (bot tungi tanaffus bilan himoya qiladi).
 
+## 5.6. To'lov (A reja) — qo'lda tasdiqlash + kvitansiya
+
+Standart holatda **o'chiq** (`PAYMENTS_ENABLED=0`): foydalanuvchi hech narsa
+ko'rmaydi, eski xatti-harakat saqlanadi. Yoqish tartibi:
+
+```bash
+# 1) .env: PAYMENTS_ENABLED=1, PLAN_PRICES=..., PAY_CARD=..., PAY_HOLDER=...
+# 2) Ma'lumotlar bazasi zaxirasi (migratsiya yangi jadval/ustun qo'shadi — xavfsiz)
+# 3) Botni qayta ishga tushiring (systemd / screen — o'zingiz ishlatgan usulda)
+tail -f logs/avtobot.log
+```
+
+**Qanday ishlaydi**
+
+* Mijoz: `📦 Paket va limitlar` (yoki `/pay`) → `💳 PRO — 300 000 so'm` →
+  summa, karta va izoh kodi `AVTO-<uid>-<PAKET>` ko'rsatiladi → kvitansiya
+  rasmini shu chatga yuboradi.
+* Admin (super admin): kvitansiya rasmi tugmalar bilan keladi —
+  `✅ Tasdiqlash` (muddat uzaytiriladi: tugagan bo'lsa hozirdan, aks holda
+  oxiriga qo'shiladi), `❌ Rad etish`, `👤 Karta`. Panelda `💰 To'lovlar navbati`.
+  Takroriy bosish muddatni ikki marta uzaytirmaydi.
+* Avtomatika: kvitansiyasiz so'rov `PAYMENT_REQUEST_TTL_MIN` dan keyin
+  `expired`; muddatdan `PAYMENT_REMIND_DAYS` kun oldin bir marta eslatma;
+  qaror qilingan kvitansiyalar `PAYMENT_PROOF_RETENTION_DAYS` dan keyin o'chadi.
+* Muddat tufayli to'xtagan posting to'lov tasdiqlanganda avtomatik tiklanadi.
+
+**Tekshirish (birinchi to'lov)**
+
+```sql
+-- So'rovlar holati
+SELECT id, uid, plan, amount, status, reference, created_at, decided_at
+FROM payment_requests ORDER BY id DESC LIMIT 20;
+-- Jami tushum (foydalanuvchi bo'yicha)
+SELECT uid, name, paid_total, paid_last_at FROM users WHERE paid_total > 0;
+```
+
+**Bilib qo'ying:** to'lov qo'lda tasdiqlanadi — onlayn provayder (Payme/Click/
+Stars) hali ulanmagan; `payment_requests.provider`/`provider_txn` ustunlari
+keyingi bosqich uchun tayyor. Muddatsiz (cheksiz) tarifga to'lov muddatga
+tegmaydi, faqat paketni yangilaydi.
+
 ## 6. Kuzatish (birinchi 48 soat)
 
 ```bash
@@ -138,7 +179,7 @@ ko'rinadi (media ro'yxati `posts.photo`ga moslab saqlanganligi uchun buzilmaydi)
 
 ## 8. Ma'lumki "yo'q" narsalar (keyingi bosqich)
 
-* Onlayn to'lov (Payme/Click) va avto-uzaytirish — hozircha admin orqali;
+* Onlayn to'lov (Payme/Click/Stars) va avto-uzaytirish — hozircha qo'lda tasdiqlash (5.6);
 * Bir Telegram hisobiga bir nechta akkaunt;
 * Kampaniya havolalari (`?start=src_kod`) va admin grafiklari.
 
