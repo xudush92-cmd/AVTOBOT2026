@@ -155,6 +155,14 @@ to'xtatish”** tugmasi bilan bekor qilish mumkin.
 
 ---
 
+## 📈 RIVOJLANTIRISH
+
+Hozirgi holat auditi, referal tizimi tahlili, ko'p surat (albom) texnik rejasi,
+imkoniyatlar ro'yxati, daromad modeli va 90 kunlik yo'l xaritasi:
+[`docs/TAKLIFLAR_ROADMAP.md`](docs/TAKLIFLAR_ROADMAP.md).
+
+---
+
 ## 🚀 O'RNATISH
 
 ```bash
