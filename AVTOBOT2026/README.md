@@ -155,6 +155,49 @@ to'xtatish”** tugmasi bilan bekor qilish mumkin.
 
 ---
 
+## ✨ IMKONIYATLAR (2026-10 holati)
+
+- **🖼 Albom va video** — bitta postga 10 tagacha rasm/video/hujjat. Bir nechta
+  media yuborilsa ular bitta post bo'lib saqlanadi va guruhga **bitta albom**
+  bo'lib chiqadi (alohida-alohida spam bo'lmaydi).
+- **✏️ Tahrirlash / 👁 Ko'rinish / 🧪 Sinov** — postni almashtirish, uni hech
+  qanday guruhga chiqmasdan o'z chatida ko'rish va bitta tanlangan guruhga
+  bir marta sinov uchun yuborish.
+- **🔗 Link preview** — har bir post uchun havoladan kartochka yoqish/o'chirish.
+- **🔎 Guruhni tekshirish** — a'zollik va yozish huquqi Telegramda tekshiriladi,
+  aniq sabab qaytariladi (bot chiqarilgan / yozish taqiqlangan / guruh topilmadi).
+- **⏱ Interval har bir guruhga alohida** — umumiy sozlamani saqlab qolgan holda.
+- **📈 Hisobot** — bugun/hafta yuborishlari, xatolar sababi, qaysi guruhda
+  muammo borligi va keyingi yuborish vaqti.
+- **📦 Tarif paketlari va limitlar** — SINOV/START/PRO/BUSINESS (guruh, post,
+  kunlik yuborish soni), kunlik limit va **tungi tanaffus** (faol soatlar) —
+  akkaunt Telegram chekloviga uchlamasin.
+- **👥 Referal** — taklif havolasi, faol referallar ro'yxati va **bonus kunlar**
+  (mukofot faqat do'stingiz haqiqatan ishlay boshlagach beriladi), oylik
+  chegara, firibgarlik aniqlansa bonus qaytarib olinadi.
+- **⚡ Tez tasdiqlash** (`AUTO_APPROVE_ENABLED=1` bo'lsa) — past riskli arizalar
+  admin navbatini kutmasdan tasdiqlanadi; har bir avto-tasdiq adminga xabar
+  qilinadi.
+- **🤖 `/help`, `/status`** — bot ichidan chiqmasdan qisqa yo'riqnoma va holat.
+
+Siz yuborgan media va sessiyangiz haqida batafsil: quyidagi “Xavfsizlik”
+bo'limi va `docs/` hujjatlari.
+
+---
+
+## 📈 RIVOJLANTIRISH
+
+Hozirgi holat auditi, referal tizimi tahlili, ko'p surat (albom) texnik rejasi,
+imkoniyatlar ro'yxati, daromad modeli va 90 kunlik yo'l xaritasi (0.1-bo'lim —
+nima allaqachon qilingan):
+[`docs/TAKLIFLAR_ROADMAP.md`](docs/TAKLIFLAR_ROADMAP.md).
+
+Serverga chiqarish tartibi, zaxira, tekshirish ro'yxati, limitlarni bosqichma-
+bosqich yoqish va orqaga qaytish rejasi:
+[`docs/YANGILASH.md`](docs/YANGILASH.md).
+
+---
+
 ## 🚀 O'RNATISH
 
 ```bash

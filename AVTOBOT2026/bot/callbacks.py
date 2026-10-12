@@ -94,6 +94,15 @@ async def _handle_callback_locked(update: Update, uid: int) -> None:
             "delg:",
             "delp:",
             "self:",
+            "alb:",
+            "ped:",
+            "pvw:",
+            "tstp:",
+            "tstg:",
+            "tst:",
+            "lp:",
+            "gchk:",
+            "ref:",
         )
         if uid != SUPER_ADMIN and data.startswith(ordinary_prefixes):
             # Admin lifecycle amali central tekshiruvdan keyin lock kutayotgan
@@ -138,6 +147,33 @@ async def _handle_callback_locked(update: Update, uid: int) -> None:
                     await _handle_del_post_locked(update, uid, data)
                 elif data.startswith("self:"):
                     await _handle_self_account_locked(update, uid, data)
+                elif data.startswith("alb:"):
+                    await _handle_album_locked(update, uid, data)
+                elif data.startswith("ped:"):
+                    await _handle_post_picker_locked(update, uid, data, "edit")
+                elif data.startswith("pvw:"):
+                    await _handle_post_picker_locked(update, uid, data, "preview")
+                elif data.startswith("tstp:"):
+                    await _handle_test_pick_locked(update, uid, data)
+                elif data.startswith("tstg:"):
+                    await _handle_test_group_locked(update, uid, data)
+                elif data.startswith("tst:go:"):
+                    await handle_test_send_confirm(update, uid, data)
+                elif data.startswith("lp:"):
+                    await _handle_link_preview_locked(update, uid, data)
+                elif data.startswith("ref:plan"):
+                    from bot.menu import show_plan
+
+                    await show_plan(update)
+                elif data.startswith("ref:share"):
+                    from bot.referral import share_referral_message
+
+                    await q.message.reply_text(await share_referral_message(uid))
+                    await q.answer()
+                elif data.startswith("gchk:"):
+                    from bot import groups as G
+
+                    await G.handle_group_check_callback(update, uid, data)
             return
 
         if data.startswith("app:"):
@@ -658,3 +694,230 @@ async def handle_admin_approve(update: Update, uid: int, data: str) -> None:
     else:
         async with target_lock:
             await apply_target_action()
+
+
+# ─────────────────────────────────────────
+# ALBOM / TAHRIRLASH / KO'RINISH / SINOV / LINK PREVIEW
+# ─────────────────────────────────────────
+def _picked_post_id(parts: list[str]) -> int | None:
+    """Post tanlagich callback'laridan post ID'ini oladi.
+
+    Ikki shakl qo'llab-quvvatlanadi: ``ped:<id>:<page>`` (ro'yxat tugmasi)
+    va ``pvw:id:<id>:<page>`` (post amallari oynasi).
+    """
+    try:
+        if len(parts) == 4 and parts[1] == "id":
+            return int(parts[2])
+        if len(parts) == 3 and parts[1].isdigit():
+            return int(parts[1])
+    except ValueError:
+        return None
+    return None
+
+
+async def _handle_album_locked(update: Update, uid: int, data: str) -> None:
+    """``alb:done`` — yig'ilayotgan albomni bitta post sifatida saqlaydi."""
+    q = update.callback_query
+    if data != "alb:done":
+        return
+    from bot.posts import finalize_pending_album
+
+    state = user_states.get(uid) or {}
+    album = state.get("album") or {}
+    if not album.get("items") and not (album.get("text") or "").strip():
+        await q.edit_message_text(
+            "⚠️ Yig'ilgan media yo'q. ➕ Post qo'shishni qaytadan bosing."
+        )
+        return
+    saved, info = await finalize_pending_album(uid)
+    await q.edit_message_text(
+        f"✅ Post saqlandi ({info})." if saved else "⚠️ Post saqlanmadi."
+    )
+
+
+async def _handle_post_picker_locked(
+    update: Update, uid: int, data: str, action: str
+) -> None:
+    """``ped:`` va ``pvw:`` — postni tanlash oynalari (tahrir/ko'rinish)."""
+    q = update.callback_query
+    parts = data.split(":")
+
+    if len(parts) >= 2 and parts[1] in {"cancel", "back"}:
+        await q.edit_message_text(T.ACTION_CANCELLED, reply_markup=KB.kb_posts_menu())
+        return
+    if len(parts) >= 3 and parts[1] == "page":
+        try:
+            page = max(0, int(parts[2]))
+        except ValueError:
+            page = 0
+        posts = await db.get_posts(uid)
+        markup = (
+            KB.kb_posts_edit(posts, page)
+            if action == "edit"
+            else KB.kb_posts_preview(posts, page)
+        )
+        await q.edit_message_text(
+            T.ASK_EDIT_POST if action == "edit" else T.ASK_PREVIEW_POST,
+            reply_markup=markup,
+        )
+        return
+    post_id = _picked_post_id(parts)
+    if post_id is None:
+        return
+
+    if action == "edit":
+        from bot.posts import begin_edit_post_state
+
+        text = await begin_edit_post_state(uid, post_id)
+        if not text:
+            await q.edit_message_text(T.POST_NOT_FOUND)
+            return
+        await q.edit_message_text("✏️ Tahrirlash oynasi ochildi — quyidagi xabarga qarang:")
+        await application.bot.send_message(uid, text, reply_markup=KB.kb_input_cancel())
+        return
+
+    from bot.posts import preview_post
+
+    ok, kind = await preview_post(uid, post_id)
+    post = await db.get_post(post_id, uid)
+    if not ok:
+        await q.edit_message_text(kind or T.POST_NOT_FOUND)
+        return
+    await q.edit_message_text(
+        T.preview_sent_text(kind), reply_markup=KB.kb_post_options(post or {})
+    )
+
+
+async def _handle_link_preview_locked(update: Update, uid: int, data: str) -> None:
+    """``lp:toggle:<post_id>`` — havoladan kartochka ko'rsatishni yoqadi/o'chiradi."""
+    q = update.callback_query
+    parts = data.split(":")
+    if len(parts) != 3 or parts[1] != "toggle":
+        return
+    try:
+        post_id = int(parts[2])
+    except ValueError:
+        return
+    post = await db.get_post(post_id, uid)
+    if not post:
+        await q.edit_message_text(T.POST_NOT_FOUND)
+        return
+    enabled = not bool(post.get("link_preview", True))
+    await db.set_post_link_preview(uid, post_id, enabled)
+    post["link_preview"] = enabled
+    await q.edit_message_text(
+        T.link_preview_changed(enabled), reply_markup=KB.kb_post_options(post)
+    )
+
+
+async def _handle_test_pick_locked(update: Update, uid: int, data: str) -> None:
+    """``tstp:id:<post_id>:<page>`` — sinov uchun post tanlangach guruh so'raladi."""
+    q = update.callback_query
+    parts = data.split(":")
+    if len(parts) >= 2 and parts[1] in {"cancel", "back"}:
+        await q.edit_message_text(
+            "📝 Postlar menyusi", reply_markup=KB.kb_posts_menu()
+        )
+        return
+    if len(parts) >= 3 and parts[1] == "page":
+        try:
+            page = max(0, int(parts[2]))
+        except ValueError:
+            page = 0
+        posts = await db.get_posts(uid)
+        await q.edit_message_text(
+            T.ASK_TEST_PICK, reply_markup=KB.kb_posts_test(posts, page)
+        )
+        return
+    post_id = _picked_post_id(parts)
+    if post_id is None:
+        return
+
+    groups = await db.get_chat_records(uid)
+    if not groups:
+        await q.edit_message_text(
+            T.GROUPS_EMPTY_HINT, reply_markup=KB.kb_groups_menu()
+        )
+        return
+    await q.edit_message_text(
+        T.ask_test_group(), reply_markup=KB.kb_test_group_picker(groups, post_id, 0)
+    )
+
+
+async def _handle_test_group_locked(update: Update, uid: int, data: str) -> None:
+    """``tstg:ask:<post_id>:<group_id>`` — sinov yuborishni tasdiqlash."""
+    q = update.callback_query
+    parts = data.split(":")
+    if len(parts) >= 2 and parts[1] == "back":
+        await q.edit_message_text(
+            "📝 Postlar menyusi", reply_markup=KB.kb_posts_menu()
+        )
+        return
+    if len(parts) >= 4 and parts[1] == "page":
+        try:
+            post_id = int(parts[2])
+            page = max(0, int(parts[3]))
+        except ValueError:
+            return
+        groups = await db.get_chat_records(uid)
+        await q.edit_message_text(
+            T.ask_test_group(),
+            reply_markup=KB.kb_test_group_picker(groups, post_id, page),
+        )
+        return
+    if len(parts) != 4 or parts[1] != "ask":
+        return
+    try:
+        post_id = int(parts[2])
+        group_id = int(parts[3])
+    except ValueError:
+        return
+
+    post = await db.get_post(post_id, uid)
+    record = await db.get_chat_record(uid, group_id)
+    if not post or not record:
+        await q.edit_message_text("❌ Post yoki guruh topilmadi.")
+        return
+
+    token = action_tokens.issue(uid, f"tst:{post_id}:{group_id}")
+    await q.edit_message_text(
+        T.test_send_ask(str(record["value"]), truncate_text(post.get("text"))),
+        reply_markup=KB.kb_test_send_confirm(post_id, group_id, token),
+    )
+    # ``tst:go`` tasdig'i quyidagi callback orqali keladi:
+    return
+
+
+async def handle_test_send_confirm(update: Update, uid: int, data: str) -> None:
+    """``tst:go:<post_id>:<group_id>:<token>`` — bitta guruhga real sinov yuborish.
+
+    Diqqat: bu funksiya dispatcher ichidan chaqiriladi, ya'ni foydalanuvchining
+    operation locki ALLAQACHON band — shu sabab bu yerda lock OLINMAYDI
+    (asyncio.Lock qayta kirish mumkin emas, aks holda user abadiy qotadi).
+    """
+    q = update.callback_query
+    parts = data.split(":")
+    if len(parts) != 5 or parts[1] != "go":
+        return
+    try:
+        post_id = int(parts[2])
+        group_id = int(parts[3])
+    except ValueError:
+        return
+    if not action_tokens.consume(uid, f"tst:{post_id}:{group_id}", parts[4]):
+        await q.edit_message_text("⚠️ Bu sinov oynasi eskirgan.")
+        return
+    from bot.posts import send_test_to_group
+
+    await q.edit_message_text("⏳ Yuborilmoqda...")
+    _, message = await send_test_to_group(uid, post_id, group_id)
+    await application.bot.send_message(
+        uid, message, reply_markup=KB.kb_posts_menu()
+    )
+
+
+def truncate_text(text: str | None, limit: int = 120) -> str:
+    value = " ".join((text or "").split())
+    if not value:
+        return "(faqat media)"
+    return value[:limit] + ("…" if len(value) > limit else "")

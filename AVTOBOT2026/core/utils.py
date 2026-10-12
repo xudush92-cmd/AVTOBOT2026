@@ -422,3 +422,269 @@ def truncate(text: str, max_len: int = 60) -> str:
     if len(text) <= max_len:
         return text
     return text[: max_len - 3] + "..."
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# YUBORISH OYNASI (TUNGI TANAFFUS) VA KUNLIK LIMIT
+# ─────────────────────────────────────────────────────────────────────────
+_ACTIVE_HOURS_RE = re.compile(
+    r"^\s*(\d{1,2}):(\d{2})\s*[-–—]\s*(\d{1,2}):(\d{2})\s*$"
+)
+
+
+def parse_active_hours(value: str | None) -> tuple[int, int] | None:
+    """``"08:00-23:00"`` ni daqiqa juftligiga aylantiradi.
+
+    Bo'sh, noto'g'ri yoki to'liq kunlik (00:00-24:00) qiymat ``None``
+    qaytaradi — ya'ni cheklov yo'q. Tungi ko'chma oynalar (masalan
+    ``22:00-06:00``) ham qo'llab-quvvatlanadi.
+    """
+    if not value:
+        return None
+    match = _ACTIVE_HOURS_RE.match(value)
+    if not match:
+        return None
+    start_h, start_m, end_h, end_m = (int(part) for part in match.groups())
+    if start_h > 23 or end_h > 24 or start_m > 59 or end_m > 59:
+        return None
+    start = start_h * 60 + start_m
+    end = end_h * 60 + end_m
+    if start == end:
+        return None
+    if end == 24 * 60:
+        end = 0  # kun oxirigacha
+    if start == 0 and end == 0:
+        return None
+    return (start, end)
+
+
+def in_active_window(active_hours: str | None, when: datetime | None = None) -> bool:
+    """Hozir yuborish oynasimi? Cheklov bo'lmasa har doim True."""
+    window = parse_active_hours(active_hours)
+    if window is None:
+        return True
+    current = when or now_local()
+    minutes = current.hour * 60 + current.minute
+    start, end = window
+    if start < end:
+        return start <= minutes < end
+    return minutes >= start or minutes < end  # tungi ko'chma oyna
+
+
+def seconds_until_window_open(
+    active_hours: str | None, when: datetime | None = None
+) -> int:
+    """Oyna ochilgunicha qancha soniya qoldi (cheklov bo'lmasa 0)."""
+    window = parse_active_hours(active_hours)
+    if window is None:
+        return 0
+    current = when or now_local()
+    start, _ = window
+    minutes_now = current.hour * 60 + current.minute + current.second / 60
+    delta = start - minutes_now
+    if delta <= 0:
+        delta += 24 * 60
+    return max(0, int(delta * 60) + (0 if current.second == 0 else 1))
+
+
+def start_of_local_day_ts(when: datetime | None = None) -> float:
+    """Mahalliy yarim tun epoch vaqti — kunlik hisoblar uchun chegara."""
+    current = when or now_local()
+    midnight = current.replace(hour=0, minute=0, second=0, microsecond=0)
+    if midnight.tzinfo is None:
+        # Naif vaqt mahalliy hisoblanadi: timestamp() shuni hisobga oladi.
+        return midnight.timestamp()
+    return midnight.timestamp()
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# POST SHABLONI: {sana} {vaqt} {kun} va { variant | lar }
+# ─────────────────────────────────────────────────────────────────────────
+_TEMPLATE_RE = re.compile(r"\{([^{}]{1,80})\}")
+_WEEKDAYS_UZ = (
+    "Yakshanba",
+    "Dushanba",
+    "Seshanba",
+    "Chorshanba",
+    "Payshanba",
+    "Juma",
+    "Shanba",
+)
+
+
+def _template_values(when: datetime | None = None) -> dict[str, str]:
+    current = when or now_local()
+    return {
+        "sana": current.strftime("%d.%m.%Y"),
+        "vaqt": current.strftime("%H:%M"),
+        "soat": current.strftime("%H:%M"),
+        "kun": _WEEKDAYS_UZ[_weekday_index(current)],
+        "yil": current.strftime("%Y"),
+        "oy": current.strftime("%m"),
+        "kun_kuni": current.strftime("%d"),
+    }
+
+
+def _weekday_index(current: datetime) -> int:
+    """Python weekday() (0=Dushanba) → bizning ro'yxat (0=Yakshanba)."""
+    return (current.weekday() + 1) % 7
+
+
+def render_template(
+    text: str,
+    entities: list[dict] | None = None,
+    *,
+    when: datetime | None = None,
+    rng=None,
+) -> tuple[str, list[dict]]:
+    """``{sana}``, ``{vaqt}``, ``{kun}`` va ``{A|B|C}`` larni almashtiradi.
+
+    Entity offsetlari qayta hisoblanadi: agar shablon oralig'i entity ichiga
+    to'liq tushsa — uzunalik moslashadi, chegarani kesib o'tsa — entity
+    tashlab yuboriladi (formatlangan matn buzilmasligi uchun).
+
+    Returns:
+        (yangi_matn, yangi_entities)
+    """
+    if not text:
+        return text or "", list(entities or [])
+
+    import random
+
+    chooser = rng or random
+    values = _template_values(when)
+    spans: list[tuple[int, int, str]] = []
+    for match in _TEMPLATE_RE.finditer(text):
+        inner = match.group(1).strip()
+        if "|" in inner:
+            options = [option for option in inner.split("|") if option.strip()]
+            if len(options) > 1:
+                spans.append((match.start(), match.end(), chooser.choice(options)))
+            continue
+        value = values.get(inner)
+        if value is not None:
+            spans.append((match.start(), match.end(), value))
+
+    if not spans:
+        return text, list(entities or [])
+
+    new_parts: list[str] = []
+    cursor = 0
+    for start, end, replacement in spans:
+        new_parts.append(text[cursor:start])
+        new_parts.append(replacement)
+        cursor = end
+    new_parts.append(text[cursor:])
+    new_text = "".join(new_parts)
+
+    kept: list[dict] = []
+    for entity in entities or []:
+        try:
+            offset = int(entity.get("offset", 0))
+            length = int(entity.get("length", 0))
+        except (TypeError, ValueError):
+            continue
+        start, end = offset, offset + length
+        if length <= 0 or start < 0 or end > len(text):
+            continue
+
+        crossing = False
+        delta_before = 0
+        delta_inside = 0
+        for span_start, span_end, replacement in spans:
+            delta = len(replacement) - (span_end - span_start)
+            if span_end <= start:
+                delta_before += delta
+            elif span_start >= end:
+                continue
+            elif span_start >= start and span_end <= end:
+                delta_inside += delta
+            else:
+                crossing = True
+                break
+        if crossing:
+            continue
+        new_offset = start + delta_before
+        new_length = length + delta_inside
+        if new_length <= 0 or new_offset < 0:
+            continue
+        updated = dict(entity)
+        updated["offset"] = new_offset
+        updated["length"] = new_length
+        kept.append(updated)
+
+    return new_text, kept
+
+
+def has_template_markers(text: str) -> bool:
+    """Matnda qo'llab-quvvatlanadigan shablon belgisi bormi?"""
+    if not text:
+        return False
+    for match in _TEMPLATE_RE.finditer(text):
+        inner = match.group(1).strip()
+        if "|" in inner:
+            return True
+        if inner in _template_values():
+            return True
+    return False
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# MEDIA RO'YXATI (ALBOM) YORDAMCHILARI
+# ─────────────────────────────────────────────────────────────────────────
+def normalize_media(post: dict | None) -> list[dict]:
+    """``posts.media`` JSON'ini ro'yxatga aylantiradi (eski ``photo`` ham)."""
+    if not post:
+        return []
+    raw = post.get("media")
+    items: list[dict] = []
+    if raw:
+        import json
+
+        if isinstance(raw, str):
+            try:
+                parsed = json.loads(raw)
+            except (TypeError, ValueError):
+                parsed = []
+        else:
+            parsed = raw
+        if isinstance(parsed, dict):
+            parsed = [parsed]
+        for item in parsed or []:
+            if isinstance(item, str):
+                items.append({"path": item, "kind": "photo"})
+            elif isinstance(item, dict) and item.get("path"):
+                items.append(
+                    {
+                        "path": str(item["path"]),
+                        "kind": str(item.get("kind") or "photo"),
+                    }
+                )
+    if not items and post.get("photo"):
+        items.append({"path": str(post["photo"]), "kind": "photo"})
+    return items
+
+
+def existing_media_paths(post: dict | None) -> list[str]:
+    """Faqat diskda mavjud bo'lgan media yo'llari (albom yuborish uchun)."""
+    import os
+
+    paths = []
+    for item in normalize_media(post):
+        path = item["path"]
+        if path and os.path.exists(path) and path not in paths:
+            paths.append(path)
+    return paths
+
+
+def media_kind_label(post: dict | None) -> str:
+    """Post turi haqida qisqa matn (foydalanuvchi xabari uchun)."""
+    paths = normalize_media(post or {})
+    count = len(paths)
+    kinds = {item.get("kind") for item in paths}
+    if count > 1:
+        return f"🖼 Albom ({count} ta media)"
+    if count == 1:
+        kind = next(iter(kinds), "photo")
+        return {"video": "🎬 Video", "document": "📎 Fayl"}.get(kind, "🖼 Rasm")
+    return "📝 Matn"

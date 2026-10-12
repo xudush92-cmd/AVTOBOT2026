@@ -269,6 +269,13 @@ async def handle_user_card(update: Update, admin_uid: int, data: str) -> None:
         return
 
     action = parts[1]
+
+    # ⚙️ Tarif va limitlar paneli callback'lari ko'proq qismdan iborat
+    # (uc:plan:<amal>:<uid>:<qiymat>), shuning uchun ularni alohida olamiz.
+    if action == "plan":
+        await _handle_plan_panel(update, admin_uid, parts)
+        return
+
     try:
         target = int(parts[2])
     except ValueError:
@@ -1112,6 +1119,146 @@ async def action_show_interval(update: Update, target: int) -> None:
     )
 
 
+# ─────────────────────────────────────────────────────────────────────────
+# ⚙️ TARIF VA LIMITLAR PANELI
+# ─────────────────────────────────────────────────────────────────────────
+def _fmt_limit(value: object) -> str:
+    """Limit sonini matnga: 0 = cheksiz."""
+    from config.config import UNLIMITED
+
+    try:
+        n = int(value or 0)
+    except (TypeError, ValueError):
+        return "—"
+    return "cheksiz" if n == UNLIMITED else str(n)
+
+
+async def _panel_text(target: int) -> str:
+    user = await db.get_user(target) or {}
+    limits = await db.get_limits(target)
+    plan_name = (user.get("plan") or "").strip()
+    price = T.plan_price_label(plan_name) if plan_name else "belgilanmagan"
+    stats: dict = {}
+    last_error = ""
+    with contextlib.suppress(Exception):
+        from core.utils import start_of_local_day_ts
+
+        stats = await db.send_stats(target, start_of_local_day_ts())
+        last_error = str(stats.get("last_error") or "")
+
+    display_name = user.get("name") or "Noma'lum"
+    lines = [
+        "⚙️ TARIF VA LIMITLAR",
+        f"👤 {display_name} · {target}",
+        "",
+        f"📦 Paket: {plan_name or '—'} — {price}",
+        f"💬 Guruhlar: {_fmt_limit(limits.get('max_groups'))} ta",
+        f"📝 Postlar: {_fmt_limit(limits.get('max_posts'))} ta",
+        f"📤 Kunlik limit: {_fmt_limit(limits.get('daily_limit'))} ta",
+        f"🕐 Faol soatlar: {limits.get('active_hours') or '— (tunda ham)'}",
+        f"🔁 Interval: {int(user.get('interval_min') or 0)} daqiqa",
+        f"⏳ Muddat: {format_expires(user.get('tariff_expires_at'))}",
+        f"🎁 Bonus kunlar: {int(user.get('referral_bonus_days') or 0)}",
+    ]
+    if user.get("referral_bonus_note"):
+        lines.append(f"   ↳ {truncate(str(user['referral_bonus_note']), 80)}")
+    if stats:
+        lines.append(
+            f"📊 Bugun: ✅ {int(stats.get('sent_ok') or 0)} / "
+            f"❌ {int(stats.get('sent_failed') or 0)}"
+        )
+        if last_error:
+            lines.append(f"⚠️ {truncate(last_error, 160)}")
+    lines += [
+        "",
+        "Paketni almashtirish limitlarni ham shu paketga moslaydi. "
+        "«Limitlarsiz» — limitlarni olib tashlaydi (eski xatti-harakat).",
+    ]
+    return "\n".join(lines)
+
+
+async def _handle_plan_panel(update: Update, admin_uid: int, parts: list[str]) -> None:
+    """``uc:plan:*`` — paket, limit presetlari va bonus kunlarni boshqarish."""
+    q = update.callback_query
+    if len(parts) < 4 or not parts[3].isdigit():
+        await q.answer("Noto'g'ri so'rov.", show_alert=True)
+        return
+    action, target = parts[2], int(parts[3])
+    value = parts[4] if len(parts) > 4 else ""
+
+    if target == SUPER_ADMIN:
+        await q.answer("Super admin paketlari boshqarilmaydi.", show_alert=True)
+        return
+    if not await db.get_user(target):
+        await q.edit_message_text(
+            "❌ Foydalanuvchi topilmadi.", reply_markup=KB.kb_admin_back()
+        )
+        return
+
+    if action == "set":
+        plan = "" if value in ("", "_") else value
+        if await db.set_plan(target, plan) is None:
+            await q.answer("Foydalanuvchi topilmadi.", show_alert=True)
+            return
+        log(f"⚙️ Admin {admin_uid} → {target} paketi: {plan or 'cheksiz'}")
+        await q.answer("Paket yangilandi ✅")
+    elif action == "lim":
+        presets = {
+            "off": (0, 0, 0, ""),
+            "5": (5, 2, 30, "08:00-22:00"),
+        }
+        preset = presets.get(value)
+        if preset is None:
+            await q.answer("Noma'lum preset.", show_alert=True)
+            return
+        await db.set_user_limits(
+            target,
+            max_groups=preset[0],
+            max_posts=preset[1],
+            daily_limit=preset[2],
+            active_hours=preset[3],
+        )
+        # Qo'lda limit — paket belgisi olib tashlanadi (chalashuv bo'lmasligi uchun)
+        await db.upsert_user(target, plan=None)
+        log(f"⚙️ Admin {admin_uid} → {target} limitlari: {value}")
+        await q.answer("Limitlar qo'yildi ✅")
+    elif action == "bonus" and value:
+        try:
+            days = int(value)
+        except ValueError:
+            await q.answer("Noto'g'ri son.", show_alert=True)
+            return
+        note = (
+            f"Admin sovg'asi ({admin_uid})"
+            if days > 0
+            else f"Admin chegirmasi ({admin_uid})"
+        )
+        expires, err = await db.add_bonus_days(target, days, note=note)
+        if err:
+            await q.answer(err, show_alert=True)
+            return
+        log(f"🎁 Admin {admin_uid} → {target}: {days:+d} kun bonus")
+        with contextlib.suppress(Exception):
+            await application.bot.send_message(
+                target,
+                "🎁 "
+                + (
+                    f"Sovg'a sifatida {abs(days)} kun qo'shildi. "
+                    if days > 0
+                    else f"Muddatingiz {abs(days)} kunga qisqartirildi. "
+                )
+                + f"Yangi muddat: {format_expires(expires)}",
+            )
+        await q.answer(f"{days:+d} kun qo'yildi ✅")
+    else:
+        await q.answer()
+
+    user = await db.get_user(target) or {}
+    markup = KB.kb_admin_plan(target, plan=(user.get("plan") or "").strip())
+    with contextlib.suppress(Exception):
+        await q.edit_message_text(await _panel_text(target), reply_markup=markup)
+
+
 async def handle_interval(update: Update, admin_uid: int, data: str) -> None:
     """Admin posting oralig'i callback'ini qayta ishlaydi."""
     if admin_uid != SUPER_ADMIN:
@@ -1350,6 +1497,21 @@ async def _count_approval_referral(target: int) -> None:
         await on_referral_counted(target)
 
 
+async def notify_after_approval(target: int, *, session_activated: bool) -> None:
+    """Tasdiqdan keyingi bir xil yakun: userga menyu + referal hisobi.
+
+    Admin qo'lda tasdiqlaganda ham, avto-tasdiqda ham bir xil ishlatiladi.
+    """
+    if session_activated:
+        await _send_newly_approved_menu(target, T.USER_APPROVED_ACTIVE)
+    else:
+        with contextlib.suppress(Exception):
+            await application.bot.send_message(
+                target, T.USER_APPROVED, reply_markup=KB.kb_login()
+            )
+    await _count_approval_referral(target)
+
+
 async def _action_approve_locked(update: Update, admin_uid: int, target: int) -> None:
     q = update.callback_query
     user = await db.get_user(target)
@@ -1515,9 +1677,24 @@ async def _action_block_locked(update: Update, admin_uid: int, target: int) -> N
     await db.set_blocked(target, True)
     await db.set_running(target, False)
 
+    # Firibgar/soxta akkaunt bloklansa — u olgan (yoki olgan bo'lgan) referal
+    # bonusi va uni taklif qilgan kishining hisobi qayta ko'rib chiqiladi.
+    clawback: dict | None = None
+    with contextlib.suppress(Exception):
+        from bot.referral import revoke_referral_bonus
+
+        clawback = await revoke_referral_bonus(target, "foydalanuvchi bloklandi")
+
     log(f"🚫 Admin {admin_uid} → Block {target}")
+    note = ""
+    if clawback and clawback.get("bonus_days"):
+        note = (
+            f"\n\n↩️ Bu user taklif qilingan bo'lib, uning referal bonusi "
+            f"({clawback['bonus_days']} kun) "
+            f"{clawback['referrer_uid']}dan qaytarib olindi."
+        )
     await q.edit_message_text(
-        f"🚫 {target} bloklandi.",
+        f"🚫 {target} bloklandi.{note}",
         reply_markup=await user_card_markup(target, blocked=True),
     )
 
@@ -1537,6 +1714,14 @@ async def _action_unblock_locked(update: Update, admin_uid: int, target: int) ->
     q = update.callback_query
     await db.set_blocked(target, False)
     log(f"🔓 Admin {admin_uid} → Unblock {target}")
+
+    # Bloklangan referrer tufayli hisoblanmay qolgan referallarni qayta
+    # tekshiramiz — aks holda ular abadiy "⏳" bo'lib qolardi.
+    with contextlib.suppress(Exception):
+        from bot.referral import on_referral_counted
+
+        for referred_uid in await db.pending_referrals_of(target):
+            await on_referral_counted(referred_uid)
 
     await q.edit_message_text(
         f"🔓 {target} blokdan chiqarildi.",
