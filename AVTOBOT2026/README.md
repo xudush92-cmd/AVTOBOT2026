@@ -9,7 +9,7 @@ Telegram guruhlariga reklama postlarini avtomatik joylashtiruvchi bot.
 - ✅ Bir nechta guruhga bir vaqtda post yuborish
 - ✅ Matn, rasm va rasm+caption
 - ✅ Har bir post Telegram formatlashni saqlaydi (bold, italic, link)
-- ✅ Bulk guruh qo'shish (bir vaqtda bir nechta)
+- ✅ 🔍 Guruhlarni avtomatik topish — akkauntdagi yozish mumkin guruhlar bir tugma bilan qo'shiladi (qo'lda bulk qo'shish admin/legacy oqimida saqlangan)
 - ✅ Umumiy posting oralig'i va guruh uchun alohida interval — 5–10080 daqiqa; anti-spam jitteri ±5 daqiqa
 - ✅ Referal tizimi
 - ✅ Super admin paneli (to'liq nazorat)
@@ -33,24 +33,36 @@ Telegram guruhlariga reklama postlarini avtomatik joylashtiruvchi bot.
 - `SQLite` — user, shifrlangan sessiya, guruh, guruhga xos interval/navbat va postlarni saqlash.
 
 Posting oralig'i aniq sekundli jadval emas: foydalanuvchining umumiy
-intervali (5–10080 daqiqa) barcha guruhlarga boshlang'ich qiymat bo'ladi;
-**Guruhlar → ⏱ Guruh intervali** orqali alohida guruh uchun override berish
-mumkin; super admin buni user kartasi → **Guruhlar** bo'limidan ham boshqaradi.
+intervali (5–10080 daqiqa) barcha guruhlarga boshlang'ich qiymat bo'ladi.
+Foydalanuvchi menyusi yassi: alohida guruh intervali **faqat super admin**
+tomonidan user kartasi → **Guruhlar** bo'limidan boshqariladi.
 Override olib tashlansa, guruh umumiy intervalni meros qilib oladi.
 Har bir guruhning navbatdagi yuborish vaqti SQLite'da saqlanadi, shuning uchun
 restartda jadval tiklanadi. Har yuborishdan keyingi intervalga `±5 daqiqa`
 tasodifiy anti-spam farqi qo'shiladi (minimum 5 daqiqa saqlanadi); Telegram
 FloodWait bo'lsa, uning kutish vaqti ham hisobga olinadi. Eski DB'dagi guruhlar
 uchun migratsiya yangi ustunlarni qo'shadi, intervalni esa umumiy sozlamadan oladi.
-Guruh qo'shishda `@username`, public `t.me` linki, post linki, private invite va
-`-100...` ID qabul qilinadi. User hamda admin qo'shish oqimlari **faqat formatni**
-tekshiradi va canonical ko'rinishda saqlaydi: Telegram'ga ulanib guruhning
-mavjudligi, a'zolik yoki yozish huquqini tekshirmaydi. Ulangan akkaunt post
-yubora olishi uchun guruhga a'zo va yozish huquqiga ega bo'lishi kerak;
-bot avtomatik qo'shmaydi. Start tasdiqlanganda saqlangan sessiya `get_me()`
-bilan bir marta tekshiriladi; vaqtinchalik FloodWait yoki tarmoq xatosida
-Startni keyinroq qayta sinash mumkin. Tekshiruv xatosi sessiyani avtomatik
-o'chirmaydi (Logout esa foydalanuvchining ongli amali).
+
+**🔍 Guruhlarni topish (foydalanuvchi oqimi):** foydalanuvchi tugmani bossa,
+bot ulangan Telethon sessiyasi orqali akkauntning barcha dialoglarini
+(`iter_dialogs`) ko'rib chiqadi va a'zo hamda yozish huquqi bor
+guruh/megaguruplarni avtomatik qo'shadi. **Broadcast kanallar, jumladan
+akkaunt egasi bo'lgan kanallar ham, siyosat bo'yicha qo'shilmaydi** — faqat
+guruhlar olinadi. Username borlar `@username`, yopiq guruhlar marked peer ID
+(`-100...`, `-...`) bilan saqlanadi; takror va huquqsiz dialoglar o'tkazib
+yuboriladi, paket limiti hurmat qilinadi. Keraksiz guruhlar **➖ Guruh
+o'chirish** ro'yxatidan o'chiriladi.
+
+Anti-spam himoyasi: har guruh tekshiruvi orasida 1–3 soniyali tasodifiy pauza,
+har foydalanuvchi uchun 10 daqiqalik cooldown, Telegram FloodWait berganda
+ko'rsatilgan vaqtgacha bloklash va bir vaqtda faqat bitta skaner ishlashi.
+Faqat o'qish so'rovlari ishlatiladi — xabar yuborilmaydi, guruhga
+kirilmaydi/chiqilmaydi. Qo'lda havola orqali qo'shish dvigateli (`@username`,
+`t.me` linki, private invite, `-100...` ID; faqat format tekshiruvi)
+admin/legacy oqimlar uchun saqlanib qolgan. Start tasdiqlanganda saqlangan
+sessiya `get_me()` bilan bir marta tekshiriladi; vaqtinchalik FloodWait yoki
+tarmoq xatosida Startni keyinroq qayta sinash mumkin. Tekshiruv xatosi
+sessiyani avtomatik o'chirmaydi.
 Admin paneldagi SQLite eksport `session` va `pending_session` sirlarisiz
 sanitizatsiya qilinadi; server backup esa SQLite online backup API bilan
 izchil snapshot yaratadi.
@@ -160,13 +172,21 @@ to'xtatish”** tugmasi bilan bekor qilish mumkin.
 - **🖼 Albom va video** — bitta postga 10 tagacha rasm/video/hujjat. Bir nechta
   media yuborilsa ular bitta post bo'lib saqlanadi va guruhga **bitta albom**
   bo'lib chiqadi (alohida-alohida spam bo'lmaydi).
-- **✏️ Tahrirlash / 👁 Ko'rinish / 🧪 Sinov** — postni almashtirish, uni hech
-  qanday guruhga chiqmasdan o'z chatida ko'rish va bitta tanlangan guruhga
-  bir marta sinov uchun yuborish.
+- **🔍 Guruhlarni topish** — bitta tugma bilan akkauntdagi yozish mumkin bo'lgan
+  guruh va megaguruplar avtomatik aniqlanib qo'shiladi (broadcast kanallar,
+  jumladan o'z kanali ham, qo'shilmaydi; takror va huquqsizlar o'tkazib
+  yuboriladi); anti-spam pauza, 10 daqiqalik cooldown va FloodWait himoyasi
+  bilan ishlaydi; ➖ Guruh o'chirish ro'yxatidan keraksizlari tozalanadi.
+- **🧭 Yassi menyu** — barcha asosiy amallar bitta ekranda: Start/Stop (holat
+  ON/OFF tugmaning o'zida), Hisobot (statistika **va** paket/limitlar bitta
+  ekranda), Guruh topish/o'chirish, Post qo'shish/o'chirish, Posting oralig'i,
+  Referal. Alohida Status va Paket tugmalari yo'q. Ichki menyular (post
+  tahrirlash/ko'rinish/sinov, guruh tekshirish, qo'lda guruh qo'shish,
+  sessiyani uzish) foydalanuvchi klaviaturasidan olib tashlandi; dvigatel kodi
+  admin/legacy sifatida saqlanadi.
 - **🔗 Link preview** — har bir post uchun havoladan kartochka yoqish/o'chirish.
-- **🔎 Guruhni tekshirish** — a'zollik va yozish huquqi Telegramda tekshiriladi,
-  aniq sabab qaytariladi (bot chiqarilgan / yozish taqiqlangan / guruh topilmadi).
-- **⏱ Interval har bir guruhga alohida** — umumiy sozlamani saqlab qolgan holda.
+- **⏱ Interval har bir guruhga alohida (admin)** — umumiy sozlama saqlanib
+  qolgan holda, faqat super admin user kartasidan sozlaydi.
 - **📈 Hisobot** — bugun/hafta yuborishlari, xatolar sababi, qaysi guruhda
   muammo borligi va keyingi yuborish vaqti.
 - **📦 Tarif paketlari va limitlar** — SINOV/START/PRO/BUSINESS (guruh, post,

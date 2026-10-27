@@ -408,18 +408,21 @@ async def sweep_stale_albums(max_age_s: float = 120) -> int:
 # ─────────────────────────────────────────────────────────────────────────
 # SAQLASH (add/update)
 # ─────────────────────────────────────────────────────────────────────────
-async def _respond(msg, text: str, chat_id: int | None = None) -> None:
+async def _respond(
+    msg, text: str, uid: int, chat_id: int | None = None
+) -> None:
     """Javobni imkon qadar xabar ustiga, bo'lmasa shaxsiy chatga yuboradi."""
     from bot.login import application
+    from bot.menu import worker_manager
 
+    running = bool(worker_manager and worker_manager.is_running(uid))
+    markup = KB.kb_main(running=running)
     if msg is not None:
-        await msg.reply_text(text, reply_markup=KB.kb_posts_menu())
+        await msg.reply_text(text, reply_markup=markup)
         return
     if application and chat_id:
         with contextlib.suppress(Exception):
-            await application.bot.send_message(
-                chat_id, text, reply_markup=KB.kb_posts_menu()
-            )
+            await application.bot.send_message(chat_id, text, reply_markup=markup)
 
 
 async def _save_post(
@@ -450,7 +453,7 @@ async def _save_post(
         _clear_state(owner)
         if not ok:
             remove_media(new_paths)
-            await _respond(msg, T.GENERIC_ERROR, chat_id)
+            await _respond(msg, T.GENERIC_ERROR, uid, chat_id)
             return
         log(f"✏️ Post tahrirlandi: {uid} (#{post_id})")
         await _respond(
@@ -460,6 +463,7 @@ async def _save_post(
                 kind=media_kind_label({"media": payload}),
                 preview=truncate(text or "(media)", 100),
             ),
+            uid,
             chat_id,
         )
         return
@@ -473,7 +477,7 @@ async def _save_post(
             if reason == "limit"
             else T.GENERIC_ERROR
         )
-        await _respond(msg, message, chat_id)
+        await _respond(msg, message, uid, chat_id)
         return
 
     log(f"📝 Post qo'shildi: {uid} (#{post_id}, media={len(media)})")
@@ -484,6 +488,7 @@ async def _save_post(
             kind=media_kind_label({"media": media}),
             preview=truncate(text or "(media)", 100),
         ),
+        uid,
         chat_id,
     )
 

@@ -1,11 +1,12 @@
 """
-Asosiy menyu handlerlari.
+Asosiy menyu handlerlari (yassi, ichki menyusiz klaviatura).
 
 Tugmalar:
-- ▶️ Start
-- ⛔ Stop
-- 📊 Status
-- 💬 Guruhlar
+- ▶️ Start / ⛔ Stop
+- 📊 Status / 📈 Hisobot / 📦 Paket
+- 🔍 Guruhlarni topish / ➖ Guruh o'chirish
+- ➕ Post qo'shish / 🗑 Post o'chirish
+- ⏱ Posting oralig'i / 👥 Referal
 """
 
 from __future__ import annotations
@@ -120,10 +121,11 @@ async def show_status(update: Update) -> None:
 
 
 async def show_report(update: Update) -> None:
-    """📈 Hisobot — kunlik yuborishlar, xatolar va guruhlar salomatligi."""
+    """📈 Hisobot — statistika, guruh salomatligi VA paket/limitlar bitta ekranda."""
     uid = update.effective_user.id
     snapshot = await _status_snapshot(uid)
     stats = snapshot["stats"]
+    limits = snapshot["limits"]
     since_day = start_of_local_day_ts()
     week_since = time.time() - 7 * 86400
 
@@ -144,7 +146,7 @@ async def show_report(update: Update) -> None:
 
     # Hali bir marta ham sinab ko'rilmagan guruhlar "xato" hisoblanmaydi.
     failed_groups = sum(1 for row in health if row.get("last_ok") == 0)
-    text = T.report_text(
+    report = T.report_text(
         today_ok=int(stats.get("sent_ok") or 0),
         today_failed=int(stats.get("sent_failed") or 0),
         week_ok=int(week.get("sent_ok") or 0),
@@ -158,6 +160,20 @@ async def show_report(update: Update) -> None:
         expired_users=expired_users,
         global_today=gstats,
     )
+
+    # Paket va limitlar shu ekranning davomida ko'rsatiladi (alohida tugma yo'q).
+    daily_limit = int(limits.get("daily_limit") or 0)
+    used_today = int(stats.get("sent_ok") or 0)
+    daily_left = (
+        f"{used_today}/{daily_limit} ta ishlatilgan" if daily_limit else "cheksiz"
+    )
+    plan = T.plan_text(
+        limits=limits,
+        interval=snapshot["interval"],
+        expires=format_expires(snapshot["expires"]),
+        daily_left=daily_left,
+    )
+    text = f"{report}\n\n──────────────────\n\n{plan}"
     await update.message.reply_text(
         text, reply_markup=KB.kb_main(running=snapshot["running"])
     )
@@ -354,47 +370,32 @@ async def route_menu_button(update: Update, text: str) -> bool:
     from bot import referral as R
     from bot import timer as Tm
 
-    # ▶️ Start
-    if text == T.BTN_START:
+    # ▶️ Start — yorliq holatni ham o'zida olib yuradi: "▶️ Start (🔴 OFF)"
+    if text.startswith(T.BTN_START):
         await handle_start(update)
         return True
 
-    # ⛔ Stop
-    if text == T.BTN_STOP:
+    # ⛔ Stop — yorliq: "⛔ Stop (🟢 ON)"
+    if text.startswith(T.BTN_STOP):
         await handle_stop(update)
         return True
 
-    # 📊 Status
+    # 📊 Status (eski klaviaturalarda qolgan bo'lishi mumkin — yo'naltirish ishlaydi)
     if text.startswith(T.BTN_STATUS):
         await show_status(update)
         return True
 
-    # 💬 Guruhlar
-    if text == T.BTN_GROUPS:
-        await G.show_groups(update)
+    # 🔍 Guruhlarni avtomatik topish
+    if text == T.BTN_FIND_GROUPS:
+        await G.discover_groups(update)
         return True
 
-    # 📝 Postlar
-    if text == T.BTN_POSTS:
-        await P.show_posts(update)
-        return True
-
-    # ➕ Guruh qo'shish
-    if text == T.BTN_ADD_GROUP:
-        await G.begin_add_groups(update)
-        return True
-
-    # ➖ Guruh o'chirish
+    # ➖ Guruh o'chirish (ro'yxat inline tugma bo'lib chiqadi)
     if text == T.BTN_DEL_GROUP:
         await G.begin_delete_groups(update)
         return True
 
-    # ⏱ Guruh bo'yicha interval
-    if text == T.BTN_GROUP_INTERVAL:
-        await Tm.begin_set_group_interval(update)
-        return True
-
-    # 📝 Post qo'shish
+    # ➕ Post qo'shish
     if text == T.BTN_ADD_POST:
         await P.begin_add_post(update)
         return True
@@ -404,7 +405,7 @@ async def route_menu_button(update: Update, text: str) -> bool:
         await P.begin_delete_posts(update)
         return True
 
-    # ⏰ Vaqt
+    # ⏰ Posting oralig'i — to'g'ridan-to'g'ri qo'lda qiymat so'raladi
     if text == T.BTN_TIMER:
         await Tm.begin_set_interval(update)
         return True
@@ -419,41 +420,12 @@ async def route_menu_button(update: Update, text: str) -> bool:
         await show_plan(update)
         return True
 
-    # 🔎 Guruhni tekshirish
-    if text == T.BTN_CHECK_GROUPS:
-        await G.begin_check_groups(update)
-        return True
-
-    # ✏️ Postni tahrirlash
-    if text == T.BTN_EDIT_POST:
-        await P.begin_edit_picker(update)
-        return True
-
-    # 👁 Post ko'rinishi
-    if text == T.BTN_PREVIEW_POST:
-        await P.begin_preview_picker(update)
-        return True
-
-    # 🧪 Sinov yuborish
-    if text == T.BTN_TEST_SEND:
-        await P.begin_test_picker(update)
-        return True
-
     # 👥 Referal
     if text == T.BTN_REFERRAL:
         await R.show_referral(update)
         return True
 
-    # ⚙️ Hisob
-    if text == T.BTN_ACCOUNT:
-        await update.message.reply_text(
-            "⚙️ HISOB\n\nTelegram sessiyasini uzsangiz posting to'xtaydi va "
-            "qayta Login qilish kerak bo'ladi.",
-            reply_markup=KB.kb_account(),
-        )
-        return True
-
-    # ⬅️ Ichki menyudan asosiy menyuga
+    # ⬅️ Kiritish oynasidan asosiy menyuga
     if text == T.BTN_BACK:
         uid = update.effective_user.id
         running = bool(worker_manager and worker_manager.is_running(uid))

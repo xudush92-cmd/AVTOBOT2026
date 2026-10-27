@@ -28,10 +28,8 @@ from bot.keyboards import (  # noqa: E402
     kb_group_interval_picker,
     kb_db_panel,
     kb_expire_options,
-    kb_groups_menu,
     kb_main,
     kb_pending_users,
-    kb_posts_menu,
     kb_super_admin,
     kb_user_card,
 )
@@ -60,36 +58,49 @@ class CompactMenuTests(unittest.TestCase):
         stopped = reply_texts(kb_main(running=False))
         running = reply_texts(kb_main(running=True))
 
-        self.assertIn(T.BTN_START, stopped)
-        self.assertNotIn(T.BTN_STOP, stopped)
-        self.assertIn(T.BTN_STOP, running)
-        self.assertNotIn(T.BTN_START, running)
-        self.assertEqual(stopped[0], T.BTN_START)
-        self.assertEqual(running[0], T.BTN_STOP)
+        # Holat (ON/OFF) Start/Stop tugmasining o'zida — alohida Status tugmasi yo'q.
+        self.assertEqual(stopped[0], f"{T.BTN_START} (🔴 OFF)")
+        self.assertEqual(running[0], f"{T.BTN_STOP} (🟢 ON)")
+        self.assertTrue(stopped[0].startswith(T.BTN_START))
+        self.assertTrue(running[0].startswith(T.BTN_STOP))
+        for label in (*stopped, *running):
+            self.assertFalse(label.startswith(T.BTN_STATUS))
 
-    def test_regular_top_level_is_compact_and_actions_are_in_submenus(self) -> None:
+    def test_regular_menu_is_flat_without_submenus_or_account_button(self) -> None:
+        """Foydalanuvchi menyusi yassi: barcha asosiy amallar bitta ekranda."""
         top_level = reply_texts(kb_main())
+
+        # Yangi yassi menyuda bo'lishi kerak bo'lgan tugmalar.
         for button in (
-            T.BTN_GROUPS,
-            T.BTN_POSTS,
-            T.BTN_TIMER,
-            T.BTN_REFERRAL,
-        ):
-            self.assertIn(button, top_level)
-        for button in (
-            T.BTN_ADD_GROUP,
+            T.BTN_FIND_GROUPS,
             T.BTN_DEL_GROUP,
             T.BTN_ADD_POST,
             T.BTN_DEL_POST,
+            T.BTN_TIMER,
+            T.BTN_REPORT,
+            T.BTN_REFERRAL,
+        ):
+            self.assertIn(button, top_level)
+
+        # Ichki menyular va olib tashlangan tugmalar asosiy ekranda bo'lmasligi kerak.
+        for button in (
+            T.BTN_GROUPS,
+            T.BTN_POSTS,
+            T.BTN_ADD_GROUP,
+            T.BTN_GROUP_INTERVAL,
+            T.BTN_CHECK_GROUPS,
+            T.BTN_EDIT_POST,
+            T.BTN_PREVIEW_POST,
+            T.BTN_TEST_SEND,
+            T.BTN_ACCOUNT,
             T.BTN_ADMIN,
         ):
             self.assertNotIn(button, top_level)
 
-        self.assertIn(T.BTN_ADD_GROUP, reply_texts(kb_groups_menu()))
-        self.assertIn(T.BTN_DEL_GROUP, reply_texts(kb_groups_menu()))
-        self.assertIn(T.BTN_GROUP_INTERVAL, reply_texts(kb_groups_menu()))
-        self.assertIn(T.BTN_ADD_POST, reply_texts(kb_posts_menu()))
-        self.assertIn(T.BTN_DEL_POST, reply_texts(kb_posts_menu()))
+        # Status va Paket alohida tugma emas — ular Start/Stop va Hisobot ichida.
+        for label in top_level:
+            self.assertFalse(label.startswith(T.BTN_STATUS))
+            self.assertFalse(label.startswith(T.BTN_PLAN))
 
 
 class SuperAdminEntryTests(unittest.IsolatedAsyncioTestCase):

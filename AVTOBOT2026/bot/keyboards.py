@@ -32,23 +32,39 @@ def kb_super_admin() -> ReplyKeyboardMarkup:
 
 
 def kb_main(running: bool = False, super_admin: bool = False) -> ReplyKeyboardMarkup:
+    """Yassi (ichki menyusiz) foydalanuvchi klaviaturasi.
+
+    Barcha asosiy amallar bitta ekranda: guruhlar avtomatik topiladi,
+    post/qo'shish-o'chirish va interval to'g'ridan-to'g'ri shu yerdan ochiladi.
+    Holat (ON/OFF) alohida Status tugmasisiz — Start/Stop tugmasining o'zida.
+    """
     if super_admin:
         return kb_super_admin()
-    action = T.BTN_STOP if running else T.BTN_START
-    status = f"{T.BTN_STATUS} ({'🟢 ON' if running else '🔴 OFF'})"
+    # Tugmaning o'zi holatni bildiradi: to'xtagan bo'lsa Start (OFF),
+    # ishlayotgan bo'lsa Stop (ON).
+    action = (
+        f"{T.BTN_STOP} (🟢 ON)" if running else f"{T.BTN_START} (🔴 OFF)"
+    )
     return ReplyKeyboardMarkup(
         [
             [KeyboardButton(action)],
-            [KeyboardButton(status), KeyboardButton(T.BTN_GROUPS)],
-            [KeyboardButton(T.BTN_POSTS), KeyboardButton(T.BTN_TIMER)],
-            [KeyboardButton(T.BTN_REPORT), KeyboardButton(T.BTN_PLAN)],
-            [KeyboardButton(T.BTN_REFERRAL), KeyboardButton(T.BTN_ACCOUNT)],
+            [KeyboardButton(T.BTN_REPORT), KeyboardButton(T.BTN_REFERRAL)],
+            [
+                KeyboardButton(T.BTN_FIND_GROUPS),
+                KeyboardButton(T.BTN_DEL_GROUP),
+            ],
+            [
+                KeyboardButton(T.BTN_ADD_POST),
+                KeyboardButton(T.BTN_DEL_POST),
+            ],
+            [KeyboardButton(T.BTN_TIMER)],
         ],
         resize_keyboard=True,
     )
 
 
 def kb_groups_menu() -> ReplyKeyboardMarkup:
+    """ESKI: foydalanuvchi UI'dan olib tashlangan (faqat admin/legacy oqimlar uchun)."""
     return ReplyKeyboardMarkup(
         [
             [KeyboardButton(T.BTN_ADD_GROUP), KeyboardButton(T.BTN_DEL_GROUP)],
@@ -61,6 +77,7 @@ def kb_groups_menu() -> ReplyKeyboardMarkup:
 
 
 def kb_posts_menu() -> ReplyKeyboardMarkup:
+    """ESKI: foydalanuvchi UI'dan olib tashlangan (faqat legacy oqimlar uchun)."""
     return ReplyKeyboardMarkup(
         [
             [KeyboardButton(T.BTN_ADD_POST), KeyboardButton(T.BTN_DEL_POST)],

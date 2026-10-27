@@ -392,6 +392,7 @@ BTN_STATUS = "📊 Status"
 BTN_GROUPS = "💬 Guruhlar"
 BTN_POSTS = "📝 Postlar"
 BTN_ADD_GROUP = "➕ Guruh qo'shish"
+BTN_FIND_GROUPS = "🔍 Guruhlarni topish"
 BTN_DEL_GROUP = "➖ Guruh o'chirish"
 BTN_GROUP_INTERVAL = "⏱ Guruh intervali"
 BTN_CHECK_GROUPS = "🔎 Guruhni tekshirish"
@@ -425,7 +426,10 @@ START_CONFIRM = (
     "ℹ️ Anti-spam uchun 5 daqiqagacha tasodifiy farq bo'lishi mumkin."
 )
 
-START_NO_GROUPS = "❌ Avval ➕ Guruh qo'shing."
+START_NO_GROUPS = (
+    "❌ Avval 🔍 «Guruhlarni topish» tugmasini bosing — bot akkauntingizdagi "
+    "guruhlarni avtomatik topib qo'shadi."
+)
 
 START_NO_POSTS = "❌ Avval 📝 Post qo'shing."
 
@@ -444,8 +448,7 @@ START_BUSY = "⚠️ Tizim band. Bir oz kuting va qaytadan urinib ko'ring."
 
 START_SESSION_INVALID = (
     "🚫 Telegram sessiyasini tasdiqlab bo'lmadi (bekor qilingan yoki boshqa "
-    "akkaunt). Sessiya saqlandi; Hisob bo'limidan tekshiring yoki admin bilan "
-    "bog'laning."
+    "akkaunt). Qaytadan 🔑 Login qiling yoki admin bilan bog'laning."
 )
 
 START_SESSION_RETRY = (
@@ -535,8 +538,118 @@ def status_text(
 # ─────────────────────────────────────────────────────────────────────────
 # GURUHLAR
 # ─────────────────────────────────────────────────────────────────────────
-GROUPS_EMPTY = "❌ Guruhlar yo'q. ➕ Guruh qo'shish orqali qo'shing."
+GROUPS_EMPTY = (
+    "❌ Hali guruh yo'q.\n\n"
+    "🔍 «Guruhlarni topish» tugmasini bosing — bot ulangan Telegram "
+    "akkauntingizdagi yozish mumkin bo'lgan guruhlarni o'zi topib qo'shadi."
+)
 GROUP_INTERVALS_EMPTY = "❌ Guruhlar yo'q. Avval guruh qo'shing."
+
+# ─────────────────────────────────────────
+# GURUHLARNI AVTOMATIK TOPISH (DISCOVERY)
+# ─────────────────────────────────────────
+DISCOVER_NO_SESSION = (
+    "❌ Telegram sessiyasi topilmadi.\n\n"
+    "Avval 🔑 Login qiling — keyin bot guruhlaringizni topa oladi."
+)
+DISCOVER_START = (
+    "🔍 Guruhlaringiz xavfsiz rejimda qidirilmoqda...\n\n"
+    "Bot ulangan Telegram akkauntingizdagi GURUHLARNI (kanallarsiz) birma-bir "
+    "ko'rib chiqib, yozish huquqingiz borlarini avtomatik qo'shadi.\n\n"
+    "Anti-spam uchun har guruh orasida qisqa pauza bor — jarayon bir necha "
+    "daqiqa olishi mumkin. Iltimos, sabr qiling va tugmani qayta bosmang."
+)
+DISCOVER_BUSY = (
+    "⏳ Tizim hozir band. Bir oz kutib, 🔍 «Guruhlarni topish» tugmasini "
+    "qaytadan bosing."
+)
+DISCOVER_INVALID = (
+    "🚫 Telegram sessiyasi ishlamayapti. Iltimos, qaytadan 🔑 Login qiling."
+)
+DISCOVER_ALREADY_RUNNING = (
+    "⏳ Oldingi skanerlash hali tugamadi. Iltimos, uning yakuniy hisobotini "
+    "kuting — bir vaqtda ikkita qidiruv ishga tushmaydi."
+)
+
+
+def discover_cooldown_text(wait_min: int) -> str:
+    return (
+        "🛡 Anti-spam himoyasi\n\n"
+        f"Guruhlarni qayta skanerlash uchun taxminan {wait_min} daqiqa kutish "
+        "kerak. Bu Telegram akkauntingizni shubhali harakatlardan himoya qiladi.\n\n"
+        "Qo'shilgan guruhlar allaqachon saqlangan — keraksizlarini ➖ Guruh "
+        "o'chirish orqali tozalashingiz mumkin."
+    )
+
+
+def discover_flood_wait_text(wait_s: int) -> str:
+    if wait_s >= 60:
+        wait_text = f"taxminan {wait_s // 60 + 1} daqiqa"
+    else:
+        wait_text = f"{wait_s} soniya"
+    return (
+        "🚫 Telegram vaqtincha cheklov (FloodWait) berdi.\n\n"
+        f"Keyingi skanerlashni {wait_text}dan keyin boshlash mumkin.\n\n"
+        "Bu Telegramning akkauntni himoya qilish mexanizmi — kutish vaqti "
+        "tugamasidan tugma bosilsa, cheklov uzayishi mumkin. Iltimos, sabr qiling."
+    )
+
+
+def discover_progress(scanned: int, added: int) -> str:
+    return (
+        "🔍 Guruhlaringiz tekshirilmoqda...\n\n"
+        f"Ko'rib chiqildi: {scanned} ta\n"
+        f"Qo'shildi: {added} ta"
+    )
+
+
+def discover_report(
+    added: list[str],
+    duplicates: int,
+    skipped: int,
+    errors: list[str],
+    *,
+    channels_skipped: int = 0,
+    limit_hit: bool = False,
+    limit: int = 0,
+) -> str:
+    lines = ["🔍 GURUHLARNI TOPISH NATIJASI\n"]
+    lines.append(f"✅ Qo'shildi: {len(added)} ta")
+    if added:
+        shown = added[:40]
+        for ref in shown:
+            lines.append(f"  • {ref}")
+        if len(added) > len(shown):
+            lines.append(f"  … va yana {len(added) - len(shown)} ta")
+    if duplicates:
+        lines.append(f"⚠️ Avval qo'shilgan: {duplicates} ta")
+    if channels_skipped:
+        lines.append(
+            f"📢 Kanallar ataylab qo'shilmadi: {channels_skipped} ta "
+            "(faqat guruhlar olinadi)"
+        )
+    if skipped:
+        lines.append(
+            f"🚫 Yozish huquqi yo'q/a'zo emas: {skipped} ta (o'tkazib yuborildi)"
+        )
+    if errors:
+        lines.append(f"❌ Xatolik: {len(errors)} ta")
+        for detail in errors[:5]:
+            lines.append(f"  • {detail}")
+    if limit_hit:
+        lines.append(
+            f"\n🧱 Paket chegarasi: {limit} ta guruh. Qolganlari qo'shilmadi — "
+            "keraksizlarini ➖ Guruh o'chirish bilan o'chiring yoki paketni kengaytiring."
+        )
+    if not added and not duplicates and not errors:
+        lines.append(
+            "\nAkkauntingizda yozish huquqiga ega guruh topilmadi.\n"
+            "Guruhga a'zo bo'lganingiz va xabar yoza olishingizni tekshiring."
+        )
+    lines.append(
+        "\nKeraksiz guruhlarni ➖ «Guruh o'chirish» tugmasi orqali o'chiring."
+    )
+    return "\n".join(lines)
 GROUP_INTERVAL_PICK = (
     "⏱ Intervalini sozlash uchun guruhni tanlang.\n"
     "Umumiy intervalni o'zgartirish uchun «Posting oralig'i» menyusidan foydalaning."
@@ -894,7 +1007,7 @@ def post_added_text(n: int, kind: str, preview: str) -> str:
     hint = ""
     if n == 1:
         hint = (
-            "\n\n💡 Keyingi qadam: 💬 Guruhlar bo'limidan guruh qo'shing, "
+            "\n\n💡 Keyingi qadam: 🔍 «Guruhlarni topish» tugmasini bosing, "
             "so'ng ▶️ Start bosing."
         )
     return f"✅ Saqlandi (#{n})\n{kind}\n\n{preview}{hint}"
@@ -913,7 +1026,8 @@ def test_send_failed(error: str) -> str:
     return (
         f"❌ Sinov yuborilmadi ({error}).\n\n"
         "Ko'pincha sabab: akkaunt o'sha guruhga a'zo emas yoki unda yozish "
-        "taqiqlangan. 💬 Guruhlar → 🔎 Tekshirish bilan aniqlang."
+        "taqiqlangan. Guruhni ➖ Guruh o'chirish bilan olib tashlab, 🔍 "
+        "Guruhlarni topish tugmasini qaytadan bosing."
     )
 
 
@@ -927,10 +1041,10 @@ GROUP_PICKER_CHECK = (
 )
 GROUPS_EMPTY_HINT = (
     "❌ Guruhlar yo'q.\n\n"
-    "1️⃣ Akkauntingiz guruhga a'zo bo'lsin (yoki guruhga kiring)\n"
-    "2️⃣ ➕ Guruh qo'shish tugmasini bosing\n"
-    "3️⃣ @username yoki https://t.me/guruh nomini yuboring "
-    "(bir nechta bo'lsa — har biri yangi qatorda)"
+    "1️⃣ Akkauntingiz kerakli guruhlarga a'zo bo'lsin\n"
+    "2️⃣ 🔍 «Guruhlarni topish» tugmasini bosing — bot yozish huquqingiz "
+    "bor guruhlarni avtomatik topib qo'shadi\n"
+    "3️⃣ Keraksizlarini ➖ «Guruh o'chirish» bilan olib tashlang"
 )
 
 
@@ -1093,19 +1207,17 @@ HELP_TEXT = (
     "Bot sizning Telegram akkauntingiz orqali reklama e'lonlaringizni "
     "guruhlariga avtomatik joylashtiradi.\n\n"
     "4 QADAM:\n"
-    "1️⃣ 💬 Guruhlar → ➕ Guruh qo'shish — @username yoki t.me havolalarini "
-    "(har biri yangi qatorda) yuboring. Akkauntingiz o'sha guruhlarda bo'lishi "
-    "va yozish huquqiga ega bo'lishi kerak.\n"
-    f"2️⃣ 📝 Postlar → ➕ Post qo'shish — matn, rasm, video yoki {MAX_ALBUM_FILES} "
+    "1️⃣ 🔍 Guruhlarni topish — bot ulangan akkauntingizdagi yozish "
+    "huquqingiz bor guruhlarni o'zi topib qo'shadi. Keraksizlarini ➖ Guruh "
+    "o'chirish bilan olib tashlang.\n"
+    f"2️⃣ ➕ Post qo'shish — matn, rasm, video yoki {MAX_ALBUM_FILES} "
     "tagacha rasmni albom qilib yuboring.\n"
-    "3️⃣ ⏱ Posting oralig'i — nechada bir yuborilsin (5 dan 7 kungacha daqiqa). "
-    "Har bir guruhga alohida: 💬 Guruhlar → ⏱ Guruh intervali.\n"
-    "4️⃣ ▶️ Start — va 🔎 Tekshirish bilan guruhlar tayyorligini "
-    "tasdiqlang.\n\n"
-    "📈 Hisobot — necha marta yuborilgani, xatolar va keyingi navbat.\n"
+    "3️⃣ ⏱ Posting oralig'i — nechada bir yuborilsin (daqiqada, masalan 5 yoki 30).\n"
+    "4️⃣ ▶️ Start — shundan so'ng e'lonlar navbat bilan guruhlarga chiqadi.\n\n"
+    "📈 Hisobot — bitta ekranda: yuborish statistikasi, xatolar, keyingi "
+    "navbat, paket va limitlaringiz.\n"
     "👥 Referal — do'stingizni taklif qiling: har bir faol do'st "
-    f"+{REFERRAL_BONUS_DAYS} kun tarif.\n"
-    "🧪 Sinov yuborish — bitta guruhga bir marta, to'liq rejimni yoqmasdan.\n\n"
+    f"+{REFERRAL_BONUS_DAYS} kun tarif.\n\n"
     "⚠️ Muhim:\n"
     "• Bot guruhga o'zi kirmaydi — avval akkauntingiz a'zo bo'lsin.\n"
     "• Juda tez oraliq + ko'p guruh Telegram tomonidan cheklovga olib keladi; "
@@ -1116,9 +1228,9 @@ HELP_TEXT = (
 
 WELCOME_GUIDE = (
     "👋 Xush kelibsiz! 30 soniyada tayyor bo'lasiz:\n\n"
-    "1️⃣ 💬 Guruhlar → guruhlar ro'yxatini yukoring\n"
-    "2️⃣ 📝 Postlar → e'loningizni yuboring (bir nechta rasm ham bo'ladi)\n"
-    "3️⃣ ▶️ Start → va 🔎 bilan tekshiring\n\n"
+    "1️⃣ 🔍 Guruhlarni topish — bot guruhlaringizni avtomatik qo'shadi\n"
+    "2️⃣ ➕ Post qo'shish — e'loningizni yuboring (bir nechta rasm ham bo'ladi)\n"
+    "3️⃣ ▶️ Start — e'lonlar navbat bilan chiqadi\n\n"
     "Istalgan payt 📊 Status yoki /help deb yozing."
 )
 
@@ -1180,12 +1292,12 @@ def status_next_step(groups: int, posts: int) -> str:
     if not groups and not posts:
         return (
             "👇 Boshlash uchun:\n"
-            "1️⃣ 💬 Guruhlar → ➕ Guruh qo'shish\n"
-            "2️⃣ 📝 Postlar → ➕ Post qo'shish\n"
+            "1️⃣ 🔍 Guruhlarni topish — bot guruhlaringizni avtomatik qo'shadi\n"
+            "2️⃣ ➕ Post qo'shish\n"
             "3️⃣ ▶️ Start"
         )
     if not groups:
-        return "👇 Keyingi qadam: 💬 Guruhlar → ➕ Guruh qo'shish"
+        return "👇 Keyingi qadam: 🔍 «Guruhlarni topish» tugmasini bosing"
     if not posts:
-        return "👇 Keyingi qadam: 📝 Postlar → ➕ Post qo'shish"
+        return "👇 Keyingi qadam: ➕ «Post qo'shish» tugmasini bosing"
     return ""

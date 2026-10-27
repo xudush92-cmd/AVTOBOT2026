@@ -390,7 +390,8 @@ async def _on_message_locked(
         await msg.reply_text(T.WELCOME_SHORT, reply_markup=KB.kb_login())
         return
 
-    # ── FSM: add_group / add_post / set_interval ──
+    # ── FSM: add_post / set_interval (add_group va set_group_interval
+    # faqat admin/legacy oqimlari uchun saqlangan) ──
     if step in (
         "add_group",
         "add_post",
@@ -399,26 +400,23 @@ async def _on_message_locked(
         "set_group_interval",
     ):
         menu_buttons = {
-            T.BTN_START,
-            T.BTN_STOP,
-            T.BTN_GROUPS,
-            T.BTN_POSTS,
-            T.BTN_ADD_GROUP,
+            T.BTN_FIND_GROUPS,
             T.BTN_DEL_GROUP,
-            T.BTN_GROUP_INTERVAL,
-            T.BTN_CHECK_GROUPS,
             T.BTN_ADD_POST,
             T.BTN_DEL_POST,
-            T.BTN_EDIT_POST,
-            T.BTN_PREVIEW_POST,
-            T.BTN_TEST_SEND,
             T.BTN_TIMER,
             T.BTN_REPORT,
-            T.BTN_PLAN,
             T.BTN_REFERRAL,
-            T.BTN_ACCOUNT,
         }
-        if text in menu_buttons or text.startswith(T.BTN_STATUS):
+        # Start/Stop/Status/Paket yorliqlari holatni o'zida olib yuradi
+        # ("▶️ Start (🔴 OFF)") yoki eski klaviaturalarda qolgan bo'lishi mumkin.
+        dynamic_prefixes = (
+            T.BTN_START,
+            T.BTN_STOP,
+            T.BTN_STATUS,
+            T.BTN_PLAN,
+        )
+        if text in menu_buttons or text.startswith(dynamic_prefixes):
             # Foydalanuvchi kiritish oynasini chetlab menyu tugmasini bosdi:
             # oyna yopiladi va tugma oddiy menyudagidek bajariladi.
             Login.user_states.pop(uid, None)
@@ -438,13 +436,9 @@ async def _on_message_locked(
             return
         if text == T.BTN_BACK:
             Login.user_states.pop(uid, None)
-            if step in ("add_group", "set_group_interval"):
-                markup = KB.kb_groups_menu()
-            elif step == "add_post":
-                markup = KB.kb_posts_menu()
-            else:
-                markup = await get_menu(uid)
-            await msg.reply_text(T.ACTION_CANCELLED, reply_markup=markup)
+            await msg.reply_text(
+                T.ACTION_CANCELLED, reply_markup=await get_menu(uid)
+            )
             return
         if step == "set_interval_confirm":
             await msg.reply_text("Pastdagi Ha/Yo'q tugmalaridan birini tanlang.")
