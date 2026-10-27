@@ -1266,7 +1266,8 @@ async def _main() -> None:
     app.add_handler(CommandHandler("help", cmd_help))
     app.add_handler(CommandHandler("status", cmd_status))
     app.add_handler(CommandHandler("statistika", cmd_status))
-    await app.set_my_commands(
+    # PTB 21.6: set_my_commands Application'da emas, Bot obyektida.
+    await app.bot.set_my_commands(
         [
             BotCommand("start", "Botni ochish / menyu"),
             BotCommand("help", "Qanday ishlaydi — qisqa yo'riqnoma"),
