@@ -333,22 +333,25 @@ class PlanLimitsStatsTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(T.status_next_step(3, 3), "")
 
     async def test_new_menu_buttons_open_their_screens(self) -> None:
-        """Yangi menyu tugmalari to'g'ri funksiyaga boradi va topiladi."""
+        """Yangi yassi menyu tugmalari to'g'ri funksiyaga boradi."""
         from bot import groups as G
-        from bot import posts as P
         from bot import menu as M
+        from bot import posts as P
+        from bot import referral as R
+        from bot import timer as Tm
 
         update = SimpleNamespace(
             effective_user=SimpleNamespace(id=self.UID),
             message=SimpleNamespace(reply_text=AsyncMock()),
         )
         targets = {
-            T.BTN_EDIT_POST: (P, "begin_edit_picker"),
-            T.BTN_PREVIEW_POST: (P, "begin_preview_picker"),
-            T.BTN_TEST_SEND: (P, "begin_test_picker"),
-            T.BTN_CHECK_GROUPS: (G, "begin_check_groups"),
+            T.BTN_FIND_GROUPS: (G, "discover_groups"),
+            T.BTN_DEL_GROUP: (G, "begin_delete_groups"),
+            T.BTN_ADD_POST: (P, "begin_add_post"),
+            T.BTN_DEL_POST: (P, "begin_delete_posts"),
+            T.BTN_TIMER: (Tm, "begin_set_interval"),
             T.BTN_REPORT: (M, "show_report"),
-            T.BTN_PLAN: (M, "show_plan"),
+            T.BTN_REFERRAL: (R, "show_referral"),
         }
         for label, (module, name) in targets.items():
             with self.subTest(label=label):
@@ -361,6 +364,40 @@ class PlanLimitsStatsTestCase(unittest.IsolatedAsyncioTestCase):
                     handled = await M.route_menu_button(update, label)
                 self.assertTrue(handled)
                 self.assertEqual(calls, [name])
+
+        # Start/Stop endi holatni yorliqda olib yuradi: "▶️ Start (🔴 OFF)".
+        with patch.object(M, "handle_start", new=AsyncMock()) as start_spy:
+            self.assertTrue(
+                await M.route_menu_button(update, f"{T.BTN_START} (🔴 OFF)")
+            )
+            start_spy.assert_awaited_once()
+        with patch.object(M, "handle_stop", new=AsyncMock()) as stop_spy:
+            self.assertTrue(
+                await M.route_menu_button(update, f"{T.BTN_STOP} (🟢 ON)")
+            )
+            stop_spy.assert_awaited_once()
+
+    async def test_removed_buttons_are_not_routed_anymore(self) -> None:
+        """Olib tashlangan tugmalar endi routerda javob bermaydi."""
+        from bot import menu as M
+
+        update = SimpleNamespace(
+            effective_user=SimpleNamespace(id=self.UID),
+            message=SimpleNamespace(reply_text=AsyncMock()),
+        )
+        for label in (
+            T.BTN_GROUPS,
+            T.BTN_POSTS,
+            T.BTN_ADD_GROUP,
+            T.BTN_GROUP_INTERVAL,
+            T.BTN_CHECK_GROUPS,
+            T.BTN_EDIT_POST,
+            T.BTN_PREVIEW_POST,
+            T.BTN_TEST_SEND,
+            T.BTN_ACCOUNT,
+        ):
+            with self.subTest(label=label):
+                self.assertFalse(await M.route_menu_button(update, label))
 
     def test_menu_button_press_during_input_window_is_routed(self) -> None:
         """Kiritish oynasida menyu tugmasi bosilsa mavjud funksiya chaqiriladi."""
@@ -387,30 +424,45 @@ class PlanLimitsStatsTestCase(unittest.IsolatedAsyncioTestCase):
             await fn(update)
             return update.message.reply_text.await_args.args[0]
 
-        for fn, heading in (
-            (menu.show_status, "STATUS"),
-            (menu.show_report, "HISOBOT"),
-            (menu.show_plan, "PAKET"),
+        for fn, headings in (
+            (menu.show_status, ("STATUS",)),
+            # Hisobot endi paket/limitlarni ham o'z ichiga oladi — bitta ekran.
+            (menu.show_report, ("HISOBOT", "PAKET")),
+            (menu.show_plan, ("PAKET",)),
         ):
             with self.subTest(fn=fn.__name__):
                 text = await render(fn)
-                self.assertIn(heading, text.upper())
+                for heading in headings:
+                    self.assertIn(heading, text.upper())
                 self.assertGreater(len(text), 80)
 
     async def test_menu_buttons_route_to_new_screens(self) -> None:
         routes = {
             T.BTN_REPORT: "show_report",
-            T.BTN_PLAN: "show_plan",
-            T.BTN_CHECK_GROUPS: "begin_check_groups",
+            T.BTN_FIND_GROUPS: "discover_groups",
         }
         source = Path(APP_DIR / "bot/menu.py").read_text(encoding="utf-8")
         for label, target in routes.items():
             self.assertIn(label, source)
             self.assertIn(target, source)
-        # Yangi ekranlar main FSM ro'yxatida ham bo'lishi kerak.
+        # Hisobot ekrani paket/limitlarni ham chiqaradi (bitta tugma, bitta ekran).
+        self.assertIn("plan_text", source)
+        # Yangi yassi menyu tugmalari main FSM escape ro'yxatida ham bo'lishi kerak.
         main_source = Path(APP_DIR / "main.py").read_text(encoding="utf-8")
-        for name in ("BTN_EDIT_POST", "BTN_PREVIEW_POST", "BTN_TEST_SEND", "BTN_REPORT"):
+        for name in (
+            "BTN_FIND_GROUPS",
+            "BTN_ADD_POST",
+            "BTN_DEL_POST",
+            "BTN_REPORT",
+        ):
             self.assertIn(name, main_source)
+        # Olib tashlangan tugmalar routerda bo'lmasligi kerak.
+        for name in ("BTN_CHECK_GROUPS", "BTN_EDIT_POST", "BTN_ACCOUNT"):
+            self.assertNotIn(name, source)
+        # Klaviaturada alohida Status/Paket tugmasi qolmagan.
+        kb_source = Path(APP_DIR / "bot/keyboards.py").read_text(encoding="utf-8")
+        self.assertNotIn("KeyboardButton(T.BTN_STATUS)", kb_source)
+        self.assertNotIn("KeyboardButton(T.BTN_PLAN)", kb_source)
 
 
 if __name__ == "__main__":

@@ -359,7 +359,7 @@ async def posting_loop(uid: int, stop: asyncio.Event) -> None:
                     await application.bot.send_message(
                         uid,
                         "🚫 Telegram sessiyasini tasdiqlab bo'lmadi. "
-                        "Mavjud sessiya saqlandi; Hisob bo'limidan tekshiring.",
+                        "Qaytadan 🔑 Login qiling yoki admin bilan bog'laning.",
                     )
                 break
             except PoolBusyError as exc:
@@ -481,8 +481,8 @@ async def posting_loop(uid: int, stop: asyncio.Event) -> None:
                         with contextlib.suppress(Exception):
                             await application.bot.send_message(
                                 uid,
-                                "🚫 Telegram sessiyasi ishlamayapti. Mavjud "
-                                "sessiya saqlandi; Hisob bo'limidan tekshiring.",
+                                "🚫 Telegram sessiyasi ishlamayapti. "
+                                "Qaytadan 🔑 Login qiling yoki admin bilan bog'laning.",
                             )
                         return
 
@@ -534,9 +534,9 @@ async def posting_loop(uid: int, stop: asyncio.Event) -> None:
                             "Sabab: bot chiqarilgan, yozish taqiqlangan yoki "
                             "guruh mavjud emas.\n"
                             "Guruh ro'yxatdan AVTOMATIK o'chirildi.\n\n"
-                            "💡 Qayta qo'shishdan oldin 💬 Guruhlar → "
-                            "🔎 Tekshirish orqali a'zolik va yozish "
-                            "huquqini tekshirib ko'ring.",
+                            "💡 Qayta qo'shish uchun 🔍 «Guruhlarni topish» "
+                            "tugmasini qaytadan bosing — bot yozish huquqingiz "
+                            "bor guruhlarni qayta yig'ib beradi.",
                         )
 
                 log(f"📊 {uid} ✅{ok} ❌{fail} / {len(due_chats)} navbatda")

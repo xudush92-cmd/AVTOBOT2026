@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import random
 import time
 
 from telegram import Update
@@ -460,7 +461,7 @@ async def handle_add_groups(update: Update, text: str) -> None:
 # GURUH O'CHIRISH — BOSHLASH
 # ─────────────────────────────────────────────────────────────────────────
 async def begin_delete_groups(update: Update) -> None:
-    """➖ Guruh o'chirish tugmasi bosilganda."""
+    """➖ Guruh o'chirish tugmasi bosilganda — ro'yxat inline tugma bo'lib chiqadi."""
     uid = update.effective_user.id
     groups = await db.get_chat_records(uid)
 
@@ -471,4 +472,258 @@ async def begin_delete_groups(update: Update) -> None:
     await update.message.reply_text(
         T.ASK_DEL_GROUP,
         reply_markup=KB.kb_groups_delete(groups),
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# GURUHLARNI AVTOMATIK TOPISH (akkaunt dialoglaridan)
+# ─────────────────────────────────────────────────────────────────────────
+# Bitta skanerlashda ko'rib chiqiladigan dialoglarning xavfsiz chegarasi.
+DISCOVER_MAX_DIALOGS = 500
+# Har bir guruhning yozish huquqini tekshirish uchun ketadigan maksimal vaqt.
+DISCOVER_PERMISSION_TIMEOUT_S = 20
+# Har bitta guruh tekshiruvi orasidagi tasodifiy pauza (odam tezligiga taqlid).
+DISCOVER_PAUSE_MIN_S = 1.0
+DISCOVER_PAUSE_MAX_S = 3.0
+# Bitta foydalanuvchi skanerni necha soniyada bir marta bosishi mumkin.
+DISCOVER_COOLDOWN_S = 10 * 60
+
+# In-memory himoya holati (restartda tozalanadi — bu qabul qilinadi, chunki
+# Telegram FloodWait'i serverning o'zida ham yuritiladi).
+_last_discover_ts: dict[int, float] = {}
+_flood_wait_until: dict[int, float] = {}
+_discover_running: set[int] = set()
+
+
+def reset_discover_guards() -> None:
+    """Testlar va favqulodda holatlar uchun himoya holatini tozalaydi."""
+    _last_discover_ts.clear()
+    _flood_wait_until.clear()
+    _discover_running.clear()
+
+
+def _dialog_reference(entity) -> str:
+    """Topilgan entity uchun bazada saqlanadigan canonical reference."""
+    username = getattr(entity, "username", None)
+    if username:
+        return f"@{username}"
+    # Username yo'q (yopiq guruh) — marked peer ID: -100... yoki -...
+    return str(utils.get_peer_id(entity))
+
+
+def _is_broadcast_channel(entity) -> bool:
+    """Broadcast kanal (megaguruh emas) — skanerga umuman kiritilmaydi."""
+    return isinstance(entity, types.Channel) and bool(
+        getattr(entity, "broadcast", False)
+    )
+
+
+async def discover_groups(update: Update) -> None:
+    """🔍 Guruhlarni topish: akkaunt a'zo bo'lgan, yozish mumkin GURUHLARNI qo'shadi.
+
+    Qo'lda havola yuborish o'rniga bot ulangan Telegram sessiyasi orqali barcha
+    dialoglarni ko'rib chiqadi va yozish huquqi bor guruh/megaguruplarni
+    avtomatik saqlaydi. Broadcast kanallar (obuna kanallari) siyosat bo'yicha
+    umuman qo'shilmaydi. Takrorlar va huquqsizlar o'tkazib yuboriladi; paket
+    chegarasi hurmat qilinadi.
+
+    Anti-spam himoyasi:
+    - har guruh tekshiruvi orasida 1–3 soniyali tasodifiy pauza;
+    - har foydalanuvchi uchun 10 daqiqalik cooldown;
+    - Telegram FloodWait bersa, ko'rsatilgan vaqtgacha skaner bloklanadi;
+    - bir vaqtda bitta foydalanuvchi uchun faqat bitta skaner ishlaydi.
+    """
+    uid = update.effective_user.id
+    session = await db.get_session(uid)
+    if not session:
+        await update.message.reply_text(
+            T.DISCOVER_NO_SESSION,
+            reply_markup=KB.kb_login(),
+        )
+        return
+
+    now = time.time()
+
+    # 1) Telegramning FloodWait kutish vaqti tugamagan bo'lsa — to'xtatamiz.
+    flood_until = _flood_wait_until.get(uid, 0)
+    if flood_until > now:
+        wait_s = int(flood_until - now)
+        await update.message.reply_text(
+            T.discover_flood_wait_text(wait_s),
+        )
+        return
+
+    # 2) Cooldown: oldingi skanerga hali vaqt bo'lmagan bo'lsa — ruxsat yo'q.
+    last_ts = _last_discover_ts.get(uid, 0)
+    if last_ts and now - last_ts < DISCOVER_COOLDOWN_S:
+        wait_min = max(1, int((DISCOVER_COOLDOWN_S - (now - last_ts)) / 60) + 1)
+        await update.message.reply_text(
+            T.discover_cooldown_text(wait_min),
+        )
+        return
+
+    # 3) Bir vaqtda bitta skaner — ikkinchisi bosilmaydi.
+    if uid in _discover_running:
+        await update.message.reply_text(T.DISCOVER_ALREADY_RUNNING)
+        return
+
+    from worker import worker as W
+    from worker.client_pool import PoolBusyError, SessionInvalidError
+
+    pool = W.client_pool
+    if pool is None:
+        await update.message.reply_text(T.GENERIC_ERROR)
+        return
+
+    status_msg = await update.message.reply_text(T.DISCOVER_START)
+
+    try:
+        client = await pool.acquire(uid, session)
+    except SessionInvalidError:
+        with contextlib.suppress(Exception):
+            await status_msg.edit_text(T.DISCOVER_INVALID)
+        return
+    except PoolBusyError:
+        with contextlib.suppress(Exception):
+            await status_msg.edit_text(T.DISCOVER_BUSY)
+        return
+    except Exception as exc:  # noqa: BLE001
+        log(f"discover_groups acquire {uid}: {type(exc).__name__}", "warning")
+        with contextlib.suppress(Exception):
+            await status_msg.edit_text(T.GENERIC_ERROR)
+        return
+
+    # Skaner boshlandi — cooldown shu yerdan hisoblanadi (kirishda rad etilgan
+    # urinishlar foydalanuvchini bloklab qo'ymasligi uchun).
+    _last_discover_ts[uid] = time.time()
+    _discover_running.add(uid)
+
+    added: list[str] = []
+    duplicate_count = 0
+    skipped = 0
+    channels_skipped = 0
+    errors: list[str] = []
+    limit_hit = False
+    scanned = 0
+
+    existing_keys = {
+        group_reference_key(value) for value in await db.get_chats(uid)
+    }
+
+    def _remember_flood(seconds: int) -> None:
+        wait_s = max(1, int(seconds))
+        _flood_wait_until[uid] = time.time() + wait_s
+        errors.append(f"FloodWait ({wait_s}s)")
+
+    try:
+        me = await asyncio.wait_for(client.get_me(), timeout=15)
+        async for dialog in client.iter_dialogs():
+            if scanned >= DISCOVER_MAX_DIALOGS:
+                break
+            entity = dialog.entity
+            if not _is_group_entity(entity):
+                continue
+            # Chiqib ketilgan / kirish taqiqlangan dialoglarni o'tkazamiz.
+            if isinstance(
+                entity, (types.ChatForbidden, types.ChannelForbidden)
+            ) or bool(getattr(entity, "left", False)):
+                continue
+            # Siyosat: broadcast kanallar (obuna kanallari) qo'shilmaydi —
+            # faqat oddiy guruhlar va megaguruplar qoladi.
+            if _is_broadcast_channel(entity):
+                channels_skipped += 1
+                continue
+
+            scanned += 1
+            reference = _dialog_reference(entity)
+            key = group_reference_key(reference)
+            if key in existing_keys:
+                duplicate_count += 1
+                continue
+
+            try:
+                permissions = await asyncio.wait_for(
+                    client.get_permissions(entity, me),
+                    timeout=DISCOVER_PERMISSION_TIMEOUT_S,
+                )
+                rejection = _posting_rejection(entity, permissions)
+            except (
+                UserNotParticipantError,
+                ChannelPrivateError,
+                PeerIdInvalidError,
+            ):
+                skipped += 1
+            except (asyncio.TimeoutError, TimeoutError):
+                skipped += 1
+            except FloodWaitError as exc:
+                log(f"discover_groups FloodWait {uid}: {exc.seconds}s", "warning")
+                _remember_flood(exc.seconds)
+                break
+            except Exception as exc:  # noqa: BLE001
+                log(
+                    f"discover_groups permission {reference}: {type(exc).__name__}",
+                    "warning",
+                )
+                skipped += 1
+            else:
+                if rejection:
+                    skipped += 1
+                else:
+                    saved, reason = await db.add_chat(uid, reference)
+                    if saved:
+                        added.append(reference)
+                        existing_keys.add(key)
+                    elif reason == "duplicate":
+                        duplicate_count += 1
+                    elif reason == "limit":
+                        limit_hit = True
+                        break
+                    else:
+                        errors.append(reference)
+
+            if scanned % 20 == 0:
+                with contextlib.suppress(Exception):
+                    await status_msg.edit_text(
+                        T.discover_progress(scanned, len(added))
+                    )
+
+            # Anti-spam: har bir tekshirilgan guruh orasida odamga o'xshash
+            # tasodifiy pauza. FloodWait bo'lsa darhol chiqib ketamiz.
+            pause = random.uniform(DISCOVER_PAUSE_MIN_S, DISCOVER_PAUSE_MAX_S)
+            await asyncio.sleep(pause)
+    except FloodWaitError as exc:
+        log(f"discover_groups dialog FloodWait {uid}: {exc.seconds}s", "warning")
+        _remember_flood(exc.seconds)
+    except Exception as exc:  # noqa: BLE001
+        log(f"discover_groups scan {uid}: {type(exc).__name__}", "error")
+        errors.append(type(exc).__name__)
+    finally:
+        _discover_running.discard(uid)
+        await pool.release(uid)
+
+    limits = await db.get_limits(uid)
+    max_groups = int(limits.get("max_groups") or 0)
+    report = T.discover_report(
+        added,
+        duplicate_count,
+        skipped,
+        errors,
+        channels_skipped=channels_skipped,
+        limit_hit=limit_hit,
+        limit=max_groups,
+    )
+    with contextlib.suppress(Exception):
+        await status_msg.edit_text(report)
+
+    from bot.menu import worker_manager
+
+    running = bool(worker_manager and worker_manager.is_running(uid))
+    await update.message.reply_text(
+        "🏠 Asosiy menyu",
+        reply_markup=KB.kb_main(running=running),
+    )
+    log(
+        f"🔍 Guruh topish: {uid} → +{len(added)} "
+        f"(takror {duplicate_count}, o'tkazildi {skipped}, "
+        f"kanal {channels_skipped}, xato {len(errors)})"
     )
