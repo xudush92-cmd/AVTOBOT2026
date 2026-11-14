@@ -470,7 +470,7 @@ async def begin_delete_groups(update: Update) -> None:
         return
 
     await update.message.reply_text(
-        T.ASK_DEL_GROUP,
+        T.groups_delete_text(groups),
         reply_markup=KB.kb_groups_delete(groups),
     )
 

@@ -239,7 +239,7 @@ def kb_groups_delete(
         rows.append(
             [
                 InlineKeyboardButton(
-                    f"🗑 {offset + 1}. {value[:35]}",
+                    f"🗑 {value[:35]}",
                     callback_data=f"delg:id:{group_id}:{page}",
                 )
             ]

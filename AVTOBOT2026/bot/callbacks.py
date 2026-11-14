@@ -501,7 +501,7 @@ async def _handle_del_group_locked(update: Update, uid: int, data: str) -> None:
         page = max(0, int(parts[2]))
         groups = await db.get_chat_records(uid)
         await q.edit_message_text(
-            T.ASK_DEL_GROUP,
+            T.groups_delete_text(groups, page),
             reply_markup=KB.kb_groups_delete(groups, page),
         )
         return
@@ -516,8 +516,11 @@ async def _handle_del_group_locked(update: Update, uid: int, data: str) -> None:
         )
         return
     await q.edit_message_text(
-        (f"🗑 O'chirildi: {removed}\n\n" if removed else "⚠️ Guruh eskirgan.\n\n")
-        + T.ASK_DEL_GROUP,
+        T.groups_delete_text(
+            groups,
+            page,
+            notice=f"🗑 O'chirildi: {removed}" if removed else "⚠️ Guruh eskirgan.",
+        ),
         reply_markup=KB.kb_groups_delete(groups, page),
     )
 

@@ -700,6 +700,22 @@ def groups_added_report(
 
 ASK_DEL_GROUP = "➖ O'chirish uchun guruhni tanlang:"
 
+
+def groups_delete_text(groups, page=0, page_size=10, notice=""):
+    max_page = max(0, (len(groups) - 1) // page_size)
+    page = min(max(page, 0), max_page)
+    start = page * page_size
+    lines = []
+    if notice:
+        lines.append(f"{notice}\n")
+    lines.append(f"💬 GURUHLAR ({len(groups)} ta)\n")
+    for index, item in enumerate(groups[start : start + page_size], start + 1):
+        value = item["value"] if isinstance(item, dict) else item
+        lines.append(f"{index}. {value}")
+    lines.append("\n🗑 guruhni o'chiradi.")
+    return "\n".join(lines)
+
+
 GROUPS_CLEARED = "🧹 Barcha guruhlar o'chirildi."
 
 
