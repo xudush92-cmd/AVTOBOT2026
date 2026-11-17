@@ -79,6 +79,8 @@ Har bir jamoa admini **faqat o'z a'zolarini** ko'radi va boshqaradi:
 ```
 
 **Qoidalar:**
+- Jamoa tanlash **ixtiyoriy** — «🙋 Jamoasiz davom etish» tugmasi bilan
+  jamoasiz ham ro'yxatdan o'tib, to'liq ishlash mumkin
 - Limit to'lgan jamoani tanlab bo'lmaydi ("Jamoa to'ldi")
 - Jamoa adminining muddati tugagan bo'lsa — jamoa qabul qilmaydi
 - Referal yoki jamoa havolasi orqali kelgan user jamoasi avtomatik tanlanadi

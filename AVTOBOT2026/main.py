@@ -276,7 +276,8 @@ async def _cmd_start_locked(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         if context.args:
             await _auto_assign_team_from_link(update, uid, context.args[0])
         else:
-            # Jamoalar mavjud bo'lsa — avval jamoani tanlashni taklif qilamiz.
+            # Jamoalar mavjud bo'lsa — jamoa bilan yoki jamoasiz ishlashni
+            # tanlash imkoniyatini beramiz (ikkalasi ham to'liq ishlaydi).
             teams = await db.get_all_teams()
             if teams:
                 await update.message.reply_text(

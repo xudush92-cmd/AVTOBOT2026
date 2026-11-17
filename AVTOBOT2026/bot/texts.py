@@ -1329,12 +1329,19 @@ TEAM_PICK_TITLE = (
     "🎯 JAMOA TANLANG\n\n"
     "Ro'yxatdan o'tish uchun jamoangizni tanlang:\n"
     "Jamoa egasi sizga tarif (muddat) beradi.\n\n"
-    "🔎 Referal orqali kelgan bo'lsangiz — jamoangiz avtomatik tanlangan."
+    "🔎 Referal orqali kelgan bo'lsangiz — jamoangiz avtomatik tanlangan.\n\n"
+    "👥 Guruh bilan ishlash — jamoani tanlang.\n"
+    "🙋 Jamoasiz — «Jamoasiz davom etish» tugmasini bosing."
 )
 
 TEAM_PICK_EMPTY = (
     "😔 Hozircha mavjud jamoa yo'q.\n\n"
     "📱 Yordam uchun admin bilan bog'laning."
+)
+
+TEAM_PICK_SKIPPED = (
+    "🙋 Jamoasiz davom etasiz.\n\n"
+    "Ro'yxatdan o'tish uchun quyidagi qadamlarni bajarib o'ting."
 )
 
 TEAM_PICK_FULL = (

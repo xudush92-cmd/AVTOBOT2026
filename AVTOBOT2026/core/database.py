@@ -2315,12 +2315,17 @@ async def get_team_admin_of(uid: int) -> dict | None:
 
 
 async def team_admin_expired(uid: int) -> bool:
-    """Jamoa adminining muddati tugaganmi."""
+    """Jamoa adminining muddati tugaganmi.
+
+    Foydalanuvchi bazada yo'q bo'lsa — muddat kiritilmagan deb hisoblanadi
+    (tugagan emas), chunki jamoa admini ro'yxatdan o'tish jarayonida ham
+    bo'lishi mumkin.
+    """
     from core.utils import is_expired
 
     user = await get_user(uid)
     if not user:
-        return True
+        return False
     expires = user.get("admin_expires_at")
     if not expires:
         return False

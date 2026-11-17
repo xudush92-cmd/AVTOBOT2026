@@ -403,3 +403,87 @@ class TeamExpiryTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(await RF.register_referral(USER_1, f"ref_{ADMIN_A}"))
         user = await db.get_user(USER_1)
         self.assertIsNone(user.get("team_id"), "to'lgan jamoaga biriktirilmasligi kerak")
+
+
+class TeamChoiceTests(unittest.IsolatedAsyncioTestCase):
+    """Foydalanuvchi jamoa bilan yoki jamoasiz ishlashni tanlaydi."""
+
+    async def asyncSetUp(self) -> None:
+        await db.close_db()
+        self.temp = tempfile.TemporaryDirectory()
+        self.old_db_path = db.DB_PATH
+        db.DB_PATH = Path(self.temp.name) / "test.db"
+        session_crypto._fernet = __import__(
+            "cryptography.fernet", fromlist=["Fernet"]
+        ).Fernet(
+            __import__("cryptography.fernet", fromlist=["Fernet"]).Fernet.generate_key()
+        )
+        await db.init_db()
+
+    async def asyncTearDown(self) -> None:
+        await db.close_db()
+        db.DB_PATH = self.old_db_path
+        session_crypto._fernet = None
+        self.temp.cleanup()
+
+    async def test_skip_button_exists_in_picker(self) -> None:
+        """Jamoa tanlash oynasida jamoasiz davom etish tugmasi bor."""
+        await db.create_team("Jamoa One", ADMIN_A, max_users=5)
+        teams = await db.get_all_teams()
+        kb = KB.kb_team_pick(teams)
+        callbacks = {
+            b.callback_data for row in kb.inline_keyboard for b in row if b.callback_data
+        }
+        self.assertIn("team:skip", callbacks)
+
+    async def test_pick_title_explains_both_choices(self) -> None:
+        """Matnda ikkala variant ham tushuntiriladi."""
+        self.assertIn("guruh bilan ishlash", T.TEAM_PICK_TITLE.lower())
+        self.assertIn("jamoasiz", T.TEAM_PICK_TITLE.lower())
+
+    async def test_skip_does_not_assign_team(self) -> None:
+        """Jamoasiz davom etilganda user jamoasiz qoladi."""
+        await db.create_team("Jamoa One", ADMIN_A, max_users=5)
+        teams = await db.get_all_teams()
+        q = SimpleNamespace(
+            data="team:skip",
+            answer=AsyncMock(),
+            edit_message_text=AsyncMock(),
+            message=SimpleNamespace(reply_text=AsyncMock()),
+        )
+        update = SimpleNamespace(
+            callback_query=q,
+            effective_user=SimpleNamespace(id=USER_1, full_name="Vali", username="vali"),
+            message=SimpleNamespace(reply_text=AsyncMock()),
+        )
+        with patch.object(Tm, "application", None):
+            await Tm.handle_team_pick_callback(update, USER_1, "team:skip")
+
+        user = await db.get_user(USER_1)
+        self.assertIsNone(
+            user.get("team_id") if user else None,
+            "jamoasiz davom etilganda jamoa biriktirilmasligi kerak",
+        )
+
+    async def test_pick_assigns_team(self) -> None:
+        """Jamoa tanlanganda user jamoaga biriktiriladi."""
+        team = await db.create_team("Jamoa One", ADMIN_A, max_users=5)
+        q = SimpleNamespace(
+            data=f"team:pick:{int(team['id'])}",
+            answer=AsyncMock(),
+            edit_message_text=AsyncMock(),
+            message=SimpleNamespace(reply_text=AsyncMock()),
+        )
+        update = SimpleNamespace(
+            callback_query=q,
+            effective_user=SimpleNamespace(id=USER_1, full_name="Vali", username="vali"),
+            message=SimpleNamespace(reply_text=AsyncMock()),
+        )
+        with patch.object(Tm, "application", None):
+            await Tm.handle_team_pick_callback(
+                update, USER_1, f"team:pick:{int(team['id'])}"
+            )
+
+        user = await db.get_user(USER_1)
+        self.assertEqual(int(user["team_id"]), int(team["id"]))
+        self.assertEqual(int(user["owner_admin_uid"]), ADMIN_A)

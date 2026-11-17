@@ -127,6 +127,17 @@ async def handle_team_pick_callback(update: Update, uid: int, data: str) -> None
         )
         return
 
+    if action == "skip":
+        # Foydalanuvchi jamoasiz davom etmoqchi — ro'yxatdan o'tishga o'tadi.
+        await q.edit_message_text(
+            T.TEAM_PICK_SKIPPED,
+            reply_markup=KB.kb_login(),
+        )
+        from bot.login import begin_login
+
+        await begin_login(update)
+        return
+
     if action == "page":
         try:
             page = max(0, int(parts[2]))

@@ -1302,7 +1302,9 @@ def kb_team_pick(teams: list[dict], page: int = 0, page_size: int = 10) -> Inlin
             )
         if nav:
             rows.append(nav)
-    rows.append([InlineKeyboardButton("⬅️ Orqaga", callback_data="team:back")])
+    rows.append(
+        [InlineKeyboardButton("🙋 Jamoasiz davom etish", callback_data="team:skip")]
+    )
     return InlineKeyboardMarkup(rows)
 
 
