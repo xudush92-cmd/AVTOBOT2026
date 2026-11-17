@@ -179,6 +179,16 @@ async def _handle_callback_locked(update: Update, uid: int) -> None:
         if data.startswith("app:"):
             await handle_admin_approve(update, uid, data)
             return
+        if data.startswith("team:"):
+            from bot import teams as Tm
+
+            await Tm.handle_team_pick_callback(update, uid, data)
+            return
+        if data.startswith("tadm:"):
+            from bot import teams as Tm
+
+            await Tm.handle_team_admin_callback(update, uid, data)
+            return
         if data.startswith("adm:"):
             from admin import admin_panel
 

@@ -19,10 +19,14 @@ from telegram import Update
 
 from bot import action_tokens
 from bot import keyboards as KB
-from config.config import SUPER_ADMIN
+from config.config import DURATION_OPTIONS, SUPER_ADMIN
 from core import database as db
 from core.logger import log
 from core.update_locks import user_update_lock
+from core.utils import format_expires
+
+# Jamoa admini sig'imi uchun taklif qilinadigan variantlar.
+TEAM_LIMIT_OPTIONS = [2, 5, 10, 20, 50, 100]
 
 # ─────────────────────────────────────────────────────────────────────────
 # APPLICATION (main.py da o'rnatiladi)
@@ -97,6 +101,58 @@ async def handle_admin_callback(update: Update, uid: int, data: str) -> None:
     # Statistika
     if data == "adm:stats":
         await show_stats(update)
+        return
+
+    # Jamoa adminlari (super admin)
+    if data == "adm:teamadmins":
+        await show_team_admins(update)
+        return
+    if data.startswith("adm:teamadmin:"):
+        try:
+            target = int(data.split(":")[2])
+        except (ValueError, IndexError):
+            return
+        await show_team_admin_card(update, target)
+        return
+    if data.startswith("adm:teamterm:"):
+        try:
+            target = int(data.split(":")[2])
+        except (ValueError, IndexError):
+            return
+        await q.edit_message_text(
+            "📅 Jamoa adminiga yangi muddat bering:\n\n"
+            "Adminning jamoasi va o'zi to'xtaydi, muddat berilganda qayta ishga "
+            "tushadi.",
+            reply_markup=KB.kb_team_admin_term(target, DURATION_OPTIONS),
+        )
+        return
+    if data.startswith("adm:teamsetterm:"):
+        try:
+            target = int(data.split(":")[2])
+            days = int(data.split(":")[3])
+        except (ValueError, IndexError):
+            return
+        await set_team_admin_term(update, target, days)
+        return
+    if data.startswith("adm:teamlimit:"):
+        try:
+            target = int(data.split(":")[2])
+        except (ValueError, IndexError):
+            return
+        await q.edit_message_text(
+            "👥 Jamoa adminining sig'imini o'zgartiring:\n\n"
+            "Bu — jamoasiga qo'shilishi mumkin bo'lgan foydalanuvchilar "
+            "maksimal soni.",
+            reply_markup=KB.kb_team_admin_limit(target, TEAM_LIMIT_OPTIONS),
+        )
+        return
+    if data.startswith("adm:teamsetlimit:"):
+        try:
+            target = int(data.split(":")[2])
+            size = int(data.split(":")[3])
+        except (ValueError, IndexError):
+            return
+        await set_team_admin_limit(update, target, size)
         return
 
     # Broadcast
@@ -473,3 +529,124 @@ async def handle_db_callback(update: Update, admin_uid: int, data: str) -> None:
                 reply_markup=KB.kb_db_panel(),
             )
         return
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# JAMOA ADMINLARI (super admin)
+# ─────────────────────────────────────────────────────────────────────────
+async def show_team_admins(update: Update) -> None:
+    """Jamoa adminlari ro'yxati."""
+    q = update.callback_query
+    admins = await db.get_team_admins()
+    if not admins:
+        await q.edit_message_text(
+            "👑 Hozircha jamoa admini yo'q.\n\n"
+            "Foydalanuvchilar «👑 Admin bo'lish» tugmasi orqali o'z jamoasini "
+            "yaratishi mumkin.",
+            reply_markup=KB.kb_admin_back(),
+        )
+        return
+
+    lines = [f"👑 JAMOA ADMINLARI ({len(admins)} ta)", ""]
+    for admin in admins:
+        name = admin.get("name") or f"uid {admin.get('uid')}"
+        expires = format_expires(admin.get("admin_expires_at"))
+        limit = int(admin.get("admin_max_users") or 0)
+        limit_text = f"{limit} ta" if limit else "cheksiz"
+        lines.append(f"👑 {name} — muddat: {expires}, sig'im: {limit_text}")
+    lines.append("")
+    lines.append("Boshqarish uchun adminni tanlang:")
+
+    await q.edit_message_text(
+        "\n".join(lines),
+        reply_markup=KB.kb_team_admins(admins),
+    )
+
+
+async def show_team_admin_card(update: Update, target: int) -> None:
+    """Jamoa admini kartasi."""
+    q = update.callback_query
+    admin = await db.get_user(target)
+    if not admin or not admin.get("is_team_admin"):
+        await q.edit_message_text(
+            "❌ Jamoa admini topilmadi.",
+            reply_markup=KB.kb_admin_back(),
+        )
+        return
+
+    teams = await db.get_teams(target)
+    team_name = teams[0].get("name") if teams else "—"
+    limit = int(admin.get("admin_max_users") or 0)
+    limit_text = f"{limit} ta" if limit else "cheksiz"
+
+    text = (
+        f"👑 {admin.get('name') or 'Noma`lum'}\n\n"
+        f"🆔 {target}\n"
+        f"📋 Jamoa: {team_name}\n"
+        f"📅 Muddat: {format_expires(admin.get('admin_expires_at'))}\n"
+        f"👥 Sig'im: {limit_text}\n\n"
+        "Kerakli amalni tanlang:"
+    )
+    await q.edit_message_text(text, reply_markup=KB.kb_team_admin_card(target))
+
+
+async def set_team_admin_term(update: Update, target: int, days: int) -> None:
+    """Jamoa adminining muddatini uzaytiradi (+ kunlar)."""
+    q = update.callback_query
+    admin = await db.get_user(target)
+    if not admin or not admin.get("is_team_admin"):
+        await q.edit_message_text(
+            "❌ Jamoa admini topilmadi.",
+            reply_markup=KB.kb_admin_back(),
+        )
+        return
+
+    from datetime import datetime, timedelta
+
+    base = admin.get("admin_expires_at")
+    try:
+        start = (
+            datetime.strptime(base, "%Y-%m-%d %H:%M:%S") if base else datetime.now()
+        )
+    except (TypeError, ValueError):
+        start = datetime.now()
+    expires = (start + timedelta(days=max(1, days))).strftime("%Y-%m-%d %H:%M:%S")
+
+    await db.set_admin_expires(target, expires)
+    # Jamoaning o'z muddatini ham yangilaymiz (jamoa ham to'xtamaydi).
+    teams = await db.get_teams(target)
+    if teams:
+        await db.update_team(int(teams[0]["id"]), expires_at=expires)
+
+    await q.edit_message_text(
+        f"✅ Muddat yangilandi: {admin.get('name') or target}\n\n"
+        f"📅 Yangi muddat: {format_expires(expires)}",
+        reply_markup=KB.kb_team_admin_card(target),
+    )
+    log(f"📅 Jamoa admini muddati yangilandi: {target} (+{days} kun)")
+
+
+async def set_team_admin_limit(update: Update, target: int, size: int) -> None:
+    """Jamoa adminining sig'imini (user soni) o'zgartiradi."""
+    q = update.callback_query
+    admin = await db.get_user(target)
+    if not admin or not admin.get("is_team_admin"):
+        await q.edit_message_text(
+            "❌ Jamoa admini topilmadi.",
+            reply_markup=KB.kb_admin_back(),
+        )
+        return
+
+    await db.set_admin_max_users(target, size)
+    teams = await db.get_teams(target)
+    if teams:
+        await db.update_team(int(teams[0]["id"]), max_users=size)
+
+    await q.edit_message_text(
+        f"✅ Sig'im yangilandi: {admin.get('name') or target}\n\n"
+        f"👥 Yangi sig'im: {size} ta foydalanuvchi\n"
+        "ℹ️ Jamoada hozirgi a'zolar soni limitdan ko'p bo'lsa, "
+        "ular saqlanib qoladi — yangi user qo'shilmaydi.",
+        reply_markup=KB.kb_team_admin_card(target),
+    )
+    log(f"👥 Jamoa admini sig'imi yangilandi: {target} → {size}")

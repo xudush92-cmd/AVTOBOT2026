@@ -13,7 +13,12 @@ import uuid
 
 from telegram import Message
 
-from config.config import MAX_ALBUM_FILES, MAX_MEDIA_BYTES, MAX_MEDIA_FILES_PER_USER
+from config.config import (
+    ALLOW_VIDEO_MEDIA,
+    MAX_ALBUM_FILES,
+    MAX_MEDIA_BYTES,
+    MAX_MEDIA_FILES_PER_USER,
+)
 from core.logger import log
 
 # Ruxsat etilgan kengaytmalar → media turi. Bunday ro'yxat fayl nomini
@@ -146,6 +151,14 @@ async def download_message_media(
                 "❌ Bu format qo'llab-quvvatlanmaydi. Rasm (jpg, png, webp), "
                 "video (mp4) yoki hujjat (pdf, docx) yuboring."
             )
+        return items, errors
+
+    # Video butunlay rad etiladi (faqat surat qo'llab-quvvatlanadi).
+    if kind == "video" and not ALLOW_VIDEO_MEDIA:
+        errors.append(
+            "🎥 Video qo'llab-quvvatlanmaydi. Faqat surat (jpg, png, webp) "
+            "yuboring."
+        )
         return items, errors
 
     if size and size > MAX_MEDIA_BYTES:

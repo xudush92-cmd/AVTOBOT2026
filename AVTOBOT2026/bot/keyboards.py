@@ -16,7 +16,13 @@ from bot import texts as T
 # LOGIN / ASOSIY MENYULAR
 # ─────────────────────────────────────────
 def kb_login() -> ReplyKeyboardMarkup:
-    return ReplyKeyboardMarkup([[KeyboardButton(T.BTN_LOGIN)]], resize_keyboard=True)
+    return ReplyKeyboardMarkup(
+        [
+            [KeyboardButton(T.BTN_LOGIN)],
+            [KeyboardButton(T.BTN_TEAM_ADMIN)],
+        ],
+        resize_keyboard=True,
+    )
 
 
 def kb_pending() -> ReplyKeyboardMarkup:
@@ -31,7 +37,11 @@ def kb_super_admin() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup([[KeyboardButton(T.BTN_ADMIN)]], resize_keyboard=True)
 
 
-def kb_main(running: bool = False, super_admin: bool = False) -> ReplyKeyboardMarkup:
+def kb_main(
+    running: bool = False,
+    super_admin: bool = False,
+    team_admin: bool = False,
+) -> ReplyKeyboardMarkup:
     """Yassi (ichki menyusiz) foydalanuvchi klaviaturasi.
 
     Barcha asosiy amallar bitta ekranda: guruhlar avtomatik topiladi,
@@ -45,22 +55,23 @@ def kb_main(running: bool = False, super_admin: bool = False) -> ReplyKeyboardMa
     action = (
         f"{T.BTN_STOP} (🟢 ON)" if running else f"{T.BTN_START} (🔴 OFF)"
     )
-    return ReplyKeyboardMarkup(
+    rows = [
+        [KeyboardButton(action)],
+        [KeyboardButton(T.BTN_REPORT), KeyboardButton(T.BTN_REFERRAL)],
         [
-            [KeyboardButton(action)],
-            [KeyboardButton(T.BTN_REPORT), KeyboardButton(T.BTN_REFERRAL)],
-            [
-                KeyboardButton(T.BTN_FIND_GROUPS),
-                KeyboardButton(T.BTN_DEL_GROUP),
-            ],
-            [
-                KeyboardButton(T.BTN_ADD_POST),
-                KeyboardButton(T.BTN_DEL_POST),
-            ],
-            [KeyboardButton(T.BTN_TIMER)],
+            KeyboardButton(T.BTN_FIND_GROUPS),
+            KeyboardButton(T.BTN_DEL_GROUP),
         ],
-        resize_keyboard=True,
-    )
+        [
+            KeyboardButton(T.BTN_ADD_POST),
+            KeyboardButton(T.BTN_DEL_POST),
+        ],
+        [KeyboardButton(T.BTN_TIMER)],
+    ]
+    # Jamoa adminiga — o'z jamoasini boshqarish tugmasi.
+    if team_admin:
+        rows.append([KeyboardButton(T.BTN_TEAM_MENU)])
+    return ReplyKeyboardMarkup(rows, resize_keyboard=True)
 
 
 def kb_groups_menu() -> ReplyKeyboardMarkup:
@@ -89,19 +100,23 @@ def kb_posts_menu() -> ReplyKeyboardMarkup:
     )
 
 
-def kb_referral(link: str) -> InlineKeyboardMarkup:
+def kb_referral(link: str, team_link: str = "") -> InlineKeyboardMarkup:
     """Referal sahifasi tugmalari: havolani ochish va do'stga yuborish."""
-    return InlineKeyboardMarkup(
+    rows: list[list[InlineKeyboardButton]] = [
         [
-            [
-                InlineKeyboardButton("🔗 Havolani ochish", url=link),
-                InlineKeyboardButton(
-                    "📨 Do'stlarga yuborish", callback_data="ref:share"
-                ),
-            ],
-            [InlineKeyboardButton("📦 Paket va limitlar", callback_data="ref:plan")],
-        ]
-    )
+            InlineKeyboardButton("🔗 Havolani ochish", url=link),
+            InlineKeyboardButton(
+                "📨 Do'stlarga yuborish", callback_data="ref:share"
+            ),
+        ],
+    ]
+    # Jamoa admini — jamoasining havolasini ham ko'rsatadi.
+    if team_link:
+        rows.append(
+            [InlineKeyboardButton("🎯 Jamoa havolasi", url=team_link)]
+        )
+    rows.append([InlineKeyboardButton("📦 Paket va limitlar", callback_data="ref:plan")])
+    return InlineKeyboardMarkup(rows)
 
 
 def kb_input_cancel() -> ReplyKeyboardMarkup:
@@ -404,6 +419,11 @@ def kb_admin_panel() -> InlineKeyboardMarkup:
             [InlineKeyboardButton("👥 Foydalanuvchilar", callback_data="adm:users")],
             [
                 InlineKeyboardButton(
+                    "👑 Jamoa adminlari", callback_data="adm:teamadmins"
+                )
+            ],
+            [
+                InlineKeyboardButton(
                     "🕓 Muddati tugaganlar", callback_data="adm:expired"
                 )
             ],
@@ -414,6 +434,93 @@ def kb_admin_panel() -> InlineKeyboardMarkup:
             [InlineKeyboardButton("🖥 Tizim holati", callback_data="adm:system")],
         ]
     )
+
+
+def kb_team_admins(admins: list[dict]) -> InlineKeyboardMarkup:
+    """Jamoa adminlari ro'yxati (super admin uchun)."""
+    rows: list[list[InlineKeyboardButton]] = []
+    for admin in admins:
+        uid = int(admin.get("uid") or 0)
+        name = (admin.get("name") or str(uid))[:28]
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    f"👑 {name}",
+                    callback_data=f"adm:teamadmin:{uid}",
+                )
+            ]
+        )
+    if not rows:
+        rows.append([InlineKeyboardButton("👑 Jamoa adminlari yo'q", callback_data="adm:noop")])
+    rows.append([InlineKeyboardButton("⬅️ Orqaga", callback_data="adm:back")])
+    return InlineKeyboardMarkup(rows)
+
+
+def kb_team_admin_card(uid: int) -> InlineKeyboardMarkup:
+    """Jamoa admini kartasi — muddat va sig'im boshqaruvi."""
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    "📅 Muddatni uzaytirish", callback_data=f"adm:teamterm:{uid}"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    "👥 Sig'imni o'zgartirish", callback_data=f"adm:teamlimit:{uid}"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    "⬅️ Orqaga", callback_data="adm:teamadmins"
+                )
+            ],
+        ]
+    )
+
+
+def kb_team_admin_term(uid: int, options: list[int]) -> InlineKeyboardMarkup:
+    """Jamoa adminiga yangi muddat berish."""
+    rows: list[list[InlineKeyboardButton]] = []
+    row: list[InlineKeyboardButton] = []
+    for days in options:
+        row.append(
+            InlineKeyboardButton(
+                f"{days} kun",
+                callback_data=f"adm:teamsetterm:{uid}:{days}",
+            )
+        )
+        if len(row) == 3:
+            rows.append(row)
+            row = []
+    if row:
+        rows.append(row)
+    rows.append(
+        [InlineKeyboardButton("⬅️ Orqaga", callback_data=f"adm:teamadmin:{uid}")]
+    )
+    return InlineKeyboardMarkup(rows)
+
+
+def kb_team_admin_limit(uid: int, options: list[int]) -> InlineKeyboardMarkup:
+    """Jamoa adminining sig'imini (user soni) o'zgartirish."""
+    rows: list[list[InlineKeyboardButton]] = []
+    row: list[InlineKeyboardButton] = []
+    for size in options:
+        row.append(
+            InlineKeyboardButton(
+                f"{size} ta",
+                callback_data=f"adm:teamsetlimit:{uid}:{size}",
+            )
+        )
+        if len(row) == 3:
+            rows.append(row)
+            row = []
+    if row:
+        rows.append(row)
+    rows.append(
+        [InlineKeyboardButton("⬅️ Orqaga", callback_data=f"adm:teamadmin:{uid}")]
+    )
+    return InlineKeyboardMarkup(rows)
 
 
 def kb_admin_back() -> InlineKeyboardMarkup:
@@ -1155,3 +1262,164 @@ def kb_group_check_picker(
     groups: list[dict], page: int = 0, page_size: int = 10
 ) -> InlineKeyboardMarkup:
     return kb_group_picker(groups, page, "gchk", "🔎")
+
+
+# ─────────────────────────────────────────
+# JAMOALAR (TEAMS)
+# ─────────────────────────────────────────
+def kb_team_pick(teams: list[dict], page: int = 0, page_size: int = 10) -> InlineKeyboardMarkup:
+    """Ro'yxatdan o'tuvchi uchun jamoa tanlash tugmalari."""
+    rows: list[list[InlineKeyboardButton]] = []
+    if teams:
+        total_pages = max(1, (len(teams) + page_size - 1) // page_size)
+        page = min(max(0, page), total_pages - 1)
+        start = page * page_size
+        window = teams[start : start + page_size]
+        for team in window:
+            team_id = int(team.get("id") or 0)
+            name = (team.get("name") or "Noma'lum")[:30]
+            rows.append(
+                [
+                    InlineKeyboardButton(
+                        f"🎯 {name}",
+                        callback_data=f"team:pick:{team_id}",
+                    )
+                ]
+            )
+        nav: list[InlineKeyboardButton] = []
+        if page > 0:
+            nav.append(
+                InlineKeyboardButton("⬅️", callback_data=f"team:page:{page - 1}")
+            )
+        nav.append(
+            InlineKeyboardButton(
+                f"{page + 1}/{total_pages}", callback_data="team:noop"
+            )
+        )
+        if page + 1 < total_pages:
+            nav.append(
+                InlineKeyboardButton("➡️", callback_data=f"team:page:{page + 1}")
+            )
+        if nav:
+            rows.append(nav)
+    rows.append([InlineKeyboardButton("⬅️ Orqaga", callback_data="team:back")])
+    return InlineKeyboardMarkup(rows)
+
+
+def kb_team_admin_panel() -> InlineKeyboardMarkup:
+    """Jamoa admini panelining asosiy tugmalari."""
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    "👥 Foydalanuvchilar", callback_data="tadm:users"
+                ),
+                InlineKeyboardButton("📊 Statistika", callback_data="tadm:stats"),
+            ],
+            [
+                InlineKeyboardButton(
+                    "📨 Xabar yuborish", callback_data="tadm:message"
+                ),
+                InlineKeyboardButton("🔗 Havola", callback_data="tadm:link"),
+            ],
+            [InlineKeyboardButton("⬅️ Orqaga", callback_data="tadm:back")],
+        ]
+    )
+
+
+def kb_team_members(members: list[dict], page: int = 0, page_size: int = 10) -> InlineKeyboardMarkup:
+    """Jamoa a'zolari ro'yxati — tarif berish uchun tanlash."""
+    rows: list[list[InlineKeyboardButton]] = []
+    if members:
+        total_pages = max(1, (len(members) + page_size - 1) // page_size)
+        page = min(max(0, page), total_pages - 1)
+        start = page * page_size
+        window = members[start : start + page_size]
+        for user in window:
+            uid = int(user.get("uid") or 0)
+            name = (user.get("name") or str(uid))[:28]
+            rows.append(
+                [
+                    InlineKeyboardButton(
+                        f"👤 {name}",
+                        callback_data=f"tadm:member:{uid}",
+                    )
+                ]
+            )
+        nav: list[InlineKeyboardButton] = []
+        if page > 0:
+            nav.append(
+                InlineKeyboardButton("⬅️", callback_data=f"tadm:users:{page - 1}")
+            )
+        nav.append(
+            InlineKeyboardButton(
+                f"{page + 1}/{total_pages}", callback_data="tadm:noop"
+            )
+        )
+        if page + 1 < total_pages:
+            nav.append(
+                InlineKeyboardButton("➡️", callback_data=f"tadm:users:{page + 1}")
+            )
+        if nav:
+            rows.append(nav)
+    rows.append([InlineKeyboardButton("⬅️ Orqaga", callback_data="tadm:back")])
+    return InlineKeyboardMarkup(rows)
+
+
+def kb_team_member_card(uid: int, awaiting: bool = False) -> InlineKeyboardMarkup:
+    """Jamoa a'zosi kartasi — tasdiqlash / tarif berish / bloklash."""
+    rows: list[list[InlineKeyboardButton]] = []
+    if awaiting:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    "✅ Tasdiqlash", callback_data=f"tadm:approve:{uid}"
+                )
+            ]
+        )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                "📅 Muddat berish", callback_data=f"tadm:term:{uid}"
+            )
+        ]
+    )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                "🚫 Bloklash", callback_data=f"tadm:block:{uid}"
+            ),
+            InlineKeyboardButton(
+                "✅ Blokdan chiqarish", callback_data=f"tadm:unblock:{uid}"
+            ),
+        ]
+    )
+    rows.append([InlineKeyboardButton("⬅️ Orqaga", callback_data="tadm:users")])
+    return InlineKeyboardMarkup(rows)
+
+
+def kb_team_term_options(uid: int, options: list[int]) -> InlineKeyboardMarkup:
+    """Muddat (kun) tanlash tugmalari."""
+    rows: list[list[InlineKeyboardButton]] = []
+    row: list[InlineKeyboardButton] = []
+    for days in options:
+        row.append(
+            InlineKeyboardButton(
+                f"{days} kun",
+                callback_data=f"tadm:setterm:{uid}:{days}",
+            )
+        )
+        if len(row) == 3:
+            rows.append(row)
+            row = []
+    if row:
+        rows.append(row)
+    rows.append([InlineKeyboardButton("⬅️ Orqaga", callback_data=f"tadm:member:{uid}")])
+    return InlineKeyboardMarkup(rows)
+
+
+def kb_team_admin_register() -> InlineKeyboardMarkup:
+    """Admin bo'lish oynasi uchun bekor tugmasi."""
+    return InlineKeyboardMarkup(
+        [[InlineKeyboardButton("❌ Bekor qilish", callback_data="team:back")]]
+    )

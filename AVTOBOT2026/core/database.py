@@ -59,6 +59,11 @@ _USER_COLUMNS = {
     "referral_bonus_days",
     "referral_bonus_note",
     "last_active_at",
+    "team_id",
+    "owner_admin_uid",
+    "is_team_admin",
+    "admin_expires_at",
+    "admin_max_users",
 }
 
 
@@ -117,6 +122,13 @@ async def _migrate_schema() -> None:
             ("referral_bonus_days", "INTEGER DEFAULT 0"),
             ("referral_bonus_note", "TEXT DEFAULT ''"),
             ("last_active_at", "TEXT"),
+            # Jamoa (team) tizimi: user qaysi jamoaga va qaysi admin ga
+            # tegishli, admin bo'limi esa o'z muddati va sig'imi.
+            ("team_id", "INTEGER"),
+            ("owner_admin_uid", "INTEGER"),
+            ("is_team_admin", "INTEGER DEFAULT 0"),
+            ("admin_expires_at", "TEXT"),
+            ("admin_max_users", "INTEGER DEFAULT 0"),
         ),
     )
     await add_missing_columns(
@@ -315,6 +327,16 @@ async def init_db() -> None:
         );
         CREATE INDEX IF NOT EXISTS idx_send_logs_uid_sent
             ON send_logs(uid, sent_at);
+        CREATE TABLE IF NOT EXISTS teams (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            owner_admin_uid INTEGER NOT NULL,
+            max_users INTEGER DEFAULT 0,
+            expires_at TEXT,
+            created_at TEXT,
+            UNIQUE(owner_admin_uid, name)
+        );
+        CREATE INDEX IF NOT EXISTS idx_teams_owner ON teams(owner_admin_uid);
     """)
     await _db.commit()
     await _migrate_schema()
@@ -634,7 +656,14 @@ async def set_user_limits(uid: int, **fields: object) -> bool:
     """Individual limitni qo'lda o'rnatadi (max_groups/max_posts/daily_limit/active_hours)."""
     from core.utils import parse_active_hours
 
-    allowed = {"max_groups", "max_posts", "daily_limit", "active_hours"}
+    allowed = {
+        "max_groups",
+        "max_posts",
+        "daily_limit",
+        "active_hours",
+        "tariff_expires_at",
+        "is_blocked",
+    }
     unknown = set(fields) - allowed
     if unknown:
         raise ValueError(f"Noma'lum limit ustuni: {', '.join(sorted(unknown))}")
@@ -657,6 +686,19 @@ async def set_user_limits(uid: int, **fields: object) -> bool:
                 return False
             params.append(max(0, number))
         updates.append(f"{name} = ?")
+    # Muddat (tariff_expires_at) — ISO sana yoki NULL (cheksiz).
+    if "tariff_expires_at" in fields:
+        expires = fields["tariff_expires_at"]
+        params.append(str(expires) if expires else None)
+        updates.append("tariff_expires_at = ?")
+    # Bloklash holati (jamoa admini ham foydalana oladi).
+    if "is_blocked" in fields:
+        try:
+            blocked = int(fields["is_blocked"])  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            return False
+        params.append(1 if blocked else 0)
+        updates.append("is_blocked = ?")
     if not updates:
         return False
     updates.append("updated_at = ?")
@@ -2029,3 +2071,265 @@ async def optimize_db() -> None:
             await _conn().commit()
     except Exception as exc:
         log(f"optimize_db xatosi: {type(exc).__name__}", "error")
+
+
+# ─────────────────────────────────────────
+# JAMOALAR (TEAMS) — jamoa admini va uning foydalanuvchilari
+# ─────────────────────────────────────────
+async def create_team(
+    name: str,
+    owner_admin_uid: int,
+    max_users: int = 0,
+    expires_at: str | None = None,
+) -> dict | None:
+    """Yangi jamoa yaratadi (jamoa admini egaligi bilan)."""
+    clean = " ".join((name or "").split())
+    if not clean:
+        return None
+    cur = await _execute_write(
+        "INSERT INTO teams (name, owner_admin_uid, max_users, expires_at, created_at) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (clean, int(owner_admin_uid), max(0, int(max_users or 0)), expires_at, iso_now()),
+    )
+    if not cur.rowcount:
+        return None
+    return await get_team(cur.lastrowid)
+
+
+async def get_team(team_id: int) -> dict | None:
+    try:
+        async with _conn().execute(
+            "SELECT * FROM teams WHERE id = ?", (int(team_id),)
+        ) as cur:
+            row = await cur.fetchone()
+            return dict(row) if row else None
+    except Exception:
+        return None
+
+
+async def get_team_by_name(owner_admin_uid: int, name: str) -> dict | None:
+    clean = " ".join((name or "").split())
+    try:
+        async with _conn().execute(
+            "SELECT * FROM teams WHERE owner_admin_uid = ? AND name = ?",
+            (int(owner_admin_uid), clean),
+        ) as cur:
+            row = await cur.fetchone()
+            return dict(row) if row else None
+    except Exception:
+        return None
+
+
+async def get_teams(owner_admin_uid: int | None = None) -> list[dict]:
+    """Jamoalar ro'yxati. ``owner_admin_uid`` berilsa — faqat o'shiki.
+
+    Jamoalar jadvali eski/qisman bazalarda yo'q bo'lishi mumkin — u holda
+    bo'sh ro'yxat qaytariladi (bot ishlashda davom etadi).
+    """
+    try:
+        if owner_admin_uid is None:
+            async with _conn().execute(
+                "SELECT * FROM teams ORDER BY id ASC"
+            ) as cur:
+                return [dict(row) for row in await cur.fetchall()]
+        async with _conn().execute(
+            "SELECT * FROM teams WHERE owner_admin_uid = ? ORDER BY id ASC",
+            (int(owner_admin_uid),),
+        ) as cur:
+            return [dict(row) for row in await cur.fetchall()]
+    except Exception:
+        return []
+
+
+async def get_all_teams() -> list[dict]:
+    return await get_teams(None)
+
+
+async def update_team(team_id: int, **fields: Any) -> bool:
+    """Jamoaning sig'imi yoki muddatini o'zgartiradi (faqat super admin)."""
+    allowed = {"name", "max_users", "expires_at"}
+    unknown = set(fields) - allowed
+    if unknown:
+        raise ValueError(f"Noma'lum teams ustuni: {', '.join(sorted(unknown))}")
+    if not fields:
+        return False
+    sets = ", ".join(f"{name} = ?" for name in fields)
+    cur = await _execute_write(
+        f"UPDATE teams SET {sets} WHERE id = ?",
+        (*fields.values(), int(team_id)),
+    )
+    return cur.rowcount > 0
+
+
+async def delete_team(team_id: int) -> bool:
+    cur = await _execute_write(
+        "DELETE FROM teams WHERE id = ?", (int(team_id),)
+    )
+    return cur.rowcount > 0
+
+
+async def count_team_members(team_id: int) -> int:
+    """Jamoadagi foydalanuvchilar soni (jamoa admini ham hisobga olinadi)."""
+    return await _scalar(
+        "SELECT COUNT(*) AS n FROM users WHERE team_id = ?", (int(team_id),)
+    )
+
+
+async def team_has_free_slot(team_id: int) -> bool:
+    """Jamoada bo'sh joy bormi. ``max_users = 0`` → cheksiz."""
+    team = await get_team(team_id)
+    if not team:
+        return False
+    limit = int(team.get("max_users") or 0)
+    if limit <= 0:
+        return True
+    return await count_team_members(team_id) < limit
+
+
+async def get_team_members(team_id: int) -> list[dict]:
+    """Jamoaning barcha a'zolari (jamoa admini birinchi bo'lib)."""
+    async with _conn().execute(
+        "SELECT * FROM users WHERE team_id = ? ORDER BY created_at ASC",
+        (int(team_id),),
+    ) as cur:
+        return [_decode_user(row) for row in await cur.fetchall()]
+
+
+async def get_users_by_owner(owner_admin_uid: int) -> list[dict]:
+    """Faqat berilgan jamoa adminiga tegishli foydalanuvchilar."""
+    async with _conn().execute(
+        "SELECT * FROM users WHERE owner_admin_uid = ? AND uid != ? "
+        "ORDER BY created_at DESC",
+        (int(owner_admin_uid), int(owner_admin_uid)),
+    ) as cur:
+        return [_decode_user(row) for row in await cur.fetchall()]
+
+
+async def get_pending_by_owner(owner_admin_uid: int) -> list[dict]:
+    """Jamoa admini tasdiqlashni kutayotgan arizalar."""
+    async with _conn().execute(
+        "SELECT * FROM users WHERE owner_admin_uid = ? AND awaiting_approval = 1 "
+        "AND uid != ? ORDER BY created_at ASC",
+        (int(owner_admin_uid), int(owner_admin_uid)),
+    ) as cur:
+        return [_decode_user(row) for row in await cur.fetchall()]
+
+
+async def assign_team_member(
+    uid: int,
+    team_id: int,
+    owner_admin_uid: int,
+) -> bool:
+    """Foydalanuvchini jamoaga biriktiradi (admin tasdiqlashda)."""
+    cur = await _execute_write(
+        "UPDATE users SET team_id = ?, owner_admin_uid = ?, updated_at = ? WHERE uid = ?",
+        (int(team_id), int(owner_admin_uid), iso_now(), int(uid)),
+    )
+    return cur.rowcount > 0
+
+
+async def set_team_pending(
+    uid: int,
+    team_id: int,
+    owner_admin_uid: int,
+    name: str = "",
+    username: str = "",
+) -> bool:
+    """Ro'yxatdan o'tuvchi foydalanuvchi jamoani tanladi (tasdiq kutilmoqda)."""
+    fields: dict[str, Any] = {}
+    if name:
+        fields["name"] = name
+    if username:
+        fields["username"] = username
+    await upsert_user(uid, **fields)
+    cur = await _execute_write(
+        "UPDATE users SET team_id = ?, owner_admin_uid = ?, awaiting_approval = 1, "
+        "updated_at = ? WHERE uid = ?",
+        (int(team_id), int(owner_admin_uid), iso_now(), int(uid)),
+    )
+    return cur.rowcount > 0
+
+
+async def set_team_admin(
+    uid: int,
+    team_id: int,
+    max_users: int = 0,
+    admin_expires_at: str | None = None,
+) -> bool:
+    """Foydalanuvchini jamoa admini qilib tayinlaydi.
+
+    Foydalanuvchi hali bazada bo'lmasa — yaratib qo'yadi (INSERT).
+    """
+    await upsert_user(uid)
+    cur = await _execute_write(
+        "UPDATE users SET is_team_admin = 1, team_id = ?, admin_max_users = ?, "
+        "admin_expires_at = ?, updated_at = ? WHERE uid = ?",
+        (int(team_id), max(0, int(max_users or 0)), admin_expires_at, iso_now(), int(uid)),
+    )
+    return cur.rowcount > 0
+
+
+async def set_admin_max_users(uid: int, max_users: int) -> bool:
+    """Jamoa adminining sig'imini o'zgartiradi (faqat super admin)."""
+    await upsert_user(uid)
+    cur = await _execute_write(
+        "UPDATE users SET admin_max_users = ?, updated_at = ? WHERE uid = ?",
+        (max(0, int(max_users or 0)), iso_now(), int(uid)),
+    )
+    return cur.rowcount > 0
+
+
+async def set_admin_expires(uid: int, expires_at: str | None) -> bool:
+    """Jamoa adminining muddatini o'zgartiradi (faqat super admin)."""
+    await upsert_user(uid)
+    cur = await _execute_write(
+        "UPDATE users SET admin_expires_at = ?, updated_at = ? WHERE uid = ?",
+        (expires_at, iso_now(), int(uid)),
+    )
+    return cur.rowcount > 0
+
+
+async def get_team_admins() -> list[dict]:
+    """Barcha jamoa adminlari (super admin dan tashqari)."""
+    async with _conn().execute(
+        "SELECT * FROM users WHERE is_team_admin = 1 AND uid != ? ORDER BY uid ASC",
+        (SUPER_ADMIN,),
+    ) as cur:
+        return [_decode_user(row) for row in await cur.fetchall()]
+
+
+async def is_team_admin(uid: int) -> bool:
+    user = await get_user(uid)
+    return bool(user and user.get("is_team_admin"))
+
+
+async def get_team_admin_of(uid: int) -> dict | None:
+    """Foydalanuvchining jamoa admini (agar mavjud bo'lsa)."""
+    user = await get_user(uid)
+    if not user or not user.get("owner_admin_uid"):
+        return None
+    owner = await get_user(int(user["owner_admin_uid"]))
+    if not owner or not owner.get("is_team_admin"):
+        return None
+    return owner
+
+
+async def team_admin_expired(uid: int) -> bool:
+    """Jamoa adminining muddati tugaganmi."""
+    from core.utils import is_expired
+
+    user = await get_user(uid)
+    if not user:
+        return True
+    expires = user.get("admin_expires_at")
+    if not expires:
+        return False
+    return is_expired(expires)
+
+
+async def get_expired_team_admins() -> list[int]:
+    """Muddati tugagan jamoa adminlarining ID'lari."""
+    from core.utils import is_expired
+
+    rows = await get_team_admins()
+    return [int(r["uid"]) for r in rows if is_expired(r.get("admin_expires_at"))]

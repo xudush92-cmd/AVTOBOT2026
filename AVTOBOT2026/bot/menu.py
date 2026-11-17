@@ -425,6 +425,20 @@ async def route_menu_button(update: Update, text: str) -> bool:
         await R.show_referral(update)
         return True
 
+    # 👥 Jamoam — jamoa admini uchun
+    if text == T.BTN_TEAM_MENU:
+        from bot import teams as Tm
+
+        await Tm.show_team_admin_panel(update, update.effective_user.id)
+        return True
+
+    # 👑 Admin bo'lish — jamoa yaratish
+    if text == T.BTN_TEAM_ADMIN:
+        from bot import teams as Tm
+
+        await Tm.begin_team_admin_register(update, update.effective_user.id)
+        return True
+
     # ⬅️ Kiritish oynasidan asosiy menyuga
     if text == T.BTN_BACK:
         uid = update.effective_user.id

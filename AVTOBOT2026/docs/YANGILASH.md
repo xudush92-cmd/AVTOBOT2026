@@ -14,7 +14,20 @@ qaytish rejasini beradi.
 | Worker yuborish | 🟡 o'rta | Endi albom `send_file([...])` orqali, matnli post `link_preview` bayrog'i bilan ketadi. Kunlik limit/faol soat yoqilsa, yuborishlar o'sha oynaga moslashadi |
 | Media disk | 🟡 o'rta | Albomlar bilan fayllar soni o'sadi. Har user uchun kvota: `MAX_MEDIA_FILES_PER_USER` (standart 200) |
 
-Barcha yangi funksiya testlangan: **233 test** (`python -m unittest discover -s tests -t tests`).
+Barcha yangi funksiya testlangan: **272 test** (`python -m unittest discover -s tests -t tests`).
+
+### 🆕 Jamoa (team) tizimi
+
+| Qism | Xavf | Izoh |
+| ---- | ---- | ---- |
+| `teams` jadvali | 🟢 past | `CREATE TABLE IF NOT EXISTS` — mavjud foydalanuvchilar jamoasiz qoladi va eski tartibda ishlaydi |
+| `users` ustunlari | 🟢 past | `team_id`, `owner_admin_uid`, `is_team_admin`, `admin_expires_at`, `admin_max_users` — `ALTER TABLE ADD COLUMN`, eski yozuvlarda `NULL`/`0` |
+| Referal bonuslari | 🟢 past | `REFERRAL_BONUS_DAYS=0` — **yangi bonus kunlar berilmaydi**. Berilgan kunlar (`referral_bonus_days`) o'chirmaydi, saqlanadi |
+| Video media | 🟢 past | `ALLOW_VIDEO_MEDIA=0` — video yuborish rad etiladi, faqat surat. Eski saqlangan video postlar o'z-o'zidan yuborilmaydi (albatta ular `send_video` orqali yuboriladi — kerak bo'lsa `ALLOW_VIDEO_MEDIA=1` qo'ying) |
+| Albom limiti | 🟡 o'rta | `MAX_ALBUM_FILES` 10 → **4**. Albomlar kichraydi, xotira va trafik kamayadi |
+
+> ℹ️ Jamoa tizimi **ixtiyoriy**: foydalanuvchi jamoa tanlamasa, oddiy user
+> sifatida ishlaydi. Jamoa adminlari faqat o'z jamoalariga ta'sir qiladi.
 
 ## 2. Chiqarish tartibi
 
@@ -47,6 +60,13 @@ pip install -r requirements.txt
 # 4) KONFIGURATSIYA — .envga yangi kalitlarni qo'shish (ixtiyoriy)
 #    1-bosqichda HECH QANDAY limit yoqmagan ham yaxshi: eski xatti-harakat qoladi.
 nano .env
+#
+#    Jamoa tizimi uchun (standart qiymatlar bilan ham ishlaydi):
+#      TEAM_ADMIN_DEFAULT_DAYS=30     # jamoa admini muddati (kun)
+#      TEAM_MIN_MEMBERS=2             # minimal jamoa hajmi
+#      ALLOW_VIDEO_MEDIA=0            # 0 = video rad etiladi (faqat surat)
+#      MAX_ALBUM_FILES=4              # bitta postga maksimal rasm soni
+#      REFERRAL_BONUS_DAYS=0          # bonus kunlari berilmaydi
 
 # 5) START
 systemctl start avtobot && journalctl -u avtobot -f

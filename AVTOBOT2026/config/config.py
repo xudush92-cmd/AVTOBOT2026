@@ -88,7 +88,13 @@ MAX_GROUP_FAILS: int = 3  # guruh necha xato qilsa o'chiriladi
 # MEDIA (POST SURATLARI / VIDEO)
 # ─────────────────────────────────────────────────────────────────────────
 # Bitta postga qo'shiladigan fayllar soni (Telegram albom limiti = 10).
-MAX_ALBUM_FILES: int = min(10, max(1, _int("MAX_ALBUM_FILES", 10)))
+MAX_ALBUM_FILES: int = min(10, max(1, _int("MAX_ALBUM_FILES", 4)))
+# Video qo'llab-quvvatlanadimi. 0 = video butunlay rad etiladi (faqat surat).
+ALLOW_VIDEO_MEDIA: bool = os.getenv("ALLOW_VIDEO_MEDIA", "0") not in {
+    "0",
+    "false",
+    "no",
+}
 # Bot API orqali yuklab olinadigan bitta faylning maksimal hajmi.
 MAX_MEDIA_BYTES: int = max(1024 * 1024, _int("MAX_MEDIA_BYTES", 20 * 1024 * 1024))
 # Bir nechta media qatorlarini albom sifatida yig'ib olish uchun kutish.
@@ -136,7 +142,8 @@ ACTIVE_HOURS_DEFAULT: str = (os.getenv("ACTIVE_HOURS_DEFAULT", "") or "").strip(
 # REFERAL MUKOFOTI VA ANTI-FRAUD
 # ─────────────────────────────────────────────────────────────────────────
 # Har bir FAOL (kriteriyani bosgan) referal uchun referrerga qo'shiladigan kun.
-REFERRAL_BONUS_DAYS: int = max(0, _int("REFERRAL_BONUS_DAYS", 3))
+# 0 = bonus kunlari umuman berilmaydi (referal faqat statistika uchun).
+REFERRAL_BONUS_DAYS: int = max(0, _int("REFERRAL_BONUS_DAYS", 0))
 # Bir oyda beriladigan maksimal bonus kun (firibgarlik ta'sirini cheklash).
 REFERRAL_BONUS_MONTHLY_CAP_DAYS: int = max(
     REFERRAL_BONUS_DAYS, _int("REFERRAL_BONUS_MONTHLY_CAP_DAYS", 30)
@@ -182,6 +189,18 @@ EXPIRY_CHECK_INTERVAL_S: int = max(30, _int("EXPIRY_CHECK_INTERVAL_S", 60))
 JANITOR_INTERVAL_S: int = 60  # stale login tozalash (har daqiqa)
 # Davriy tozalash: yetim media, eski backup, WAL/statistika (standart 30 daqiqa)
 CLEANUP_INTERVAL_S: int = max(300, _int("CLEANUP_INTERVAL_S", 1800))
+
+# ─────────────────────────────────────────────────────────────────────────
+# JAMOALAR (TEAMS) — jamoa admini va uning foydalanuvchilari
+# ─────────────────────────────────────────────────────────────────────────
+# Jamoa admini uchun standart muddat (kun). Super admin alohida belgilaydi.
+TEAM_ADMIN_DEFAULT_DAYS: int = max(1, _int("TEAM_ADMIN_DEFAULT_DAYS", 30))
+# Jamoadagi minimal foydalanuvchi soni (bitta jamoa kamida shuncha user).
+TEAM_MIN_MEMBERS: int = max(1, _int("TEAM_MIN_MEMBERS", 2))
+# Jamoa adminining sig'imi (0 = cheksiz, faqat super admin belgilaydi).
+TEAM_DEFAULT_MAX_USERS: int = max(0, _int("TEAM_DEFAULT_MAX_USERS", 0))
+# Ro'yxatdan o'tishda jamoa tanlash uchun maksimal ko'rsatiladigan jamoalar.
+TEAM_LIST_PAGE_SIZE: int = max(1, _int("TEAM_LIST_PAGE_SIZE", 10))
 
 # ─────────────────────────────────────────────────────────────────────────
 # RATE LIMIT

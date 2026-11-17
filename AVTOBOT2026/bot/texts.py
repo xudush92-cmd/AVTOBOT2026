@@ -412,6 +412,9 @@ BTN_ADMIN = "🖥 Super Admin"
 BTN_LOGIN = "🔑 Login"
 BTN_PENDING = "⏳ Tasdiq kutilmoqda..."
 BTN_BLOCKED = "🚫 Bloklangan"
+BTN_TEAM_ADMIN = "👑 Admin bo'lish"
+BTN_TEAM_MENU = "👥 Jamoam"
+BTN_TEAM_PICK = "🎯 Jamoa tanlash"
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -1317,3 +1320,225 @@ def status_next_step(groups: int, posts: int) -> str:
     if not posts:
         return "👇 Keyingi qadam: ➕ «Post qo'shish» tugmasini bosing"
     return ""
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# JAMOALAR (TEAMS) — jamoa admini va uning foydalanuvchilari
+# ─────────────────────────────────────────────────────────────────────────
+TEAM_PICK_TITLE = (
+    "🎯 JAMOA TANLANG\n\n"
+    "Ro'yxatdan o'tish uchun jamoangizni tanlang:\n"
+    "Jamoa egasi sizga tarif (muddat) beradi.\n\n"
+    "🔎 Referal orqali kelgan bo'lsangiz — jamoangiz avtomatik tanlangan."
+)
+
+TEAM_PICK_EMPTY = (
+    "😔 Hozircha mavjud jamoa yo'q.\n\n"
+    "📱 Yordam uchun admin bilan bog'laning."
+)
+
+TEAM_PICK_FULL = (
+    "🚫 Bu jamoada joy to'ldi.\n\n"
+    "Boshqa jamoani tanlang yoki admin bilan bog'laning."
+)
+
+TEAM_PICK_PAGE = (
+    "🎯 JAMOA TANLANG\n\n"
+    "Ro'yxatdan o'tish uchun jamoangizni tanlang:\n"
+    "Jamoa egasi sizga tarif (muddat) beradi.\n\n"
+    "📄 Sahifa {page}/{pages}"
+)
+
+TEAM_SELECTED = (
+    "✅ Jamoa tanlandi: {name}\n\n"
+    "⏳ Endi ro'yxatdan o'tishni davom ettiring — admin tasdiqlagach bot "
+    "ishga tushadi."
+)
+
+TEAM_PENDING_APPROVAL = (
+    "⏳ Jamoa admini sizni tasdiqlashni kutilmoqda.\n\n"
+    "📋 Jamoa: {name}\n"
+    "Tasdiqlanach botdan foydalanib bo'lmaydi."
+)
+
+TEAM_APPROVED = (
+    "✅ Jamoa admini sizni tasdiqladi!\n\n"
+    "📋 Jamoa: {name}\n"
+    "📅 Muddat: {expires}\n\n"
+    "Endi botdan to'liq foydalanishingiz mumkin."
+)
+
+TEAM_ADMIN_REGISTERED = (
+    "✅ Jamoangiz yaratildi!\n\n"
+    "📋 Jamoa: {name}\n"
+    "👥 Sig'im: {max_users} ta foydalanuvchi\n"
+    "📅 Muddat: {expires}\n\n"
+    "🔗 Jamoa havolangiz (ro'yxatdan o'tuvchilar shu orqali keladi):\n"
+    "{link}\n\n"
+    "Endi «👥 Jamoam» orqali foydalanuvchilarni boshqarishingiz mumkin."
+)
+
+TEAM_ADMIN_ASK_SIZE = (
+    "👑 JAMOA ADMINI\n\n"
+    "🔢 Jamoangizda qancha foydalanuvchi bo'ladi?\n\n"
+    "Raqam kiriting (masalan: 5).\n"
+    "Super admin keyinroq bu raqamni oshira yoki kamaytira oladi."
+)
+
+TEAM_ADMIN_SIZE_INVALID = (
+    "❌ Iltimos raqam kiriting (masalan: 5).\n\n"
+    "Minimal {min_users} ta foydalanuvchi."
+)
+
+TEAM_ADMIN_ASK_NAME = (
+    "📋 Jamoa nomini kiriting:\n\n"
+    "Masalan: Avtoelon Toshkent\n\n"
+    "Bu nom foydalanuvchilarga ko'rinadi."
+)
+
+TEAM_ADMIN_NAME_INVALID = (
+    "❌ Jamoa nomi 2–40 ta belgidan iborat bo'lishi kerak."
+)
+
+TEAM_ADMIN_NAME_TAKEN = (
+    "❌ Bu nom sizning boshqa jamoangizda allaqachon bor.\n\n"
+    "Boshqa nom kiriting."
+)
+
+TEAM_ADMIN_MENU = (
+    "👥 JAMOA ADMINI PANELI\n\n"
+    "📋 Jamoa: {name}\n"
+    "👥 Foydalanuvchilar: {members}/{limit}\n"
+    "📅 Muddat: {expires}\n\n"
+    "Kerakli bo'limni tanlang:"
+)
+
+TEAM_ADMIN_NO_TEAM = (
+    "😔 Sizning jamoangiz yo'q.\n\n"
+    "👑 «Admin bo'lish» tugmasi orqali jamoa yaratishingiz mumkin."
+)
+
+TEAM_ADMIN_MEMBERS = (
+    "👥 JAMOA A'ZOLARI ({total} ta)\n\n"
+    "Har bir a'zoga tarif (muddat) berish uchun tanlang:\n\n"
+    "🟢 — faol | ⚪ — to'xtatilgan | ⏳ — tasdiq kutilmoqda"
+)
+
+TEAM_ADMIN_EMPTY = "👥 Jamoada hali foydalanuvchi yo'q."
+
+TEAM_ADMIN_GIVE_TERM = (
+    "📅 Muddat berish\n\n"
+    "👤 Foydalanuvchi: {name}\n"
+    "🆔 {uid}\n\n"
+    "Yangi muddatni (kun) tanlang:"
+)
+
+TEAM_ADMIN_TERM_SET = (
+    "✅ Muddat berildi: {name}\n\n"
+    "📅 Yangi muddat: {expires}\n"
+    "📋 Jamoa: {team}"
+)
+
+TEAM_ADMIN_MEMBER_INFO = (
+    "👤 {name}\n\n"
+    "🆔 {uid}\n"
+    "📋 Jamoa: {team}\n"
+    "📅 Muddat: {expires}\n"
+    "🟢 Holat: {status}\n\n"
+    "Kerakli amalni tanlang:"
+)
+
+TEAM_ADMIN_STATS = (
+    "📊 JAMOA STATISTIKASI\n\n"
+    "👥 Foydalanuvchilar: {total} ta\n"
+    "🟢 Faol: {running} ta\n"
+    "⏳ Tasdiq kutilmoqda: {waiting} ta\n"
+    "🚫 Bloklangan: {blocked} ta\n"
+    "💬 Jami guruhlar: {groups} ta\n"
+    "📝 Jami postlar: {posts} ta"
+)
+
+TEAM_ADMIN_MESSAGE = (
+    "📨 Jamoangizga xabar yuboring:\n\n"
+    "Matnni yuboring."
+)
+
+TEAM_ADMIN_MESSAGE_SENT = (
+    "✅ Xabar {count} ta foydalanuvchiga yuborildi."
+)
+
+TEAM_ADMIN_LIMIT_NOTE = (
+    "ℹ️ Jamoa sig'imi {limit} ta foydalanuvchi bilan cheklangan.\n"
+    "Ko'proq foydalanuvchi qo'shish uchun super admin bilan bog'laning."
+)
+
+TEAM_ADMIN_EXPIRED = (
+    "⌛ Jamoangizning muddati tugadi.\n\n"
+    "📅 Muddati: {expires}\n\n"
+    "Muddatni uzaytirish uchun super admin bilan bog'laning."
+)
+
+TEAM_ADMIN_EXPIRED_SHORT = "⌛ Muddattingiz tugagan — jamoa vaqtincha to'xtatilgan."
+
+
+def team_pick_text(teams: list[dict], page: int = 0, page_size: int = 10) -> str:
+    """Jamoalar ro'yxati matni (sahifalash bilan)."""
+    if not teams:
+        return TEAM_PICK_EMPTY
+    total_pages = max(1, (len(teams) + page_size - 1) // page_size)
+    page = min(max(0, page), total_pages - 1)
+    start = page * page_size
+    window = teams[start : start + page_size]
+    lines = [
+        "🎯 JAMOA TANLANG",
+        "",
+        "Ro'yxatdan o'tish uchun jamoangizni tanlang:",
+        "Jamoa egasi sizga tarif (muddat) beradi.",
+        "",
+    ]
+    for team in window:
+        name = team.get("name") or "Noma'lum"
+        limit = int(team.get("max_users") or 0)
+        lines.append(f"• {name}" + (f" (joy: {limit})" if limit else ""))
+    lines.append("")
+    lines.append(f"📄 Sahifa {page + 1}/{total_pages}")
+    return "\n".join(lines)
+
+
+def team_admin_menu_text(
+    team: dict | None,
+    members: int = 0,
+    expires: str = "—",
+) -> str:
+    """Jamoa admini paneli asosiy matni."""
+    if not team:
+        return TEAM_ADMIN_NO_TEAM
+    limit = int(team.get("max_users") or 0)
+    limit_text = f"{limit} ta" if limit else "cheksiz"
+    return TEAM_ADMIN_MENU.format(
+        name=team.get("name") or "Noma'lum",
+        members=members,
+        limit=limit_text,
+        expires=expires,
+    )
+
+
+def team_members_text(members: list[dict]) -> str:
+    """Jamoa a'zolari ro'yxati matni."""
+    if not members:
+        return TEAM_ADMIN_EMPTY
+    lines = [f"👥 JAMOA A'ZOLARI ({len(members)} ta)", ""]
+    for user in members:
+        if user.get("awaiting_approval"):
+            icon = "⏳"
+        elif user.get("is_blocked"):
+            icon = "🚫"
+        elif user.get("running"):
+            icon = "🟢"
+        else:
+            icon = "⚪"
+        name = user.get("name") or "Noma'lum"
+        lines.append(f"{icon} {name}")
+    lines.append("")
+    lines.append("Tarif berish uchun a'zoni tanlang:")
+    return "\n".join(lines)

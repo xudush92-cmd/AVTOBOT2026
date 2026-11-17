@@ -53,9 +53,17 @@ async def show_referral(update: Update) -> None:
         today=today,
     )
 
+    # Jamoa admini — o'z jamoasining havolasini ham ko'rsatadi.
+    user = await db.get_user(uid) or {}
+    team_link = ""
+    if user.get("is_team_admin") and user.get("team_id"):
+        from bot.teams import team_link as make_team_link
+
+        team_link = make_team_link(int(user["team_id"]))
+
     await update.message.reply_text(
         text,
-        reply_markup=KB.kb_referral(link),
+        reply_markup=KB.kb_referral(link, team_link=team_link),
     )
 
 
@@ -96,9 +104,34 @@ async def register_referral(uid: int, ref_arg: str) -> bool:
     if not saved:
         return False
 
+    # Referrer jamoa admini bo'lsa — kelgan foydalanuvchi uning jamoasiga
+    # avtomatik biriktiriladi (jamoa to'ldiq bo'lmasa).
+    await _auto_join_referrer_team(uid, referrer_uid)
+
     log(f"👥 Referal qayd etildi: {uid} ← {referrer_uid}")
     await _flag_anomaly(referrer_uid)
     return True
+
+
+async def _auto_join_referrer_team(uid: int, referrer_uid: int) -> bool:
+    """Referrer jamoa admini bo'lsa — kelgan user jamoaga biriktiriladi."""
+    referrer = await db.get_user(referrer_uid)
+    if not referrer or not referrer.get("is_team_admin"):
+        return False
+
+    team_id = referrer.get("team_id")
+    if not team_id:
+        return False
+
+    team = await db.get_team(int(team_id))
+    if not team:
+        return False
+
+    # Jamoa to'ldiq bo'lsa — biriktirilmaydi.
+    if not await db.team_has_free_slot(int(team_id)):
+        return False
+
+    return await db.set_team_pending(uid, int(team_id), referrer_uid)
 
 
 async def _flag_anomaly(referrer_uid: int) -> None:
@@ -160,69 +193,18 @@ async def on_referral_counted(uid: int) -> None:
 # MUKOFOT: FAQAT HAQIQI FAOLIYAT UCHUN
 # ─────────────────────────────────────────────────────────────────────────
 async def maybe_grant_referral_bonus(uid: int, min_sends: int | None = None) -> bool:
-    """Birinchi muvaffaqiyatli yuborishdan keyin referal bonusini beradi.
+    """Referal bonusini beradi — hozircha bonus kunlari umuman berilmaydi.
 
-    Shartlar (barchasi bajarilganda bir marta):
-    1. user tasdiqlangan va referalga biriktirilgan;
-    2. referal hisoblangan (admin tasdiqlagan);
-    3. kamida 1 ta guruh va 1 ta post bor;
-    4. muvaffaqiyatli yuborishlar soni ``min_sends`` dan kam emas;
-    5. bonus avval berilmagan (``referrals.qualified_at`` bo'sh).
-
-    Returns:
-        True — bonus berildi yoki avval berilgan; False — shart bajarilmagan.
+    Reja: referal endi faqat statistika (kim kimni taklif qilgani) uchun.
+    Bonus kunlari olib tashlangan, shuning uchun bu funksiya hech qachon
+    ``True`` qaytarmaydi va muddatga qo'shish amalini bajaradi.
     """
-    threshold = REFERRAL_QUALIFY_MIN_SENDS if min_sends is None else max(0, min_sends)
-    user = await db.get_user(uid)
-    if not user or not user.get("referrer_uid"):
-        return False
-    if not user.get("is_admin") or user.get("is_blocked"):
-        return False
-
-    info = await db.get_referral_link_info(uid)
-    if not info or not info["counted"] or info["qualified_at"] or info["revoked"]:
-        return False
-
-    if await db.count_chats(uid) < 1 or await db.count_posts(uid) < 1:
-        return False
-    if await db.count_sent_ok(uid) < max(1, threshold):
-        return False
-
-    result = await db.grant_referral_bonus(
-        uid, REFERRAL_BONUS_DAYS, monthly_cap_days=REFERRAL_BONUS_MONTHLY_CAP_DAYS
-    )
-    if result is None:
-        return False
-
-    referrer, applied = result
-    await _notify_bonus(referrer, uid, applied)
-    return True
+    return False
 
 
 async def _notify_bonus(referrer: int, referred: int, applied: int) -> None:
-    from bot.login import application
-
-    referrer_total = await db.count_referrals(referrer)
-    info = await db.get_user_info(referred)
-    name = info.get("name") or str(referred)
-    expires = await db.get_tariff_expires(referrer)
-    from core.utils import format_expires
-
-    if applied > 0:
-        message = T.referral_bonus_granted(
-            name=name,
-            days=applied,
-            total=referrer_total,
-            expires=format_expires(expires),
-        )
-    else:
-        message = T.referral_bonus_zero(
-            name=name, total=referrer_total
-        )
-    with contextlib.suppress(Exception):
-        if application:
-            await application.bot.send_message(referrer, message)
-    log(f"🎁 Referal bonusi: {referrer} ← {referred} (+{applied} kun)")
+    """Eski bonus xabari — endi bonus kunlari berilmaydi, funksiya chaqirilmaydi."""
+    return None
 
 
 async def revoke_referral_bonus(uid: int, reason: str = "") -> dict | None:

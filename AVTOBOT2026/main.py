@@ -32,6 +32,7 @@ from bot import callbacks as CB
 from bot import keyboards as KB
 from bot import login as Login
 from bot import menu as Menu
+from bot import teams as Teams
 from bot import texts as T
 
 # Config
@@ -56,6 +57,7 @@ from core.logger import log
 from core.rate_limit import RateLimiter
 from core.update_locks import user_operation_lock, user_update_lock
 from core.utils import (
+    format_expires,
     is_valid_full_name,
     is_valid_interval,
     is_valid_phone,
@@ -152,6 +154,69 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await _cmd_start_locked(update, context)
 
 
+async def _auto_assign_team_from_link(
+    update: Update, uid: int, arg: str
+) -> bool:
+    """``/start team_<id>`` yoki ``/start adm_<uid>`` havolasidan kelgan user.
+
+    Jamoa avtomatik tanlanadi (tasdiq admin tomonidan beriladi). Muvaffaqiyat
+    bo'lsa ``True`` qaytaradi.
+    """
+    if not isinstance(arg, str):
+        return False
+
+    team_id: int | None = None
+    owner_uid = 0
+
+    if arg.startswith("team_") and arg[5:].isdigit():
+        team_id = int(arg[5:])
+    elif arg.startswith("adm_") and arg[4:].isdigit():
+        owner_uid = int(arg[4:])
+        teams = await db.get_teams(owner_uid)
+        if teams:
+            team_id = int(teams[0]["id"])
+            owner_uid = int(teams[0]["owner_admin_uid"])
+    else:
+        return False
+
+    if team_id is None:
+        return False
+
+    team = await db.get_team(team_id)
+    if not team:
+        return False
+
+    if not await db.team_has_free_slot(team_id):
+        await update.message.reply_text(T.TEAM_PICK_FULL, reply_markup=KB.kb_login())
+        return True
+
+    owner_uid = int(team.get("owner_admin_uid") or owner_uid or 0)
+    if owner_uid and owner_uid != SUPER_ADMIN:
+        if await db.team_admin_expired(owner_uid):
+            await update.message.reply_text(
+                T.TEAM_ADMIN_EXPIRED.format(expires="—"),
+                reply_markup=KB.kb_login(),
+            )
+            return True
+
+    saved = await db.set_team_pending(
+        uid,
+        team_id,
+        owner_uid,
+        name=update.effective_user.full_name or "",
+        username=update.effective_user.username or "",
+    )
+    if not saved:
+        return False
+
+    name = team.get("name") or "Noma'lum"
+    await update.message.reply_text(
+        T.TEAM_SELECTED.format(name=name),
+        reply_markup=KB.kb_login(),
+    )
+    return True
+
+
 async def _cmd_start_locked(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """/start buyrug'i; private chatdan tashqarida PII oqimini boshlamaydi."""
     uid = update.effective_user.id
@@ -207,6 +272,18 @@ async def _cmd_start_locked(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
     # Yangi user — ro'yxatdan o'tish darhol ism-familiyadan boshlanadi.
     if not user:
+        # Jamoa adminiga havoladan kelgan user — jamoasi avtomatik tanlanadi.
+        if context.args:
+            await _auto_assign_team_from_link(update, uid, context.args[0])
+        else:
+            # Jamoalar mavjud bo'lsa — avval jamoani tanlashni taklif qilamiz.
+            teams = await db.get_all_teams()
+            if teams:
+                await update.message.reply_text(
+                    T.TEAM_PICK_TITLE,
+                    reply_markup=KB.kb_team_pick(teams),
+                )
+                return
         await start_login_with_limit(update, uid)
         return
 
@@ -241,7 +318,10 @@ async def _cmd_start_locked(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         f"👤 {name}\n"
         f"📊 Holat: {'🟢 Ishlamoqda' if running else '🔴 Toʻxtatilgan'}\n\n"
         f"Menyudan kerakli amalni tanlang:",
-        reply_markup=KB.kb_main(running=running),
+        reply_markup=KB.kb_main(
+            running=running,
+            team_admin=bool(user.get("is_team_admin")),
+        ),
     )
 
 
@@ -302,6 +382,34 @@ async def _on_message_locked(
             return
         if step == "password":
             await Login.handle_password(update, text)
+            return
+
+    # ── JAMOA FSM ──
+    if step in ("team_admin_size", "team_admin_name", "team_admin_message"):
+        if time.time() - state.get("ts", 0) > LOGIN_TIMEOUT_S:
+            Login.user_states.pop(uid, None)
+            await msg.reply_text(
+                "⏰ Kiritish oynasi eskirdi. Amalni qaytadan boshlang.",
+                reply_markup=KB.kb_login(),
+            )
+            return
+        if text == T.BTN_BACK:
+            Login.user_states.pop(uid, None)
+            await msg.reply_text(T.ACTION_CANCELLED, reply_markup=KB.kb_login())
+            return
+        if not rate_limiter.is_allowed(uid, "message"):
+            await msg.reply_text(
+                T.rate_limit_text(rate_limiter.get_wait_time(uid, "message"))
+            )
+            return
+        if step == "team_admin_size":
+            await Teams.handle_team_admin_size(update, uid, text)
+            return
+        if step == "team_admin_name":
+            await Teams.handle_team_admin_name(update, uid, text)
+            return
+        if step == "team_admin_message":
+            await Teams.send_team_message(update, uid, text)
             return
 
     # ── ADMIN FSM ──
@@ -536,7 +644,9 @@ async def get_menu(uid: int):
     if uid == SUPER_ADMIN:
         return KB.kb_super_admin()
     running = worker_manager.is_running(uid) if worker_manager else False
-    return KB.kb_main(running=running)
+    user = await db.get_user(uid) or {}
+    team_admin = bool(user.get("is_team_admin"))
+    return KB.kb_main(running=running, team_admin=team_admin)
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -991,6 +1101,7 @@ async def check_tariff_expiry() -> int:
     """Muddati tugagan foydalanuvchilarni to'xtatadi."""
     expired = await db.get_expired_users()
     if not expired:
+        await check_team_admin_expiry()
         return 0
 
     stopped = 0
@@ -1026,6 +1137,71 @@ async def check_tariff_expiry() -> int:
 
     if stopped:
         log(f"⏰ Tariff expiry: {stopped} ta to'xtatildi")
+    await check_team_admin_expiry()
+    return stopped
+
+
+async def check_team_admin_expiry() -> int:
+    """Muddati tugagan jamoa adminlarini va ularning jamoalarini to'xtatadi."""
+    expired_admins = await db.get_expired_team_admins()
+    if not expired_admins:
+        return 0
+
+    stopped = 0
+    for admin_uid in expired_admins:
+        admin = await db.get_user(admin_uid)
+        if not admin:
+            continue
+
+        # Jamoa adminining o'zi ham to'xtaydi.
+        targets: list[int] = [admin_uid]
+        # Uning jamoasidagi foydalanuvchilar ham to'xtaydi.
+        try:
+            for member in await db.get_users_by_owner(admin_uid):
+                targets.append(int(member["uid"]))
+        except Exception as exc:  # pragma: no cover - himoya
+            log(f"👥 Jamoa a'zolari o'qilmadi: {type(exc).__name__}", "error")
+
+        for uid in targets:
+            async with user_operation_lock(uid):
+                user = await db.get_user(uid)
+                if not user or not user.get("running"):
+                    continue
+                if worker_manager and worker_manager.is_running(uid):
+                    await worker_manager.stop_worker(uid)
+                if client_pool:
+                    await client_pool.remove(uid)
+                await db.set_running(uid, False)
+                stopped += 1
+
+            with contextlib.suppress(Exception):
+                await application.bot.send_message(
+                    uid,
+                    T.EXPIRED_TEXT,
+                    reply_markup=KB.kb_main(),
+                )
+
+        # Adminga va super admin ga xabar.
+        with contextlib.suppress(Exception):
+            await application.bot.send_message(
+                admin_uid,
+                T.TEAM_ADMIN_EXPIRED.format(
+                    expires=format_expires(admin.get("admin_expires_at"))
+                ),
+                reply_markup=KB.kb_main(),
+            )
+        with contextlib.suppress(Exception):
+            info = await db.get_user_info(admin_uid)
+            await application.bot.send_message(
+                SUPER_ADMIN,
+                f"⌛ Jamoa admini muddati tugadi\n\n"
+                f"👑 {info.get('name') or admin_uid} ({admin_uid})\n"
+                f"Jamoasi to'xtatildi.\n"
+                "Muddatni uzaytirish uchun: 🖥 Super Admin → 👑 Jamoa adminlari",
+            )
+
+    if stopped:
+        log(f"⌛ Jamoa admini expiry: {stopped} ta to'xtatildi")
     return stopped
 
 
