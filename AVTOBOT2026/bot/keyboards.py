@@ -254,7 +254,7 @@ def kb_groups_delete(
         rows.append(
             [
                 InlineKeyboardButton(
-                    f"🗑 {value[:35]}",
+                    f"🗑 {offset + 1}. {value[:35]}",
                     callback_data=f"delg:id:{group_id}:{page}",
                 )
             ]
@@ -732,7 +732,7 @@ def kb_admin_groups(
         rows.append(
             [
                 InlineKeyboardButton(
-                    f"🗑 {value[:26]}",
+                    f"🗑 {offset + 1}. {value[:26]}",
                     callback_data=f"uc:delg:{uid}:{group_id}:{page}",
                 ),
                 InlineKeyboardButton(
@@ -819,7 +819,7 @@ def kb_admin_posts(
         rows.append(
             [
                 InlineKeyboardButton(
-                    f"🗑 {text[:35]}",
+                    f"🗑 {offset + 1}. {text[:35]}",
                     callback_data=f"uc:delp:{uid}:{post_id}:{page}",
                 )
             ]

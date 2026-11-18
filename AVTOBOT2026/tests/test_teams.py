@@ -487,3 +487,79 @@ class TeamChoiceTests(unittest.IsolatedAsyncioTestCase):
         user = await db.get_user(USER_1)
         self.assertEqual(int(user["team_id"]), int(team["id"]))
         self.assertEqual(int(user["owner_admin_uid"]), ADMIN_A)
+
+
+class NumberingConsistencyTests(unittest.IsolatedAsyncioTestCase):
+    """Ro'yxatdagi raqamlar va pastdagi tugmalar mos kelishi."""
+
+    async def asyncSetUp(self) -> None:
+        await db.close_db()
+        self.temp = tempfile.TemporaryDirectory()
+        self.old_db_path = db.DB_PATH
+        db.DB_PATH = Path(self.temp.name) / "test.db"
+        session_crypto._fernet = __import__(
+            "cryptography.fernet", fromlist=["Fernet"]
+        ).Fernet(
+            __import__("cryptography.fernet", fromlist=["Fernet"]).Fernet.generate_key()
+        )
+        await db.init_db()
+
+    async def asyncTearDown(self) -> None:
+        await db.close_db()
+        db.DB_PATH = self.old_db_path
+        session_crypto._fernet = None
+        self.temp.cleanup()
+
+    async def test_user_group_delete_buttons_are_numbered(self) -> None:
+        """Foydalanuvchi panelida o'chirish tugmalari raqamli."""
+        groups = [
+            {"id": 1, "value": "@birinchi"},
+            {"id": 2, "value": "@ikkinchi"},
+        ]
+        kb = KB.kb_groups_delete(groups)
+        labels = [b.text for row in kb.inline_keyboard for b in row]
+        self.assertIn("🗑 1. @birinchi", labels)
+        self.assertIn("🗑 2. @ikkinchi", labels)
+
+    async def test_admin_group_delete_buttons_are_numbered(self) -> None:
+        """Admin panelida o'chirish tugmalari raqamli (matn bilan mos)."""
+        groups = [
+            {"id": 1, "value": "@birinchi", "interval_min": None},
+            {"id": 2, "value": "@ikkinchi", "interval_min": 15},
+        ]
+        kb = KB.kb_admin_groups(1001, groups)
+        labels = [b.text for row in kb.inline_keyboard for b in row]
+        self.assertIn("🗑 1. @birinchi", labels)
+        self.assertIn("🗑 2. @ikkinchi", labels)
+        # Interval tugmasi o'zgarmagan.
+        self.assertIn("⏱ Umumiy", labels)
+        self.assertIn("⏱ 15 daq", labels)
+
+    async def test_admin_post_delete_buttons_are_numbered(self) -> None:
+        """Admin panelida post o'chirish tugmalari raqamli."""
+        posts = [{"id": 1, "text": "Birinchi post"}, {"id": 2, "text": "Ikkinchi post"}]
+        kb = KB.kb_admin_posts(1001, posts)
+        labels = [b.text for row in kb.inline_keyboard for b in row]
+        self.assertIn("🗑 1. Birinchi post", labels)
+        self.assertIn("🗑 2. Ikkinchi post", labels)
+
+    async def test_numbering_matches_text_list(self) -> None:
+        """Matndagi raqamlar va tugmadagi raqamlar bir xil."""
+        groups = [
+            {"id": 1, "value": "@birinchi"},
+            {"id": 2, "value": "@ikkinchi"},
+            {"id": 3, "value": "@uchinchi"},
+        ]
+        text = T.groups_delete_text(groups)
+        kb = KB.kb_groups_delete(groups)
+        labels = [b.text for row in kb.inline_keyboard for b in row]
+        for index, group in enumerate(groups, 1):
+            self.assertIn(f"{index}. {group['value']}", text)
+            self.assertIn(f"🗑 {index}. {group['value']}", labels)
+
+    async def test_callback_data_unchanged(self) -> None:
+        """callback_data o'zgarmadi (raqam faqat ko'rinishda)."""
+        groups = [{"id": 77, "value": "@test"}]
+        kb = KB.kb_groups_delete(groups)
+        callbacks = [b.callback_data for row in kb.inline_keyboard for b in row]
+        self.assertIn("delg:id:77:0", callbacks)
