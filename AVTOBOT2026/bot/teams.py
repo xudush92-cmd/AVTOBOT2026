@@ -991,7 +991,10 @@ async def approve_team_member(
     if team:
         limit = int(team.get("max_users") or 0)
         members = await db.get_team_members(team_id)
-        if limit and len(members) > limit:
+        # Sig'imni `team_has_free_slot` bilan bir xil hisoblaymiz:
+        # hozirgi a'zolar soni limitdan KICH bo'lishi kerak, aks holda
+        # jamoa limitdan oshadi.
+        if limit and len(members) >= limit:
             await q.answer(
                 f"🚫 Jamoa sig'imi to'lgan ({limit} ta)", show_alert=True
             )

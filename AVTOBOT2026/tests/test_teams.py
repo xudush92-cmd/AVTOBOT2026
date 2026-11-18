@@ -94,6 +94,44 @@ class TeamDatabaseTests(unittest.IsolatedAsyncioTestCase):
             "limit to'lganda bo'sh joy qolmasligi kerak",
         )
 
+    async def test_assign_team_member_respects_limit(self) -> None:
+        """Sig'im to'lgan jamoaga yangi a'zo biriktirilmaydi.
+
+        `assign_team_member` — jamoaga biriktirishning yagona yozuv
+        nuqtasi. U sig'imi tekshirmasa, limit oshib ketishi mumkin.
+        """
+        # Jamoa admini ham jamoaning a'zosi hisoblanadi:
+        # Jamoa admini ham jamoaning a'zosi hisoblanadi:
+        # set_team_admin adminni jamoaga biriktiradi.
+        team = await db.create_team("Kichik jamoa", ADMIN_A, max_users=2)
+        team_id = int(team["id"])
+        await db.set_team_admin(
+            ADMIN_A, team_id, max_users=2, admin_expires_at=calc_expires(30)
+        )
+        self.assertEqual(
+            await db.count_team_members(team_id),
+            1,
+            "jamoa admini jamoaga hisoblanishi kerak",
+        )
+
+        # Bo'sh joy bor (1 < 2).
+        await db.upsert_user(USER_1, name="Birinchi")
+        ok = await db.assign_team_member(USER_1, team_id, ADMIN_A)
+        self.assertTrue(ok, "bo'sh joy bo'lsa biriktirilishi kerak")
+
+        # Endi jamoa to'ldi (admin + 1 a'zo = limit 2).
+        await db.upsert_user(6003, name="Uchinchi")
+        ok = await db.assign_team_member(6003, team_id, ADMIN_A)
+        self.assertFalse(
+            ok,
+            "limit to'lganda yangi a'zo biriktirilmasligi kerak",
+        )
+        u = await db.get_user(6003)
+        self.assertIsNone(
+            u.get("team_id"),
+            "rad etilgan a'zo jamoaga biriktirilmasligi kerak",
+        )
+
     async def test_unlimited_team_always_has_slot(self) -> None:
         team = await db.create_team("Cheksiz jamoa", ADMIN_A, max_users=0)
         for index in range(5):
@@ -587,6 +625,74 @@ class TeamApprovalSeparationTests(unittest.IsolatedAsyncioTestCase):
         db.DB_PATH = self.old_db_path
         session_crypto._fernet = None
         self.temp.cleanup()
+
+    async def test_approve_team_member_rejects_when_team_full(self) -> None:
+        """Jamoa sig'i to'lgan bo'lsa, yangi a'zo tasdiqlanmaydi.
+
+        Chegara `>=` bilan tekshiriladi: jamoada a'zolar soni limitga
+        teng bo'lsa, yana bir kishi qo'shilmasligi kerak.
+        """
+        team = await db.create_team("To'la jamoa", ADMIN_A, max_users=2)
+        team_id = int(team["id"])
+        await db.set_team_admin(
+            ADMIN_A, team_id, max_users=2, admin_expires_at=calc_expires(30)
+        )
+        # Admin + 1 a'zo = limit 2 → jamoa to'ldi.
+        await db.upsert_user(USER_1, name="Birinchi", team_id=team_id)
+        await db.upsert_user(
+            USER_2,
+            name="Ikkinchi",
+            team_id=team_id,
+            owner_admin_uid=ADMIN_A,
+            awaiting_approval=1,
+        )
+
+        q = SimpleNamespace(
+            answer=AsyncMock(), edit_message_text=AsyncMock()
+        )
+        update = SimpleNamespace(callback_query=q)
+        await Tm.approve_team_member(update, ADMIN_A, USER_2, days=30)
+
+        q.answer.assert_awaited()
+        self.assertIn(
+            "sig'imi to'lgan",
+            q.answer.await_args.args[0],
+            "to'lgan jamoaga a'zo tasdiqlanmashi kerak",
+        )
+        u = await db.get_user(USER_2)
+        self.assertTrue(
+            u.get("awaiting_approval"),
+            "rad etilgan a'zo tasdiqlanmagan bo'lishi kerak",
+        )
+
+    async def test_approve_team_member_sets_duration(self) -> None:
+        """Tasdiqlangan a'zoga muddat beriladi va tasdiqlanadi."""
+        team = await db.create_team("Jamoa", ADMIN_A, max_users=5)
+        team_id = int(team["id"])
+        await db.set_team_admin(
+            ADMIN_A, team_id, max_users=5, admin_expires_at=calc_expires(30)
+        )
+        await db.upsert_user(
+            USER_1,
+            name="A'zo",
+            team_id=team_id,
+            owner_admin_uid=ADMIN_A,
+            awaiting_approval=1,
+        )
+
+        q = SimpleNamespace(
+            answer=AsyncMock(), edit_message_text=AsyncMock()
+        )
+        update = SimpleNamespace(callback_query=q)
+        await Tm.approve_team_member(update, ADMIN_A, USER_1, days=30)
+
+        u = await db.get_user(USER_1)
+        self.assertEqual(int(u.get("awaiting_approval") or 0), 0)
+        self.assertEqual(int(u.get("is_admin") or 0), 1)
+        self.assertIsNotNone(
+            u.get("tariff_expires_at"),
+            "a'zoga muddat berilishi kerak",
+        )
 
     async def test_pending_list_excludes_team_users(self) -> None:
         """Super admin 'Tasdiq kutilayotganlar' ro'yxatida jamoali userlar yo'q."""

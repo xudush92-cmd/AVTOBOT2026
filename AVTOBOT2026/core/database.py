@@ -2283,7 +2283,12 @@ async def assign_team_member(
     team_id: int,
     owner_admin_uid: int,
 ) -> bool:
-    """Foydalanuvchini jamoaga biriktiradi (admin tasdiqlashda)."""
+    """Foydalanuvchini jamoaga biriktiradi (admin tasdiqlashda).
+
+    Jamoa sig'i to'lgan bo'lsa — biriktirilmaydi (``False``).
+    """
+    if not await team_has_free_slot(team_id):
+        return False
     cur = await _execute_write(
         "UPDATE users SET team_id = ?, owner_admin_uid = ?, updated_at = ? WHERE uid = ?",
         (int(team_id), int(owner_admin_uid), iso_now(), int(uid)),
@@ -2299,6 +2304,8 @@ async def set_team_pending(
     username: str = "",
 ) -> bool:
     """Ro'yxatdan o'tuvchi foydalanuvchi jamoani tanladi (tasdiq kutilmoqda)."""
+    if not await team_has_free_slot(team_id):
+        return False
     fields: dict[str, Any] = {}
     if name:
         fields["name"] = name
