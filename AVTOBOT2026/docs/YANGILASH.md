@@ -14,7 +14,7 @@ qaytish rejasini beradi.
 | Worker yuborish | 🟡 o'rta | Endi albom `send_file([...])` orqali, matnli post `link_preview` bayrog'i bilan ketadi. Kunlik limit/faol soat yoqilsa, yuborishlar o'sha oynaga moslashadi |
 | Media disk | 🟡 o'rta | Albomlar bilan fayllar soni o'sadi. Har user uchun kvota: `MAX_MEDIA_FILES_PER_USER` (standart 200) |
 
-Barcha yangi funksiya testlangan: **272 test** (`python -m unittest discover -s tests -t tests`).
+Barcha yangi funksiya testlangan: **352 test** (`python -m unittest discover -s tests -t tests`).
 
 ### 🆕 Jamoa (team) tizimi
 
@@ -25,6 +25,10 @@ Barcha yangi funksiya testlangan: **272 test** (`python -m unittest discover -s 
 | Referal bonuslari | 🟢 past | `REFERRAL_BONUS_DAYS=0` — **yangi bonus kunlar berilmaydi**. Berilgan kunlar (`referral_bonus_days`) o'chirmaydi, saqlanadi |
 | Video media | 🟢 past | `ALLOW_VIDEO_MEDIA=0` — video yuborish rad etiladi, faqat surat. Eski saqlangan video postlar o'z-o'zidan yuborilmaydi (albatta ular `send_video` orqali yuboriladi — kerak bo'lsa `ALLOW_VIDEO_MEDIA=1` qo'ying) |
 | Albom limiti | 🟡 o'rta | `MAX_ALBUM_FILES` 10 → **4**. Albomlar kichraydi, xotira va trafik kamayadi |
+| `team_invites` jadvali | 🟢 past | `CREATE TABLE IF NOT EXISTS` — do'st qo'shish va yangi admin takliflari uchun. Eski ma'lumotga tegilmaydi |
+| Muddat chegarasi | 🟢 past | `TEAM_MEMBER_MAX_DAYS=60` — jamoa admini a'zosiga maksimal 60 kun. `SUPER_ADMIN_MAX_DAYS=0` — super admin chegarasiz |
+| Tasdiqlash oqimi | 🟡 o'rta | Endi tasdiqlash **ikki bosqichli**: avval muddat tanlanadi, keyin tasdiqlash. Avvalgi avtomatik 30 kun o'rniga tanlangan muddat beriladi |
+| Jamoadan chiqish | 🟢 past | Oddiy jamoa a'zosi jamoasidan chiqishi mumkin — **jamoa muddati ham tugaydi**. Jamoa egasi chiqmaydi |
 
 > ℹ️ Jamoa tizimi **ixtiyoriy**: foydalanuvchi jamoa tanlamasa, oddiy user
 > sifatida ishlaydi. Jamoa adminlari faqat o'z jamoalariga ta'sir qiladi.
@@ -67,6 +71,10 @@ nano .env
 #      ALLOW_VIDEO_MEDIA=0            # 0 = video rad etiladi (faqat surat)
 #      MAX_ALBUM_FILES=4              # bitta postga maksimal rasm soni
 #      REFERRAL_BONUS_DAYS=0          # bonus kunlari berilmaydi
+#
+#    Muddat chegarasi (anti-fraud) — jamoa admini a'zosiga maksimal kun:
+#      TEAM_MEMBER_MAX_DAYS=60        # jamoa admini uchun chegara (0 = cheksiz)
+#      SUPER_ADMIN_MAX_DAYS=0         # super admin uchun chegara (0 = cheksiz)
 
 # 5) START
 systemctl start avtobot && journalctl -u avtobot -f
