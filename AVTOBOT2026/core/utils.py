@@ -705,3 +705,29 @@ def media_kind_label(post: dict | None) -> str:
         kind = next(iter(kinds), "photo")
         return {"video": "🎬 Video", "document": "📎 Fayl"}.get(kind, "🖼 Rasm")
     return "📝 Matn"
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# TELEGRAM XABAR YUBORISH YORDAMCHISI
+# ─────────────────────────────────────────────────────────────────────────
+async def reply_text_safe(update, text: str, reply_markup=None) -> bool:
+    """Xabar yuboradi — inline tugma bosilgan holatda ham ishlaydi.
+
+    ``update.message`` faqat oddiy xabar kelganda mavjud bo'ladi. Inline
+    tugma bosilganda u ``None`` bo'ladi va ``update.message.reply_text``
+    chaqirilsa ``AttributeError`` chiqadi. Shu sabab avval xabar, keyin
+    inline xabar (agar mavjud bo'lsa) tekshiriladi.
+
+    ``True`` — xabar yuborildi, ``False`` — yuborilmadi.
+    """
+    message = getattr(update, "message", None)
+    if message is None:
+        query = getattr(update, "callback_query", None)
+        message = getattr(query, "message", None) if query else None
+    if message is None:
+        return False
+    try:
+        await message.reply_text(text, reply_markup=reply_markup)
+    except Exception:
+        return False
+    return True
