@@ -347,6 +347,77 @@ class TeamLifecycleTests(unittest.IsolatedAsyncioTestCase):
         for index in range(3):
             self.assertIn(88010 + index, sent, "barcha a'zolar xabar olishi kerak")
 
+    async def test_referral_user_joins_referrer_team(self) -> None:
+        """Referal havolasi orqali kelgan user referrer jamoasiga biriktiriladi.
+
+        Bu sizning talabbingiz: «Referal orqali kirsa user darhol o'sha
+        jamoaga biriktiriladi».
+        """
+        from bot import referral as Ref
+
+        team = await db.create_team("Referal jamoasi", ADMIN_UID, max_users=5)
+        await db.set_team_admin(
+            ADMIN_UID,
+            int(team["id"]),
+            max_users=5,
+            admin_expires_at=calc_expires(30),
+        )
+
+        # Referrer — jamoa admini.
+        await db.upsert_user(
+            ADMIN_UID, name="Referrer", is_admin=1, is_team_admin=1,
+            team_id=int(team["id"]),
+        )
+
+        # Yangi user referal havolasi orqali keldi.
+        ok = await Ref.register_referral(MEMBER_UID, f"ref_{ADMIN_UID}")
+        self.assertTrue(ok, "referal qayd etilishi kerak")
+
+        member = await db.get_user(MEMBER_UID)
+        self.assertEqual(
+            int(member.get("team_id") or 0),
+            int(team["id"]),
+            "referral user referrer jamoasiga biriktirilishi kerak",
+        )
+        self.assertEqual(
+            int(member.get("owner_admin_uid") or 0),
+            ADMIN_UID,
+            "jamoa egasi referrer bo'lishi kerak",
+        )
+        self.assertTrue(
+            member.get("awaiting_approval"),
+            "jamoa admini tasdiqlashi uchun ariza kutilmoqda",
+        )
+
+    async def test_referral_to_full_team_is_rejected(self) -> None:
+        """Jamoa to'lgan bo'lsa, referal orqali kelgan user qo'shilmaydi."""
+        from bot import referral as Ref
+
+        team = await db.create_team("To'lgan jamoa", ADMIN_UID, max_users=2)
+        await db.set_team_admin(
+            ADMIN_UID,
+            int(team["id"]),
+            max_users=2,
+            admin_expires_at=calc_expires(30),
+        )
+        await db.upsert_user(
+            ADMIN_UID, name="Referrer", is_admin=1, is_team_admin=1,
+            team_id=int(team["id"]),
+        )
+        # Jamoa to'lgan: admin + 1 a'zo = limit 2.
+        await db.upsert_user(
+            88050, name="A'zo", team_id=int(team["id"]), owner_admin_uid=ADMIN_UID
+        )
+
+        ok = await Ref.register_referral(MEMBER_UID, f"ref_{ADMIN_UID}")
+        self.assertTrue(ok, "referal ro'yxatdan o'tishi kerak")
+
+        member = await db.get_user(MEMBER_UID)
+        self.assertFalse(
+            member.get("team_id"),
+            "to'lgan jamoaga referal user qo'shilmasligi kerak",
+        )
+
     async def test_add_friend_rejects_invalid_phone(self) -> None:
         """Noto'g'ri telefon formati rad etiladi."""
         team = await db.create_team("Jamoa", ADMIN_UID, max_users=5)
