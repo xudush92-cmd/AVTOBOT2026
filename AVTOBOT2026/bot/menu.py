@@ -469,8 +469,10 @@ async def route_menu_button(update: Update, text: str) -> bool:
         await Tm.begin_team_admin_register(update, update.effective_user.id)
         return True
 
-    # 🎯 Jamoani tanlash — jamoasiz foydalanuvchi uchun
-    if text == T.BTN_TEAM_PICK:
+    # 🎯 Jamoani tanlash — jamoasiz foydalanuvchi uchun.
+    # Eski klaviaturalarda tugma matni "🎯 Jamoa tanlash" edi —
+    # ikkalasini ham qabul qilamiz.
+    if text in (T.BTN_TEAM_PICK, "🎯 Jamoa tanlash"):
         from bot import teams as Tm
 
         await Tm.show_team_picker(update, update.effective_user.id)
