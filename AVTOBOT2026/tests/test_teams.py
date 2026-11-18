@@ -1099,3 +1099,92 @@ class DurationCapTests(unittest.IsolatedAsyncioTestCase):
 
         user = await db.get_user(USER_1)
         self.assertEqual(user["tariff_expires_at"], calc_expires(365))
+
+
+class TeamAdminExpiryWorkerTests(unittest.IsolatedAsyncioTestCase):
+    """Jamoa admini muddati tugasa — jamoasi ham to'xtaydi."""
+
+    async def asyncSetUp(self) -> None:
+        await db.close_db()
+        self.temp = tempfile.TemporaryDirectory()
+        self.old_db_path = db.DB_PATH
+        db.DB_PATH = Path(self.temp.name) / "test.db"
+        session_crypto._fernet = __import__(
+            "cryptography.fernet", fromlist=["Fernet"]
+        ).Fernet(
+            __import__("cryptography.fernet", fromlist=["Fernet"]).Fernet.generate_key()
+        )
+        await db.init_db()
+
+    async def asyncTearDown(self) -> None:
+        await db.close_db()
+        db.DB_PATH = self.old_db_path
+        session_crypto._fernet = None
+        self.temp.cleanup()
+
+    async def test_team_owner_expired_for_member(self) -> None:
+        """Jamoa admini muddati tugagan — a'zo uchun True."""
+        team = await db.create_team("Jamoa", ADMIN_A, max_users=5)
+        await db.set_team_admin(
+            ADMIN_A, int(team["id"]), max_users=5, admin_expires_at=calc_expires(-1)
+        )
+        await db.upsert_user(
+            USER_1,
+            name="A'zo",
+            team_id=int(team["id"]),
+            owner_admin_uid=ADMIN_A,
+        )
+        self.assertTrue(await db.team_owner_expired(USER_1))
+
+    async def test_team_owner_not_expired_while_admin_active(self) -> None:
+        """Jamoa admini faol — a'zo uchun False."""
+        team = await db.create_team("Jamoa", ADMIN_A, max_users=5)
+        await db.set_team_admin(
+            ADMIN_A, int(team["id"]), max_users=5, admin_expires_at=calc_expires(365)
+        )
+        await db.upsert_user(
+            USER_1,
+            name="A'zo",
+            team_id=int(team["id"]),
+            owner_admin_uid=ADMIN_A,
+        )
+        self.assertFalse(await db.team_owner_expired(USER_1))
+
+    async def test_team_owner_expired_false_for_plain_user(self) -> None:
+        """Oddiy user uchun False."""
+        await db.upsert_user(USER_1, name="Oddiy")
+        self.assertFalse(await db.team_owner_expired(USER_1))
+
+    async def test_team_owner_expired_false_for_admin_itself(self) -> None:
+        """Jamoa admini uchun False (uning muddati alohida tekshiriladi)."""
+        team = await db.create_team("Jamoa", ADMIN_A, max_users=5)
+        await db.set_team_admin(
+            ADMIN_A, int(team["id"]), max_users=5, admin_expires_at=calc_expires(-1)
+        )
+        self.assertFalse(await db.team_owner_expired(ADMIN_A))
+
+    async def test_start_blocked_when_team_admin_expired(self) -> None:
+        """Jamoa admini muddati tugagan — Start ishlamaydi."""
+        from bot import menu as Menu
+
+        team = await db.create_team("Jamoa", ADMIN_A, max_users=5)
+        await db.set_team_admin(
+            ADMIN_A, int(team["id"]), max_users=5, admin_expires_at=calc_expires(-1)
+        )
+        await db.upsert_user(
+            USER_1,
+            name="A'zo",
+            team_id=int(team["id"]),
+            owner_admin_uid=ADMIN_A,
+            is_admin=1,
+            session="sess",
+            tariff_expires_at=calc_expires(365),
+        )
+        await db.add_chat(USER_1, "-100123")
+        await db.add_post(USER_1, "Post", "matn", [])
+
+        with patch.object(Menu, "worker_manager", SimpleNamespace(is_running=lambda u: False)):
+            ok, message = await Menu.confirm_start(USER_1)
+
+        self.assertFalse(ok, "muddati tugagan jamoada Start ishlamasligi kerak")
+        self.assertIn("muddat", message.lower())

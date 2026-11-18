@@ -130,6 +130,21 @@ yakunlanadi. Bu **barcha adminlar uchun** bir xil:
 Super adminning "Foydalanuvchi qo'shish" oqimi esa alohida — u tasdiqlash
 emas, to'g'ridan-to'g'ri qo'shish.
 
+### 🚪 Guruhdan chiqarilish / guruhga yetib borolmaslik
+
+Agar bot guruhdan chiqarilsa yoki guruh yopiq bo'lsa, avtomatik ravishda
+aniqlanadi va foydalanuvchi ogohlantiriladi:
+
+| Holat | Xabar | Natija |
+| ----- | ----- | ------ |
+| Bot chiqarilgan / yozish taqiqlangan | Birinchi urinishda | Guruh `MAX_GROUP_FAILS` (3) urinishdan keyin o'chiriladi |
+| Guruh yopiq (private) | Birinchi urinishda | Xuddi shunday |
+| Guruh mavjud emas | Birinchi urinishda | Xuddi shunday |
+| Havola noto'g'ri | Birinchi urinishda | Xuddi shunday |
+
+Xabar matni xato turiga qarab farqlanadi — foydalanuvchi aniq biladi nima
+qilish kerak (botni admin qilib qo'yish yoki guruhni qayta qo'shish).
+
 ### ⛔️ Muddat chegarasi (anti-fraud)
 
 Jamoa admini (2-daraja) — "ikkinchi darajali admin" — foydalanuvchiga

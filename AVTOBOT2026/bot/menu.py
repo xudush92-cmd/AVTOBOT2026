@@ -312,6 +312,20 @@ async def confirm_start(uid: int) -> tuple[bool, str]:
     if await db.is_tariff_expired(uid):
         return False, T.EXPIRED_TEXT
 
+    # Jamoa admini muddati tugagan bo'lsa — jamoasi ham ishlamaydi.
+    if await db.team_admin_expired(uid):
+        return False, (
+            "⛔️ Jamoangiz adminining muddati tugadi.\n\n"
+            "💡 Administratoringiz super admin bilan bog'lanib, "
+            "muddatni uzaytirishi kerak."
+        )
+    if await db.team_owner_expired(uid):
+        return False, (
+            "⛔️ Jamoangiz adminining muddati tugadi.\n\n"
+            "💡 Administratoringiz super admin bilan bog'lanib, "
+            "muddatni uzaytirishi kerak."
+        )
+
     chats = await db.get_chats(uid)
     posts = await db.get_posts(uid)
 

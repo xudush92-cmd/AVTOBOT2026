@@ -234,6 +234,54 @@ async def sleep_or_stop(stop: asyncio.Event, seconds: float) -> bool:
         return False
 
 
+# Guruhga yetib borib bo'lmagan xatolar — sababi bo'yicha tushuntiriladi.
+_GROUP_ERROR_REASONS: dict[str, str] = {
+    "ChatWriteForbiddenError": (
+        "Bot guruhdan chiqarilgan yoki yozish huquqi cheklangan.\n"
+        "💡 Guruhda botni admin qilib qo'ying va yana urinib ko'ring."
+    ),
+    "ChannelPrivateError": (
+        "Guruh yopiq (private) — bot kirmaydi.\n"
+        "💡 Guruhga ochiq havola kerak yoki botni admin qilib qo'ying."
+    ),
+    "PeerIdInvalidError": (
+        "Guruh mavjud emas yoki bot o'sha guruhda yo'q.\n"
+        "💡 Balki guruh o'chirilgan yoki bot undan chiqarilgan."
+    ),
+    "UsernameNotOccupiedError": (
+        "Bunday foydalanuvchi yoki guruh mavjud emas.\n"
+        "💡 Havolani tekshirib ko'ring."
+    ),
+    "UsernameInvalidError": (
+        "Havola noto'g'ri shaklda.\n"
+        "💡 To'g'ri havolani qayta kiritib ko'ring."
+    ),
+}
+
+
+async def _notify_group_unreachable(uid: int, chat: str, error_name: str) -> None:
+    """Guruhga yetib borib bo'lmagani haqida foydalanuvchini ogohlantiradi.
+
+    Birinchi urinishda chaqiriladi — foydalanuvchi guruhni o'z vaqtida
+    qayta qo'shishi (yoki admin qilib qo'yishi) mumkin bo'ladi.
+    """
+    import contextlib
+
+    reason = _GROUP_ERROR_REASONS.get(
+        error_name, "Guruhga xabar yuborib bo'lmadi."
+    )
+    text = (
+        "⚠️ <b>Guruga xabar yuborib bo'lmadi</b>\n\n"
+        f"📛 {chat}\n\n"
+        f"{reason}\n\n"
+        "ℹ️ Guruh hali ro'yxatdan o'chirilmadi — bir necha urinishdan "
+        "keyin avtomatik o'chiriladi.\n"
+        "💡 Yordam: botni guruhda admin qilib qo'ying."
+    )
+    with contextlib.suppress(Exception):
+        await application.bot.send_message(uid, text, parse_mode="HTML")
+
+
 # ─────────────────────────────────────────────────────────────────────────
 # XAVFSIZ YUBORISH OYNASI (kunlik limit + tungi tanaffus)
 # ─────────────────────────────────────────────────────────────────────────
@@ -309,6 +357,40 @@ async def posting_loop(uid: int, stop: asyncio.Event) -> None:
             ):
                 await db.set_running(uid, False)
                 log(f"⛔ Worker:{uid} ruxsat/tarif sabab to'xtadi", "warning")
+                break
+
+            # Jamoa admini muddati tugagan bo'lsa — uning jamoasi ham to'xtaydi.
+            if await db.team_admin_expired(uid):
+                await db.set_running(uid, False)
+                log(
+                    f"⛔ Worker:{uid} jamoa admini muddati tugagani uchun to'xtadi",
+                    "warning",
+                )
+                with contextlib.suppress(Exception):
+                    await application.bot.send_message(
+                        uid,
+                        "⛔️ Jamoangiz adminining muddati tugadi — "
+                        "e'lon yuborish to'xtatildi.\n\n"
+                        "💡 Administratoringiz super admin bilan bog'lanib, "
+                        "muddatni uzaytirishi kerak.",
+                    )
+                break
+
+            # Jamoa a'zosi — jamoa adminining muddati tugagan bo'lsa to'xtaydi.
+            if await db.team_owner_expired(uid):
+                await db.set_running(uid, False)
+                log(
+                    f"⛔ Worker:{uid} jamoa admini muddati tugagani uchun to'xtadi",
+                    "warning",
+                )
+                with contextlib.suppress(Exception):
+                    await application.bot.send_message(
+                        uid,
+                        "⛔️ Jamoangiz adminining muddati tugadi — "
+                        "e'lon yuborish to'xtatildi.\n\n"
+                        "💡 Administratoringiz super admin bilan bog'lanib, "
+                        "muddatni uzaytirishi kerak.",
+                    )
                 break
 
             session = await db.get_session(uid)
@@ -389,6 +471,7 @@ async def posting_loop(uid: int, stop: asyncio.Event) -> None:
             try:
                 ok, fail = 0, 0
                 removed_groups: list[str] = []
+                last_error_by_chat: dict[str, str] = {}
                 post_by_group: dict[int, dict] = {}
                 for index, chat_record in enumerate(due_chats):
                     # Post rotatsiyasi GURUHBO'YICA: bir siklda navbatdagi
@@ -446,6 +529,7 @@ async def posting_loop(uid: int, stop: asyncio.Event) -> None:
                     ) as exc:
                         fail += 1
                         group_fails[chat] = group_fails.get(chat, 0) + 1
+                        last_error_by_chat[chat] = type(exc).__name__
                         log(
                             f"❌ {uid} → {chat}: {type(exc).__name__} "
                             f"({group_fails[chat]}/{MAX_GROUP_FAILS})",
@@ -453,6 +537,12 @@ async def posting_loop(uid: int, stop: asyncio.Event) -> None:
                         )
                         if group_fails[chat] >= MAX_GROUP_FAILS:
                             removed_groups.append(chat)
+                        elif group_fails[chat] == 1:
+                            # Birinchi urinishda darhol ogohlantiramiz — foydalanuvchi
+                            # guruhni o'z vaqtida qayta qo'shishi mumkin.
+                            await _notify_group_unreachable(
+                                uid, chat, type(exc).__name__
+                            )
                         await db.log_send(
                             uid,
                             False,
@@ -525,18 +615,22 @@ async def posting_loop(uid: int, stop: asyncio.Event) -> None:
                     await db.remove_chat_by_value(uid, bad)
                     group_fails.pop(bad, None)
                     log(f"🗑 {uid} guruh o'chirildi (avto): {bad}")
+                    reason = _GROUP_ERROR_REASONS.get(
+                        last_error_by_chat.get(bad, ""),
+                        "Bot chiqarilgan, yozish taqiqlangan yoki guruh mavjud emas.",
+                    )
                     with contextlib.suppress(Exception):
                         await application.bot.send_message(
                             uid,
-                            f"⚠️ Quyidagi guruhga {MAX_GROUP_FAILS} marta "
-                            f"xabar yuborib bo'lmadi:\n\n"
+                            f"🗑 <b>Guruh ro'yxatdan o'chirildi</b>\n\n"
                             f"📛 {bad}\n\n"
-                            "Sabab: bot chiqarilgan, yozish taqiqlangan yoki "
-                            "guruh mavjud emas.\n"
-                            "Guruh ro'yxatdan AVTOMATIK o'chirildi.\n\n"
+                            f"Sabab: {reason}\n\n"
+                            f"🔄 {MAX_GROUP_FAILS} marta urinishdan keyin "
+                            "avtomatik o'chirildi.\n\n"
                             "💡 Qayta qo'shish uchun 🔍 «Guruhlarni topish» "
                             "tugmasini qaytadan bosing — bot yozish huquqingiz "
                             "bor guruhlarni qayta yig'ib beradi.",
+                            parse_mode="HTML",
                         )
 
                 log(f"📊 {uid} ✅{ok} ❌{fail} / {len(due_chats)} navbatda")

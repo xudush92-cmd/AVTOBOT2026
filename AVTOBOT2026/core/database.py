@@ -2348,3 +2348,23 @@ async def get_expired_team_admins() -> list[int]:
 
     rows = await get_team_admins()
     return [int(r["uid"]) for r in rows if is_expired(r.get("admin_expires_at"))]
+
+
+async def team_owner_expired(uid: int) -> bool:
+    """Foydalanuvchining jamoasi jamoa adminining muddati sabab to'xtaganmi.
+
+    Oddiy (jamoasiz) foydalanuvchi uchun — har doim ``False``.
+
+    Jamoa adminining o'zi uchun ham ``False`` — uning muddati alohida
+    ``team_admin_expired`` orqali tekshiriladi.
+    """
+    user = await get_user(uid)
+    if not user:
+        return False
+    owner_uid = int(user.get("owner_admin_uid") or 0)
+    if not owner_uid or owner_uid == int(uid):
+        return False
+    owner = await get_user(owner_uid)
+    if not owner or not owner.get("is_team_admin"):
+        return False
+    return await team_admin_expired(owner_uid)
