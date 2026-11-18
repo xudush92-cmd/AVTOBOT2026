@@ -542,10 +542,11 @@ qayta ko'rib chiqildi.
 | Tugma login'dan oldin ham ishlaydi | ✅ | `main.py` — ro'yxatdan o'tmagan / tasdiqlanmagan / sessiyasiz user uchun |
 | Kirish oynasida tugma bosilsa javob beradi | ✅ | `MENU_BUTTONS` — kiritish oynasi bekor qilinadi, jamoa oqimi boshlanadi (avval telefon raqam sifatida qabul qilinardi) |
 | Eski klaviatura matni qabul qilinadi | ✅ | `🎯 Jamoa tanlash` — eski klaviaturadagi foydalanuvchilar uchun |
+| Jamoa sig'i qat'iy nazorat qilinadi | ✅ | `assign_team_member` va `set_team_pending` — jamoa to'lgan bo'lsa a'zo biriktirilmaydi |
 
 ### 📊 Testlar
 
-**394 test** (`python -m unittest discover -s tests -t tests`) — hammasi o'tadi.
+**397 test** (`python -m unittest discover -s tests -t tests`) — hammasi o'tadi.
 Ruff — o'zgartirilgan modullarda yangi xato yo'q.
 
 ### 🔍 Guruhlarni topish — qo'lda belgilash (2026-11-14)
