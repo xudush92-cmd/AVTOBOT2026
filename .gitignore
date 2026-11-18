@@ -11,6 +11,14 @@ __pycache__/
 .venv-work/
 venv/
 
+# Vaqtinchalik diagnostika skriptlari (serverda qolishi mumkin)
+check_bot.sh
+check_teams.sh
+test_jamoa_flow.sh
+test_jamoa_full.sh
+login_manual.py
+test_code.py
+
 # Bot ma'lumotlari (sessiya kaliti, DB, media)
 AVTOBOT2026/data/
 AVTOBOT2026/*.db
