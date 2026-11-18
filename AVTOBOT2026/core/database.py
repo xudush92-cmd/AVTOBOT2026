@@ -31,7 +31,7 @@ from config.config import (
 )
 from core.logger import log
 from core.session_crypto import decrypt_session, encrypt_session, ensure_session_cipher
-from core.utils import iso_now, normalize_media
+from core.utils import iso_now, normalize_media, normalize_phone
 
 _db: aiosqlite.Connection | None = None
 _write_lock = asyncio.Lock()
@@ -337,6 +337,20 @@ async def init_db() -> None:
             UNIQUE(owner_admin_uid, name)
         );
         CREATE INDEX IF NOT EXISTS idx_teams_owner ON teams(owner_admin_uid);
+        CREATE TABLE IF NOT EXISTS team_invites (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            phone TEXT NOT NULL,
+            owner_admin_uid INTEGER NOT NULL,
+            team_id INTEGER,
+            kind TEXT NOT NULL DEFAULT 'member',
+            status TEXT NOT NULL DEFAULT 'pending',
+            created_at TEXT,
+            UNIQUE(phone, kind)
+        );
+        CREATE INDEX IF NOT EXISTS idx_team_invites_phone
+            ON team_invites(phone);
+        CREATE INDEX IF NOT EXISTS idx_team_invites_owner
+            ON team_invites(owner_admin_uid);
     """)
     await _db.commit()
     await _migrate_schema()
@@ -2319,6 +2333,95 @@ async def leave_team(uid: int) -> dict | None:
         "team_name": team_name,
         "expires_cleared": expires_cleared,
     }
+
+
+async def add_team_invite(
+    phone: str,
+    owner_admin_uid: int,
+    team_id: int | None = None,
+    kind: str = "member",
+) -> bool:
+    """Do'stni (telefon raqam bilan) jamoaga biriktirishga tayyorlaydi.
+
+    ``kind``:
+      * ``"member"`` — jamoaga a'zo (jamoa admini qo'shadi);
+      * ``"admin"`` — yangi jamoa admini (super admin qo'shadi).
+
+    Agar shu raqam uchun yozuv bo'lsa — yangilanadi (qayta qo'shish).
+    """
+    phone = normalize_phone(phone)
+    if not phone:
+        return False
+    await _execute_write(
+        "INSERT INTO team_invites (phone, owner_admin_uid, team_id, kind, status, "
+        "created_at) VALUES (?, ?, ?, ?, 'pending', ?) "
+        "ON CONFLICT(phone, kind) DO UPDATE SET "
+        "owner_admin_uid = excluded.owner_admin_uid, "
+        "team_id = excluded.team_id, "
+        "status = 'pending', "
+        "created_at = excluded.created_at",
+        (phone, int(owner_admin_uid), team_id, kind, iso_now()),
+    )
+    return True
+
+
+async def get_team_invite(phone: str, kind: str = "member") -> dict | None:
+    """Telefon raqam bo'yicha taklif yozuvi."""
+    phone = normalize_phone(phone)
+    if not phone:
+        return None
+    async with _conn().execute(
+        "SELECT * FROM team_invites WHERE phone = ? AND kind = ?",
+        (phone, kind),
+    ) as cur:
+        row = await cur.fetchone()
+    return dict(row) if row else None
+
+
+async def get_team_invites_by_phone(phone: str) -> list[dict]:
+    """Telefon raqam bo'yicha barcha takliflar (member + admin)."""
+    phone = normalize_phone(phone)
+    if not phone:
+        return []
+    async with _conn().execute(
+        "SELECT * FROM team_invites WHERE phone = ? ORDER BY id DESC",
+        (phone,),
+    ) as cur:
+        return [dict(row) for row in await cur.fetchall()]
+
+
+async def get_team_invites(owner_admin_uid: int) -> list[dict]:
+    """Admin qo'shgan do'stlar ro'yxati."""
+    async with _conn().execute(
+        "SELECT * FROM team_invites WHERE owner_admin_uid = ? ORDER BY id DESC",
+        (int(owner_admin_uid),),
+    ) as cur:
+        return [dict(row) for row in await cur.fetchall()]
+
+
+async def delete_team_invite(phone: str, kind: str = "member") -> bool:
+    """Taklifni o'chiradi."""
+    phone = normalize_phone(phone)
+    if not phone:
+        return False
+    cur = await _execute_write(
+        "DELETE FROM team_invites WHERE phone = ? AND kind = ?", (phone, kind)
+    )
+    return cur.rowcount > 0
+
+
+async def set_team_invite_status(
+    phone: str, status: str, kind: str = "member"
+) -> bool:
+    """Taklif holatini yangilaydi (``pending`` / ``used`` / ``revoked``)."""
+    phone = normalize_phone(phone)
+    if not phone:
+        return False
+    cur = await _execute_write(
+        "UPDATE team_invites SET status = ? WHERE phone = ? AND kind = ?",
+        (status, phone, kind),
+    )
+    return cur.rowcount > 0
 
 
 async def set_team_admin(

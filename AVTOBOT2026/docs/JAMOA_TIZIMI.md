@@ -130,6 +130,79 @@ yakunlanadi. Bu **barcha adminlar uchun** bir xil:
 Super adminning "Foydalanuvchi qo'shish" oqimi esa alohida — u tasdiqlash
 emas, to'g'ridan-to'g'ri qo'shish.
 
+### ➕ Do'st qo'shish (telefon raqam bilan)
+
+Jamoa admini o'z jamoasiga do'stlarini **telefon raqam orqali** qo'shadi —
+do'st ro'yxatdan o'tishidan **oldin**.
+
+```
+👥 Jamoam
+   [➕ Do'st qo'shish]
+         ↓
+➕ Do'st qo'shish
+
+Do'stingizning telefon raqamini yozing.
+📱 Format: +998123456789
+
+Shu raqam bilan ro'yxatdan o'tsa — u avtomatik sizning jamoangizga
+biriktiriladi va siz tasdiqlaysiz.
+         ↓ (telefon kiritiladi)
+✅ Do'st qo'shildi!
+
+📱 +998123456789
+📋 Jamoa: Mening jamoam
+
+Endi do'stingizga ushbu havolani yuboring:
+https://t.me/bot?start=team_1
+```
+
+Qoidalar:
+
+1. **Faqat to'g'ri format** — `+998123456789` (7–15 raqam, `+` bilan).
+   `998123456789` shakli ham avtomatik `+998...` ga to'g'rilanadi.
+2. **Jamoa sig'imi to'lgan bo'lsa** — qo'shilmaydi.
+3. **Taklif biriktirilgach** — holat `✅` ga o'zgaradi, qayta ishlatilmaydi.
+4. **Muddati tugagan jamoa admini** — yangi do'st qabul qilmaydi.
+5. **Boshqa jamoaga biriktirilgan raqam** — rad etiladi (admin o'z jamoasidagini
+   qo'shadi).
+
+### 👑 Yangi jamoa admini qo'shish (super admin)
+
+Super admin jamoa adminlarini ro'yxatidan **➕ Admin qo'shish** orqali qo'shadi.
+
+```
+👑 Jamoa adminlari
+   [➕ Admin qo'shish]
+         ↓
+👑 Yangi jamoa admini qo'shish
+
+Yangi adminning telefon raqamini yozing.
+📱 Format: +998123456789
+
+U shu raqam bilan ro'yxatdan o'tsa — avtomatik jamoa admini bo'ladi.
+```
+
+| Holat | Natija |
+| ----- | ------ |
+| Raqam **yangi** (ro'yxatdan o'tmagan) | Taklif saqlanadi — u ro'yxatdan o'tsa **avtomatik jamoa admini** bo'ladi |
+| Raqam **allaqachon ro'yxatdan o'tgan** | U **juda hozir jamoa admini** qilib tayinlanadi (super adminning tanlovi bo'yicha) |
+
+> Taklif qilingan admin o'z jamoasini keyin o'zi yaratadi
+> («👑 Admin bo'lish» tugmasi orqali).
+
+### 📥 Ro'yxatdan o'tish oqimi
+
+| Kelish usuli | Natija |
+| ------------ | ------ |
+| **Jamoa havolasi** (`/start team_<id>`) | Jamoa avtomatik tanlanadi, admin tasdiqlaydi |
+| **Admin havolasi** (`/start adm_<uid>`) | Adminning jamoasi avtomatik tanlanadi |
+| **Referal havola** (`/start ref_<uid>`) | Referrer jamoasiga avtomatik biriktiriladi |
+| **Admin qo'shgan telefon** | Adminning jamoasiga avtomatik biriktiriladi (ariza yuboriladi) |
+| **Hech narsa** (boshqa yangilar) | **To'g'ridan-to'g'ri ro'yxatdan o'tadi** — hech qanday savol yo'q |
+
+Jamoani qo'lda tanlash **ixtiyoriy**: jamoasiz foydalanuvchi menyusida
+**🎯 Jamoani tanlash** tugmasi bor.
+
 ### 🚪 Jamoadan chiqish
 
 Oddiy jamoa a'zosi «👥 Jamoam» tugmasi orqali jamoasidan chiqishi mumkin.

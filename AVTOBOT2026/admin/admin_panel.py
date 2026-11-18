@@ -19,11 +19,17 @@ from telegram import Update
 
 from bot import action_tokens
 from bot import keyboards as KB
-from config.config import DURATION_OPTIONS, SUPER_ADMIN
+from bot import texts as T
+from config.config import (
+    DURATION_OPTIONS,
+    SUPER_ADMIN,
+    TEAM_ADMIN_DEFAULT_DAYS,
+    TEAM_DEFAULT_MAX_USERS,
+)
 from core import database as db
 from core.logger import log
 from core.update_locks import user_update_lock
-from core.utils import format_expires
+from core.utils import calc_expires, format_expires
 
 # Jamoa admini sig'imi uchun taklif qilinadigan variantlar.
 TEAM_LIMIT_OPTIONS = [2, 5, 10, 20, 50, 100]
@@ -106,6 +112,9 @@ async def handle_admin_callback(update: Update, uid: int, data: str) -> None:
     # Jamoa adminlari (super admin)
     if data == "adm:teamadmins":
         await show_team_admins(update)
+        return
+    if data == "adm:addteamadmin":
+        await begin_add_team_admin(update)
         return
     if data.startswith("adm:teamadmin:"):
         try:
@@ -534,6 +543,66 @@ async def handle_db_callback(update: Update, admin_uid: int, data: str) -> None:
 # ─────────────────────────────────────────────────────────────────────────
 # JAMOA ADMINLARI (super admin)
 # ─────────────────────────────────────────────────────────────────────────
+async def begin_add_team_admin(update: Update) -> None:
+    """Yangi jamoa admini qo'shish — telefon raqam kiritish."""
+    from bot.login import user_states
+
+    user_states[update.effective_user.id] = {
+        "step": "super_add_team_admin",
+        "ts": time.time(),
+    }
+    await update.message.reply_text(
+        T.ADMIN_ADD_ADMIN_ASK,
+        reply_markup=KB.kb_input_cancel(),
+    )
+
+
+async def handle_add_team_admin_phone(update: Update, uid: int, text: str) -> None:
+    """Super admin yangi jamoa adminining telefon raqamini kiritadi."""
+    from bot.login import user_states
+    from core.utils import is_valid_phone, normalize_phone
+
+    raw = (text or "").strip()
+    phone = normalize_phone(raw)
+    if not phone or not is_valid_phone(phone):
+        await update.message.reply_text(
+            T.ADMIN_ADD_ADMIN_INVALID,
+            reply_markup=KB.kb_input_cancel(),
+        )
+        return
+
+    user_states.pop(uid, None)
+
+    # Allaqachon ro'yxatdan o'tgan bo'lsa — uni hozir jamoa admini qilib
+    # tayinlaymiz (super adminning tanlovi bo'yicha).
+    existing = await db.get_user_by_phone(phone)
+    if existing:
+        target = int(existing["uid"])
+        await db.set_team_admin(
+            target,
+            0,
+            max_users=TEAM_DEFAULT_MAX_USERS,
+            admin_expires_at=calc_expires(TEAM_ADMIN_DEFAULT_DAYS),
+        )
+        await update.message.reply_text(
+            T.ADMIN_ADD_ADMIN_ALREADY.format(
+                phone=phone,
+                name=existing.get("name") or "Noma'lum",
+            )
+            + "\n\n✅ U endi jamoa admini bo'ldi.",
+            reply_markup=KB.kb_team_admins(await db.get_team_admins()),
+        )
+        log(f"👑 Ro'yxatdan o'tgan user jamoa admini qilindi: {phone}")
+        return
+
+    await db.add_team_invite(phone, uid, team_id=None, kind="admin")
+    await update.message.reply_text(
+        T.ADMIN_ADD_ADMIN_DONE.format(phone=phone),
+        reply_markup=KB.kb_admin_back(),
+    )
+    log(f"👑 Yangi jamoa admini qo'shildi: {phone}")
+
+
 async def show_team_admins(update: Update) -> None:
     """Jamoa adminlari ro'yxati."""
     q = update.callback_query

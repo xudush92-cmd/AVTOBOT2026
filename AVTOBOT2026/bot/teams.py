@@ -209,6 +209,116 @@ async def handle_team_pick_callback(update: Update, uid: int, data: str) -> None
 # ─────────────────────────────────────────────────────────────────────────
 # ADMIN BO'LISH (jamoa yaratish)
 # ─────────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────
+# DO'ST QO'SHISH (telefon raqam bilan)
+# ─────────────────────────────────────────────────────────────────────────
+async def begin_add_friend(update: Update, admin_uid: int) -> None:
+    """Jamoa admini do'st qo'shish oynasini ochadi (telefon kiritish)."""
+    from bot.login import user_states
+
+    user = await db.get_user(admin_uid) or {}
+    if not await _is_team_admin(user):
+        await update.message.reply_text(
+            "❌ Bu oynadan foydalanish huquqingiz yo'q.",
+            reply_markup=KB.kb_main(),
+        )
+        return
+
+    team = await primary_team(admin_uid)
+    if not team:
+        await update.message.reply_text(
+            T.TEAM_ADMIN_NO_TEAM,
+            reply_markup=KB.kb_main(),
+        )
+        return
+
+    user_states[admin_uid] = {"step": "team_add_friend", "ts": time.time()}
+    await update.message.reply_text(
+        T.TEAM_ADD_FRIEND_ASK,
+        reply_markup=KB.kb_input_cancel(),
+    )
+
+
+async def handle_add_friend_phone(update: Update, admin_uid: int, text: str) -> None:
+    """Admin do'stning telefon raqamini kiritadi — jamoaga biriktiriladi."""
+    from bot.login import user_states
+    from core.utils import is_valid_phone, normalize_phone
+
+    raw = (text or "").strip()
+    phone = normalize_phone(raw)
+    if not phone or not is_valid_phone(phone):
+        await update.message.reply_text(
+            T.TEAM_ADD_FRIEND_INVALID,
+            reply_markup=KB.kb_input_cancel(),
+        )
+        return
+
+    team = await primary_team(admin_uid)
+    if not team:
+        user_states.pop(admin_uid, None)
+        await update.message.reply_text(
+            T.TEAM_ADMIN_NO_TEAM,
+            reply_markup=KB.kb_main(),
+        )
+        return
+
+    # Sig'im tekshiruvi — jamoa to'lgan bo'lsa yangi do'st qo'shilmaydi.
+    if not await db.team_has_free_slot(int(team["id"])):
+        user_states.pop(admin_uid, None)
+        await update.message.reply_text(
+            "🚫 Jamoa sig'imi to'lgan. Super admin limitni oshirishi kerak.",
+            reply_markup=KB.kb_main(),
+        )
+        return
+
+    # Allaqachon boshqa jamoaga biriktirilganmi?
+    existing = await db.get_team_invite(phone, kind="member")
+    if existing and int(existing.get("owner_admin_uid") or 0) != int(admin_uid):
+        old_team = await db.get_team(int(existing.get("team_id") or 0))
+        user_states.pop(admin_uid, None)
+        await update.message.reply_text(
+            T.TEAM_ADD_FRIEND_EXISTS.format(
+                phone=phone,
+                team=(old_team or {}).get("name") or "boshqa jamoa",
+            ),
+            reply_markup=KB.kb_main(),
+        )
+        return
+
+    await db.add_team_invite(
+        phone, admin_uid, team_id=int(team["id"]), kind="member"
+    )
+    user_states.pop(admin_uid, None)
+
+    await update.message.reply_text(
+        T.TEAM_ADD_FRIEND_DONE.format(
+            phone=phone,
+            team=team.get("name") or "Jamoangiz",
+            link=team_link(int(team["id"])),
+        ),
+        reply_markup=KB.kb_main(),
+    )
+    log(f"➕ Do'st qo'shildi: admin {admin_uid} → {phone}")
+
+
+async def show_team_invites(update: Update, admin_uid: int) -> None:
+    """Admin qo'shgan do'stlar ro'yxatini ko'rsatadi."""
+    invites = await db.get_team_invites(admin_uid)
+    if not invites:
+        await update.message.reply_text(
+            T.TEAM_INVITES_EMPTY,
+            reply_markup=KB.kb_team_admin_panel(),
+        )
+        return
+
+    team = await primary_team(admin_uid)
+    await update.message.reply_text(
+        T.TEAM_INVITES_TEXT.format(total=len(invites))
+        + f"\n🔗 {team_link(int((team or {}).get('id') or 0))}",
+        reply_markup=KB.kb_team_invites(invites),
+    )
+
+
 async def begin_team_admin_register(update: Update, uid: int) -> None:
     """Admin bo'lish oqimini boshlaydi (foydalanuvchi raqam kiritadi)."""
     from bot.login import user_states
@@ -505,6 +615,14 @@ async def handle_team_admin_callback(update: Update, uid: int, data: str) -> Non
 
     if action == "back":
         await show_team_admin_panel(update, uid)
+        return
+
+    if action == "addfriend":
+        await begin_add_friend(update, uid)
+        return
+
+    if action == "invites":
+        await show_team_invites(update, uid)
         return
 
     if action == "link":

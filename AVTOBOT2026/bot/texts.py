@@ -414,6 +414,7 @@ BTN_PENDING = "⏳ Tasdiq kutilmoqda..."
 BTN_BLOCKED = "🚫 Bloklangan"
 BTN_TEAM_ADMIN = "👑 Admin bo'lish"
 BTN_TEAM_MENU = "👥 Jamoam"
+BTN_TEAM_PICK = "🎯 Jamoani tanlash"
 BTN_TEAM_PICK = "🎯 Jamoa tanlash"
 
 
@@ -1450,6 +1451,78 @@ TEAM_MEMBER_LEFT = (
 )
 
 TEAM_MEMBER_LEAVE_CANCELLED = "ℹ️ Chiqish bekor qilindi."
+
+# ── Do'st qo'shish (telefon raqam bilan) ──
+TEAM_ADD_FRIEND_ASK = (
+    "➕ <b>Do'st qo'shish</b>\n\n"
+    "Do'stingizning <b>telefon raqamini</b> yozing.\n\n"
+    "📱 Format: <code>+998123456789</code>\n\n"
+    "Shu raqam bilan ro'yxatdan o'tsa — u avtomatik sizning jamoangizga "
+    "biriktiriladi va siz tasdiqlaysiz."
+)
+
+TEAM_ADD_FRIEND_INVALID = (
+    "❌ Telefon raqam noto'g'ri.\n\n"
+    "📱 To'g'ri format: <code>+998123456789</code>\n\n"
+    "Qayta urinib ko'ring."
+)
+
+TEAM_ADD_FRIEND_DONE = (
+    "✅ Do'st qo'shildi!\n\n"
+    "📱 {phone}\n"
+    "📋 Jamoa: {team}\n\n"
+    "Endi do'stingizga ushbu havolani yuboring:\n"
+    "{link}\n\n"
+    "Shu havoladan kirsa — u avtomatik sizning jamoangizga biriktiriladi "
+    "va siz tasdiqlaysiz."
+)
+
+TEAM_ADD_FRIEND_EXISTS = (
+    "ℹ️ Bu raqam allaqachon qo'shilgan:\n\n"
+    "📱 {phone}\n"
+    "📋 Jamoa: {team}\n\n"
+    "Uni taklif qilib yuboring — ro'yxatdan o'tganda avtomatik "
+    "biriktiriladi."
+)
+
+TEAM_INVITES_EMPTY = "📋 Hali do'st qo'shmadingiz."
+
+TEAM_INVITES_TEXT = (
+    "📋 <b>Qo'shilgan do'stlar</b> ({total} ta)\n\n"
+    "⏳ — ro'yxatdan o'tmagan | ✅ — jamoaga biriktirilgan\n\n"
+    "Ularga havolani yuboring — ular avtomatik sizning jamoangizga "
+    "kiradi."
+)
+
+# ── Super admin: yangi jamoa admini qo'shish ──
+ADMIN_ADD_ADMIN_ASK = (
+    "👑 <b>Yangi jamoa admini qo'shish</b>\n\n"
+    "Yangi adminning <b>telefon raqamini</b> yozing.\n\n"
+    "📱 Format: <code>+998123456789</code>\n\n"
+    "U shu raqam bilan ro'yxatdan o'tsa — avtomatik jamoa admini "
+    "bo'ladi."
+)
+
+ADMIN_ADD_ADMIN_INVALID = (
+    "❌ Telefon raqam noto'g'ri.\n\n"
+    "📱 To'g'ri format: <code>+998123456789</code>\n\n"
+    "Qayta urinib ko'ring."
+)
+
+ADMIN_ADD_ADMIN_DONE = (
+    "✅ Admin qo'shildi!\n\n"
+    "📱 {phone}\n\n"
+    "U ro'yxatdan o'tsa — avtomatik jamoa admini bo'ladi.\n"
+    "Uni jamoa yaratish uchun yuboring."
+)
+
+ADMIN_ADD_ADMIN_ALREADY = (
+    "ℹ️ Bu raqam allaqachon ro'yxatdan o'tgan:\n\n"
+    "📱 {phone}\n"
+    "👤 Ism: {name}\n\n"
+    "Uni jamoa admini qilish uchun quyidagi tugmalardan foydalaning."
+)
+
 
 
 TEAM_ADMIN_MEMBERS = (

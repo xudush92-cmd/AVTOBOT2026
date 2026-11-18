@@ -75,6 +75,9 @@ def kb_main(
     # Oddiy jamoa a'zosiga — o'z jamoasi haqida ma'lumot va undan chiqish.
     elif team_member:
         rows.append([KeyboardButton(T.BTN_TEAM_MENU)])
+    # Jamoasiz foydalanuvchi — jamoani qo'lda tanlash mumkin.
+    else:
+        rows.append([KeyboardButton(T.BTN_TEAM_PICK)])
     return ReplyKeyboardMarkup(rows, resize_keyboard=True)
 
 
@@ -496,6 +499,13 @@ def kb_team_admins(admins: list[dict]) -> InlineKeyboardMarkup:
         )
     if not rows:
         rows.append([InlineKeyboardButton("👑 Jamoa adminlari yo'q", callback_data="adm:noop")])
+    rows.append(
+        [
+            InlineKeyboardButton(
+                "➕ Admin qo'shish", callback_data="adm:addteamadmin"
+            )
+        ]
+    )
     rows.append([InlineKeyboardButton("⬅️ Orqaga", callback_data="adm:back")])
     return InlineKeyboardMarkup(rows)
 
@@ -1364,13 +1374,30 @@ def kb_team_admin_panel() -> InlineKeyboardMarkup:
             ],
             [
                 InlineKeyboardButton(
+                    "➕ Do'st qo'shish", callback_data="tadm:addfriend"
+                ),
+                InlineKeyboardButton(
                     "📨 Xabar yuborish", callback_data="tadm:message"
                 ),
-                InlineKeyboardButton("🔗 Havola", callback_data="tadm:link"),
             ],
+            [InlineKeyboardButton("🔗 Havola", callback_data="tadm:link")],
             [InlineKeyboardButton("⬅️ Orqaga", callback_data="tadm:back")],
         ]
     )
+
+
+def kb_team_invites(invites: list[dict]) -> InlineKeyboardMarkup:
+    """Admin qo'shgan do'stlar ro'yxati."""
+    rows: list[list[InlineKeyboardButton]] = []
+    for inv in invites:
+        phone = inv.get("phone") or "?"
+        status = inv.get("status") or "pending"
+        icon = {"pending": "⏳", "used": "✅"}.get(status, "❓")
+        rows.append(
+            [InlineKeyboardButton(f"{icon} {phone}", callback_data="tadm:noop")]
+        )
+    rows.append([InlineKeyboardButton("⬅️ Orqaga", callback_data="tadm:back")])
+    return InlineKeyboardMarkup(rows)
 
 
 def kb_team_members(members: list[dict], page: int = 0, page_size: int = 10) -> InlineKeyboardMarkup:

@@ -275,16 +275,6 @@ async def _cmd_start_locked(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         # Jamoa adminiga havoladan kelgan user — jamoasi avtomatik tanlanadi.
         if context.args:
             await _auto_assign_team_from_link(update, uid, context.args[0])
-        else:
-            # Jamoalar mavjud bo'lsa — jamoa bilan yoki jamoasiz ishlashni
-            # tanlash imkoniyatini beramiz (ikkalasi ham to'liq ishlaydi).
-            teams = await db.get_all_teams()
-            if teams:
-                await update.message.reply_text(
-                    T.TEAM_PICK_TITLE,
-                    reply_markup=KB.kb_team_pick(teams),
-                )
-                return
         await start_login_with_limit(update, uid)
         return
 
@@ -386,7 +376,12 @@ async def _on_message_locked(
             return
 
     # ── JAMOA FSM ──
-    if step in ("team_admin_size", "team_admin_name", "team_admin_message"):
+    if step in (
+        "team_admin_size",
+        "team_admin_name",
+        "team_admin_message",
+        "team_add_friend",
+    ):
         if time.time() - state.get("ts", 0) > LOGIN_TIMEOUT_S:
             Login.user_states.pop(uid, None)
             await msg.reply_text(
@@ -409,9 +404,33 @@ async def _on_message_locked(
         if step == "team_admin_name":
             await Teams.handle_team_admin_name(update, uid, text)
             return
+        if step == "team_add_friend":
+            await Teams.handle_add_friend_phone(update, uid, text)
+            return
         if step == "team_admin_message":
             await Teams.send_team_message(update, uid, text)
             return
+
+    # ── SUPER ADMIN: yangi jamoa admini qo'shish ──
+    if step == "super_add_team_admin":
+        if time.time() - state.get("ts", 0) > LOGIN_TIMEOUT_S:
+            Login.user_states.pop(uid, None)
+            await msg.reply_text(
+                "⏰ Kiritish oynasi eskirdi. Amalni qaytadan boshlang.",
+                reply_markup=KB.kb_admin_back(),
+            )
+            return
+        if text == T.BTN_BACK:
+            Login.user_states.pop(uid, None)
+            await msg.reply_text(T.ACTION_CANCELLED, reply_markup=KB.kb_admin_back())
+            return
+        if not rate_limiter.is_allowed(uid, "message"):
+            await msg.reply_text(
+                T.rate_limit_text(rate_limiter.get_wait_time(uid, "message"))
+            )
+            return
+        await AP.handle_add_team_admin_phone(update, uid, text)
+        return
 
     # ── ADMIN FSM ──
     if step in (

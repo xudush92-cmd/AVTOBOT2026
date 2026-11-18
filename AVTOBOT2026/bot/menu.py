@@ -460,6 +460,13 @@ async def route_menu_button(update: Update, text: str) -> bool:
         await Tm.begin_team_admin_register(update, update.effective_user.id)
         return True
 
+    # 🎯 Jamoani tanlash — jamoasiz foydalanuvchi uchun
+    if text == T.BTN_TEAM_PICK:
+        from bot import teams as Tm
+
+        await Tm.show_team_picker(update, update.effective_user.id)
+        return True
+
     # ⬅️ Kiritish oynasidan asosiy menyuga
     if text == T.BTN_BACK:
         uid = update.effective_user.id

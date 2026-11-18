@@ -695,6 +695,81 @@ async def handle_phone(update: Update, text: str) -> None:
         await _handle_phone_locked(update, text)
 
 
+async def _auto_bind_team_invite(update: Update, uid: int, phone: str) -> bool:
+    """Admin qo'shgan do'stni avtomatik jamoaga biriktiradi.
+
+    Ro'yxatdan o'tayotgan foydalanuvchining telefon raqami admin tomonidan
+    oldindan qo'shilgan bo'lsa — u shu jamoaga biriktiriladi va jamoa
+    admini tasdiqlash uchun ariza yuboriladi.
+
+    Returns:
+        Jamoaga biriktirilgan bo'lsa — ``True``.
+    """
+    invite = await db.get_team_invite(phone, kind="member")
+    if not invite or (invite.get("status") or "pending") != "pending":
+        # Super admin taklif qilingan jamoa admini bo'lishi mumkin.
+        return await _auto_make_team_admin(uid, phone)
+
+    owner_uid = int(invite.get("owner_admin_uid") or 0)
+    team_id = int(invite.get("team_id") or 0)
+    if not owner_uid or not team_id:
+        return False
+
+    # Jamoa admini faol ekanini tekshiramiz (muddati tugagan jamoa
+    # yangi a'zo qabul qilmaydi).
+    owner = await db.get_user(owner_uid)
+    if not owner or not owner.get("is_team_admin"):
+        return False
+    if await db.team_admin_expired(owner_uid):
+        return False
+
+    team = await db.get_team(team_id)
+    if not team:
+        return False
+
+    # Sig'im to'lgan bo'lsa — biriktirmaymiz (super admin limitni oshirsin).
+    if not await db.team_has_free_slot(team_id):
+        return False
+
+    saved = await db.set_team_pending(
+        uid,
+        team_id,
+        owner_uid,
+        name=update.effective_user.full_name or "",
+        username=update.effective_user.username or "",
+    )
+    if not saved:
+        return False
+
+    # Taklif ishlatildi deb belgilaymiz.
+    await db.set_team_invite_status(phone, "used", kind="member")
+
+    # Jamoa admini tasdiqlashi uchun ariza.
+    await notify_super_for_approval(uid)
+    log(f"👥 Do'st avtomatik biriktirildi: {uid} → jamoa #{team_id}")
+    return True
+
+
+async def _auto_make_team_admin(uid: int, phone: str) -> bool:
+    """Super admin taklif qilgan raqam — ro'yxatdan o'tsa jamoa admini bo'ladi."""
+    from config.config import TEAM_ADMIN_DEFAULT_DAYS, TEAM_DEFAULT_MAX_USERS
+    from core.utils import calc_expires
+
+    invite = await db.get_team_invite(phone, kind="admin")
+    if not invite or (invite.get("status") or "pending") != "pending":
+        return False
+
+    await db.set_team_admin(
+        uid,
+        0,
+        max_users=TEAM_DEFAULT_MAX_USERS,
+        admin_expires_at=calc_expires(TEAM_ADMIN_DEFAULT_DAYS),
+    )
+    await db.set_team_invite_status(phone, "used", kind="admin")
+    log(f"👑 Taklif qilingan user jamoa admini bo'ldi: {uid}")
+    return True
+
+
 async def _handle_phone_locked(update: Update, text: str) -> None:
     """Foydalanuvchi telefon raqamini UID operation lock ichida saqlaydi."""
     uid = update.effective_user.id
@@ -728,6 +803,12 @@ async def _handle_phone_locked(update: Update, text: str) -> None:
         await db.set_user_info(uid, full_name, update.effective_user.username or "")
 
     user_states.pop(uid, None)
+
+    # Admin tomonidan oldindan qo'shilgan do'st — avtomatik jamoaga
+    # biriktiriladi. Referal kabi: jamoa admini tasdiqlaydi.
+    # (Baza yoki taklif jadvali xatosi ro'yxatdan o'tishni to'xtatmasin.)
+    with contextlib.suppress(Exception):
+        await _auto_bind_team_invite(update, uid, phone)
 
     # Telefon validatsiyadan o'tgach kod DARHOL so'raladi — admin tasdig'i
     # faqat Telegram logini tugagach kerak bo'ladi. Har bir kod so'rovi
