@@ -14,7 +14,7 @@ qaytish rejasini beradi.
 | Worker yuborish | 🟡 o'rta | Endi albom `send_file([...])` orqali, matnli post `link_preview` bayrog'i bilan ketadi. Kunlik limit/faol soat yoqilsa, yuborishlar o'sha oynaga moslashadi |
 | Media disk | 🟡 o'rta | Albomlar bilan fayllar soni o'sadi. Har user uchun kvota: `MAX_MEDIA_FILES_PER_USER` (standart 200) |
 
-Barcha yangi funksiya testlangan: **352 test** (`python -m unittest discover -s tests -t tests`).
+Barcha yangi funksiya testlangan: **370 test** (`python -m unittest discover -s tests -t tests`).
 
 ### 🆕 Jamoa (team) tizimi
 
@@ -29,6 +29,12 @@ Barcha yangi funksiya testlangan: **352 test** (`python -m unittest discover -s 
 | Muddat chegarasi | 🟢 past | `TEAM_MEMBER_MAX_DAYS=60` — jamoa admini a'zosiga maksimal 60 kun. `SUPER_ADMIN_MAX_DAYS=0` — super admin chegarasiz |
 | Tasdiqlash oqimi | 🟡 o'rta | Endi tasdiqlash **ikki bosqichli**: avval muddat tanlanadi, keyin tasdiqlash. Avvalgi avtomatik 30 kun o'rniga tanlangan muddat beriladi |
 | Jamoadan chiqish | 🟢 past | Oddiy jamoa a'zosi jamoasidan chiqishi mumkin — **jamoa muddati ham tugaydi**. Jamoa egasi chiqmaydi |
+| Jamoadan chiqarish | 🟢 past | Jamoa admini a'zoni jamoasidan chiqaradi (a'zo kartasidagi `🚪` tugmasi) |
+| Jamoani topshirish | 🟢 past | Super admin jamoani boshqa jamoa adminga o'tkazadi — a'zolar, sig'im va muddat yangi admin ostiga o'tadi |
+| Do'stlar ro'yxati | 🟢 past | Taklif qilingan raqamlar ro'yxati + bekor qilish (`🗑`) |
+| Bloklash ta'siri | 🟢 past | Jamoa admini bloklansa — **butun jamoa** to'xtaydi, a'zolar xabar oladi |
+| Muddat indikatorlari | 🟢 past | ⌛ — muddati tugagan (a'zo va jamoa admini ro'yxatlarida) |
+| Jamoa admini tasdiqi | 🟢 past | Jamoani yaratgan admin **darhol tasdiqlangan** bo'ladi — tasdiq kutilmaydi, oddiy user kabi posting qiladi |
 
 > ℹ️ Jamoa tizimi **ixtiyoriy**: foydalanuvchi jamoa tanlamasa, oddiy user
 > sifatida ishlaydi. Jamoa adminlari faqat o'z jamoalariga ta'sir qiladi.

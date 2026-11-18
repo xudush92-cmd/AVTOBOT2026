@@ -406,7 +406,7 @@ async def _handle_start_confirmation_locked(
     await application.bot.send_message(
         uid,
         "Holat yangilandi.",
-        reply_markup=KB.kb_main(running=running),
+        reply_markup=await KB.kb_main_for(uid, running=running),
     )
 
 
@@ -433,7 +433,7 @@ async def _handle_stop_confirmation_locked(update: Update, uid: int, data: str) 
     await application.bot.send_message(
         uid,
         "Holat yangilandi.",
-        reply_markup=KB.kb_main(running=False),
+        reply_markup=await KB.kb_main_for(uid, running=False),
     )
 
 
@@ -471,7 +471,9 @@ async def _handle_intv_confirmation_locked(
         await application.bot.send_message(
             uid,
             "🏠 Asosiy menyu",
-            reply_markup=KB.kb_main(running=bool(user and user.get("running"))),
+            reply_markup=await KB.kb_main_for(
+                uid, running=bool(user and user.get("running"))
+            ),
         )
         return
 
@@ -491,7 +493,7 @@ async def _handle_intv_confirmation_locked(
     await application.bot.send_message(
         uid,
         "Holat yangilandi.",
-        reply_markup=KB.kb_main(running=bool(user.get("running"))),
+        reply_markup=await KB.kb_main_for(uid, running=bool(user.get("running"))),
     )
 
 

@@ -1064,7 +1064,7 @@ async def expire_stale_logins() -> int:
                         uid,
                         "⏰ Kiritish oynasi eskirdi. Amalni qaytadan boshlang.",
                         reply_markup=(
-                            KB.kb_main(running=running)
+                            await KB.kb_main_for(uid, running=running)
                             if user and user.get("is_admin") and user.get("session")
                             else KB.kb_login()
                         ),
@@ -1148,7 +1148,7 @@ async def check_tariff_expiry() -> int:
                 await application.bot.send_message(
                     uid,
                     T.EXPIRED_TEXT,
-                    reply_markup=KB.kb_main(),
+                    reply_markup=await KB.kb_main_for(uid),
                 )
 
         with contextlib.suppress(Exception):
@@ -1202,7 +1202,7 @@ async def check_team_admin_expiry() -> int:
                 await application.bot.send_message(
                     uid,
                     T.EXPIRED_TEXT,
-                    reply_markup=KB.kb_main(),
+                    reply_markup=await KB.kb_main_for(uid),
                 )
 
         # Adminga va super admin ga xabar.
@@ -1212,7 +1212,7 @@ async def check_team_admin_expiry() -> int:
                 T.TEAM_ADMIN_EXPIRED.format(
                     expires=format_expires(admin.get("admin_expires_at"))
                 ),
-                reply_markup=KB.kb_main(),
+                reply_markup=await KB.kb_main_for(admin_uid),
             )
         with contextlib.suppress(Exception):
             info = await db.get_user_info(admin_uid)

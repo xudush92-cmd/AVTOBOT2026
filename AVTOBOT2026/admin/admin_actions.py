@@ -1496,7 +1496,7 @@ async def _send_newly_approved_menu(target: int, text: str) -> None:
         await application.bot.send_message(
             target,
             text,
-            reply_markup=KB.kb_main(running=running),
+            reply_markup=await KB.kb_main_for(target, running=running),
         )
 
 
@@ -1692,6 +1692,46 @@ async def _action_reject_locked(update: Update, admin_uid: int, target: int) -> 
         )
 
 
+async def _stop_blocked_admin_team(admin_uid: int) -> int:
+    """Bloklangan jamoa adminining jamoasini to'xtatadi.
+
+    Jamoa admini bloklangan bo'lsa — uning a'zolari ham ishlay olmasligi
+    kerak (firibgar jamoa adminidan himoya). Bloklash **vaqtincha** — admin
+    blokdan chiqarilganda a'zolar qayta ishlaydi (jamoa muddati o'zgarmagan).
+
+    Returns:
+        To'xtatilgan a'zolar soni.
+    """
+    user = await db.get_user(admin_uid) or {}
+    if not user.get("is_team_admin"):
+        return 0
+    team_id = int(user.get("team_id") or 0)
+    if not team_id:
+        return 0
+
+    member_uids = await db.get_team_member_uids(team_id)
+    stopped = 0
+    for uid in member_uids:
+        if int(uid) == int(admin_uid):
+            continue
+        try:
+            await db.set_running(uid, False)
+            stopped += 1
+            with contextlib.suppress(Exception):
+                await application.bot.send_message(
+                    uid,
+                    "⛔️ Jamoangiz administratori bloklandi — "
+                    "e'lon yuborish to'xtatildi.",
+                )
+        except Exception as exc:  # noqa: BLE001 - bir a'zoni xato to'xtatmasi
+            log(f"⚠️ A'zoni to'xtatishda xato: {uid} — {exc}")
+            continue
+    log(
+        f"⛔ Bloklangan jamoa admini {admin_uid} — {stopped} ta a'zo to'xtatildi"
+    )
+    return stopped
+
+
 async def action_block(update: Update, admin_uid: int, target: int) -> None:
     async with user_operation_lock(target):
         await _action_block_locked(update, admin_uid, target)
@@ -1712,6 +1752,11 @@ async def _action_block_locked(update: Update, admin_uid: int, target: int) -> N
     await db.set_blocked(target, True)
     await db.set_running(target, False)
 
+    # Jamoa admini bloklansa — uning jamoasi ham to'xtaydi.
+    team_stopped = 0
+    with contextlib.suppress(Exception):
+        team_stopped = await _stop_blocked_admin_team(target)
+
     # Firibgar/soxta akkaunt bloklansa — u olgan (yoki olgan bo'lgan) referal
     # bonusi va uni taklif qilgan kishining hisobi qayta ko'rib chiqiladi.
     clawback: dict | None = None
@@ -1728,6 +1773,11 @@ async def _action_block_locked(update: Update, admin_uid: int, target: int) -> N
             f"({clawback['bonus_days']} kun) "
             f"{clawback['referrer_uid']}dan qaytarib olindi."
         )
+    if team_stopped:
+        note += (
+            f"\n\n⛔️ Jamoa admini bloklandi — uning {team_stopped} ta "
+            "jamoa a'zosi ham to'xtatildi."
+        )
     await q.edit_message_text(
         f"🚫 {target} bloklandi.{note}",
         reply_markup=await user_card_markup(target, blocked=True),
@@ -1737,6 +1787,21 @@ async def _action_block_locked(update: Update, admin_uid: int, target: int) -> N
         await application.bot.send_message(
             target, T.BLOCKED, reply_markup=KB.kb_blocked()
         )
+
+    # Jamoa adminiga xabar: uning a'zosi bloklandi.
+    with contextlib.suppress(Exception):
+        blocked_user = await db.get_user(target) or {}
+        owner_uid = int(blocked_user.get("owner_admin_uid") or 0)
+        if owner_uid and owner_uid != int(target):
+            owner = await db.get_user(owner_uid) or {}
+            if owner.get("is_team_admin"):
+                await application.bot.send_message(
+                    owner_uid,
+                    "🚫 Jamoadagi a'zoningiz bloklandi:\n\n"
+                    f"👤 {blocked_user.get('name') or target}\n"
+                    "ℹ️ Sabab: super admin tomonidan bloklandi. "
+                    "Boshqa amalni bajarishingiz mumkin.",
+                )
 
 
 async def action_unblock(update: Update, admin_uid: int, target: int) -> None:
@@ -1749,6 +1814,26 @@ async def _action_unblock_locked(update: Update, admin_uid: int, target: int) ->
     q = update.callback_query
     await db.set_blocked(target, False)
     log(f"🔓 Admin {admin_uid} → Unblock {target}")
+
+    # Bloklangan jamoa admini qayta faollashsa — uning jamoasi ham
+    # qayta ishlaydi (a'zolar o'zlari Start bosing).
+    with contextlib.suppress(Exception):
+        user = await db.get_user(target) or {}
+        if user.get("is_team_admin") and user.get("team_id"):
+            team_id = int(user["team_id"])
+            for uid in await db.get_team_member_uids(team_id):
+                if int(uid) == int(target):
+                    continue
+                member = await db.get_user(uid) or {}
+                if member.get("is_blocked") or member.get("awaiting_approval"):
+                    continue
+                await db.set_running(uid, False)
+            with contextlib.suppress(Exception):
+                await application.bot.send_message(
+                    target,
+                    "✅ Blokdan chiqarildingiz — jamoangiz yana faol. "
+                    "A'zolar «▶️ Start» bosib yana ishga tushirishi mumkin.",
+                )
 
     # Bloklangan referrer tufayli hisoblanmay qolgan referallarni qayta
     # tekshiramiz — aks holda ular abadiy "⏳" bo'lib qolardi.
@@ -1768,7 +1853,7 @@ async def _action_unblock_locked(update: Update, admin_uid: int, target: int) ->
         markup = KB.kb_pending()
         notice = "✅ Hisobingiz blokdan chiqarildi. Tasdiqni kuting."
     elif user and user.get("is_admin") and user.get("session"):
-        markup = KB.kb_main(running=False)
+        markup = await KB.kb_main_for(target, running=False)
         notice = "✅ Hisobingiz blokdan chiqarildi."
     else:
         markup = KB.kb_login()

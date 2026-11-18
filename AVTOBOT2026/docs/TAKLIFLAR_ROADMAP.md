@@ -2,6 +2,24 @@
 
 Sana: 2026-10-12 · Asos: `cf8eda0` (main) · Audit qilingan kod: `bot/`, `core/`, `worker/`, `admin/`, `main.py`
 
+> ⚠️ **ESKI HUJJAT (tarixiy audit).** Bu hujjat 2026-10-12 holatidagi
+> auditga asoslangan va **jamoa (team) tizimini qamrab olmaydi**. Uning
+> ko'plab tavsiyalari allaqachon bajarilgan yoki bekor qilingan:
+>
+> | Tavsiya | Joriy holat |
+> | ------- | ----------- |
+> | Albom (ko'p surat) | ✅ Bajarilgan — `MAX_ALBUM_FILES=4` |
+> | Video/dokument | ❌ Bekor qilingan — `ALLOW_VIDEO_MEDIA=0`, faqat surat |
+> | Referal bonus kunlari | ❌ Bekor qilingan — `REFERRAL_BONUS_DAYS=0`, referal faqat statistika |
+> | Referal → jamoaga biriktirish | ✅ Bajarilgan — `bot/referral.py` |
+> | Yuborish statistikasi (`send_logs`) | ✅ Bajarilgan |
+> | **Jamoa (team) tizimi** | ✅ Bajarilgan — bu hujjatda **yo'q**, `docs/JAMOA_TIZIMI.md` ga qarang |
+> | Do'st qo'shish (telefon bilan) | ✅ Bajarilgan — `docs/JAMOA_TIZIMI.md` |
+> | Muddat chegarasi (anti-fraud) | ✅ Bajarilgan — `TEAM_MEMBER_MAX_DAYS=60` |
+>
+> **Joriy holat uchun** `docs/JAMOA_TIZIMI.md` va `docs/YANGILASH.md`
+> hujjatlarini qarang.
+
 Ushbu hujjat uchta savolga javob beradi:
 
 1. **Referat (referal) tizimi qanday ishlaydi, firibgarlikdan himoya bormi, to'g'ri hisoblaydimi?**
@@ -489,3 +507,44 @@ keyingi qadamda quyidagilarni **to'liq kod + testlar bilan** yozib beraman:
 3. **Paket bloki**: `max_groups` + `daily_limit` + tarif paketlari + admin panel tugmalari
 
 Qaysi biridan boshlaymiz?
+
+---
+
+## 9. 2026-11-14 — TO'LIQ QAYTA KO'RIKISH NATIJASI
+
+Ushbu hujjat 2026-10-12 dagi audit asosida yozilgan. O'shandan keyin
+jamoa (team) tizimi to'liq joriy etildi va 2026-11-14 da barcha modul
+qayta ko'rib chiqildi.
+
+### ✅ Amalga oshirilgan (shu turar)
+
+| Soxta | Holat | Izoh |
+| ----- | ----- | ---- |
+| Referal bonus kunlari | ✅ | `REFERRAL_BONUS_DAYS=0` — yangi bonus berilmaydi |
+| Video reklamasi | ✅ | `ALLOW_VIDEO_MEDIA=0` — video rad etiladi |
+| Albom limiti 4 | ✅ | `MAX_ALBUM_FILES=4` |
+| 60 kunlik maksimal muddat | ✅ | `TEAM_MEMBER_MAX_DAYS=60` — jamoa a'zosiga |
+| Muddat tanlash (ikki bosqichli) | ✅ | `1/7/30/60` — jamoa admini uchun |
+| Bloklangan jamoa adminining jamoasi to'xtaydi | ✅ | `_stop_blocked_admin_team()` |
+| Bloklangan jamoa admini Start qila olmaydi | ✅ | `menu.confirm_start()` |
+| Jamoa admini a'zolarini boshqaradi | ✅ | tasdiqlash, muddat, bloklash, xabar, statistika |
+| Super admin sig'im/muddat boshqaradi | ✅ | `adm:teamlimit:` / `adm:teamterm:` |
+| Admin muddatini topshirish | ✅ | `adm:teamhandoverset:` — jamoa yangi adminga o'tadi |
+| Referalsiz user savolsiz ro'yxatdan o'tadi | ✅ | `🎯 Jamoani tanlash` faqat ixtiyoriy |
+| Do'st qo'shish (telefon bilan) | ✅ | `team_invites` jadvali |
+| Jamoa admini darhol tasdiqlangan | ✅ | `set_awaiting_approval(uid, False)` |
+| A'zo o'z jamoasidan chiqishi | ✅ | `leave_team()` — jamoa muddati ham tugaydi |
+| Jamoadan chiqarish (admin amali) | ✅ | `tadm:kick:` |
+| Do'stlar ro'yxati + bekor qilish | ✅ | `tadm:invites` / `tadm:delinvite` |
+| Muddati tugagan indikatorlari | ✅ | ⌛ — a'zo va jamoa admini ro'yxatlarida |
+| Jamoa admini o'z jamoasini boshqaradi | ✅ | `👥 Jamoam` har bir ekranda saqlanadi |
+
+### 📊 Testlar
+
+**370 test** (`python -m unittest discover -s tests -t tests`) — hammasi o'tadi.
+Ruff — o'zgartirilgan modullarda yangi xato yo'q.
+
+### ⏳ Hali deploy qilinmagan
+
+Server hali eski kodda ishlaydi. Barcha tuzatishlar shu branchda
+(`arena/73032eb5-avtobot2026`) jamlangan va bir marta yangilanadi.

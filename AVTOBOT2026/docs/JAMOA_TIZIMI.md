@@ -71,16 +71,39 @@ Har bir jamoa admini **faqat o'z a'zolarini** ko'radi va boshqaradi:
 | Jamoa adminining muddati | `TEAM_ADMIN_DEFAULT_DAYS` (standart 30 kun) |
 | Jamoa adminining sig'imi | admin o'zi kiritadi, super admin keyin +/- qila oladi |
 
+**Jamoa admini darhol tasdiqlangan bo'ladi** — u jamoani o'ziga yaratgan
+bo'lgani uchun «tasdiq kutilmoqda» holatiga tushmaydi. U:
+
+- ✅ o'z jamoasini darhol boshqaradi (`👥 Jamoam`),
+- ✅ oddiy foydalanuvchi kabi **posting qila oladi** (guruh, postlar),
+- ✅ a'zolariga tarif/muddat beradi va ularni tasdiqlaydi.
+
+Super admin jamoa adminining muddatini uzaytirganda — uning **o'z tarif
+muddati ham** yangilanadi (aks holda muddat uzaytirilgandan keyin ham
+«muddati tugagan» bo'lib qolardi).
+
 ---
 
 ## 4. Foydalanuvchi ro'yxatdan o'tishi
 
+**Oddiy (referalsiz, taklif yo'q) foydalanuvchi — to'g'ridan-to'g'ri:**
+
 ```
 /start
    ↓
-🎯 JAMOA TANLANG  →  [Avtoelon Toshkent (3/5)]  [Boshqa jamoa (5/5)]
-   ↓
 📱 Ism → Telefon → Telegram kodi
+   ↓
+✅ Ro'yxatdan o'tdi — darhol bot faollashdi
+```
+
+> Hech qanday qo'shimcha savol berilmaydi. «🎯 Jamoani tanlash» — faqat
+> **ixtiyoriy** tugma; foydalanuvchi uni bosmasa ham oddiy user bo'lib
+> to'liq ishlaydi.
+
+**Jamoa havolasi / taklif orqali kelgan foydalanuvchi:**
+
+```
+/start (havola bilan)  →  📱 Ism → Telefon → Telegram kodi
    ↓
 ⏳ Jamoa admini tasdiqlashni kutilmoqda
    ↓
@@ -89,12 +112,12 @@ Har bir jamoa admini **faqat o'z a'zolarini** ko'radi va boshqaradi:
 
 **Qoidalar:**
 - Jamoali foydalanuvchi **faqat jamoa admini** tasdiqlaydi (super admin emas)
-- Jamoa tanlash **ixtiyoriy** — «🙋 Jamoasiz davom etish» tugmasi bilan
-  jamoasiz ham ro'yxatdan o'tib, to'liq ishlash mumkin
+- Jamoa tanlash **ixtiyoriy** — tanlanmagan foydalanuvchi ham to'liq ishlaydi
 - Limit to'lgan jamoani tanlab bo'lmaydi ("Jamoa to'ldi")
 - Jamoa adminining muddati tugagan bo'lsa — jamoa qabul qilmaydi
 - Referal yoki jamoa havolasi orqali kelgan user jamoasi avtomatik tanlanadi
-- Jamoa tanlash **ixtiyoriy**: tanlamagan foydalanuvchilar eski tartibda ishlaydi
+- **Super admin tomonidan taklif qilingan raqam** ro'yxatdan o'tsa — darhol
+  jamoa admini bo'ladi (tasdiq kutilmaydi)
 
 ---
 
@@ -129,6 +152,12 @@ yakunlanadi. Bu **barcha adminlar uchun** bir xil:
 
 Super adminning "Foydalanuvchi qo'shish" oqimi esa alohida — u tasdiqlash
 emas, to'g'ridan-to'g'ri qo'shish.
+
+> ⛔️ **60 kunlik maksimal muddat** — jamoa a'zolariga beriladigan muddat
+> hech qachon 60 kundan oshmasligi kafolatlanadi
+> (`TEAM_MEMBER_MAX_DAYS = 60`).
+> Super admin `TEAM_ADMIN_MAX_DAYS` orqali jamoa admini muddati chegarasini
+> o'zgartirishi mumkin (`0` = cheksiz).
 
 ### ➕ Do'st qo'shish (telefon raqam bilan)
 
@@ -165,6 +194,14 @@ Qoidalar:
 4. **Muddati tugagan jamoa admini** — yangi do'st qabul qilmaydi.
 5. **Boshqa jamoaga biriktirilgan raqam** — rad etiladi (admin o'z jamoasidagini
    qo'shadi).
+6. **📋 Do'stlar ro'yxati** — jamoa admini panelidan ochiladi. Ro'yxatda
+   `⏳` (ro'yxatdan o'tmagan) va `✅` (biriktirilgan) holatlar ko'rinadi.
+   Xato qo'shilgan raqamni **🗑 bekor qilish** tugmasi bilan olib bo'ladi.
+7. **Ikkita havola** — do'stga yuborish uchun:
+   - 🔗 **Jamoa havolasi** (`/start team_<id>`)
+   - 🔗 **Shaxsiy havolа** (`/start adm_<uid>`)
+   
+   Ikkalasi ham ishlaydi — foydalanuvchi avtomatik shu jamoaga birikadi.
 
 ### 👑 Yangi jamoa admini qo'shish (super admin)
 
@@ -225,6 +262,47 @@ Chiqish natijasi:
 
 > **Jamoa egasi (admin) jamoasidan chiqmaydi** — jamoa unga tegishli.
 > Chiqish faqat oddiy a'zolar uchun.
+
+### 🚪 Jamoadan chiqarish (jamoa admini)
+
+Jamoa admini a'zoni uchun **🚪 Jamoadan chiqarish** tugmasi bor (a'zo
+kartasida). Bu bloklashdan farqli — a'zo **jamoasidan butunlay chiqadi**.
+
+| Narsa | Natija |
+| ----- | ------ |
+| `team_id` / `owner_admin_uid` | Tozalanadi |
+| Jamoa muddati | Tugaydi |
+| Posting | To'xtatiladi |
+| A'zo | Xabar oladi: «🚪 Siz ... jamoasidan chiqarildingiz» |
+
+> **Jamoa egasi jamoasidan chiqarilmaydi.**
+
+### 🚫 Bloklash va jamoa ta'siri
+
+Jamoa admini a'zosini bloklasa — uning postingi **darhol** to'xtatiladi
+(worker o'chiriladi). Super admin esa jamoa adminini bloklasa, **butun jamoa**
+to'xtaydi:
+
+| Kim bloklandi | Natija |
+| ------------- | ------ |
+| Jamoa a'zosi | Faqat o'sha a'zo to'xtaydi |
+| **Jamoa admini** | **Butun jamoa to'xtaydi** + a'zolar xabar oladi |
+
+Blokdan chiqarilganda jamoa adminining a'zolari qayta ishlaydi (ular
+o'zlari `▶️ Start` bosadi).
+
+### 📊 A'zolar ro'yxatidagi holatlar
+
+| Belgi | Holat |
+| ----- | ----- |
+| 🟢 | Ishlamoqda |
+| ⚪ | To'xtatilgan |
+| ⏳ | Tasdiq kutilmoqda |
+| ⌛ | **Muddati tugagan** — muddat berish kerak |
+| 🚫 | Bloklangan |
+
+Ro'yxatda muddati tugagan a'zolar soni ko'rsatiladi — admin kimga muddat
+berishi kerakligini darhol biladi.
 
 ### 🚪 Guruhdan chiqarilish / guruhga yetib borolmaslik
 

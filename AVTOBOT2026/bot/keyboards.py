@@ -81,6 +81,22 @@ def kb_main(
     return ReplyKeyboardMarkup(rows, resize_keyboard=True)
 
 
+async def kb_main_for(uid: int, running: bool = False) -> ReplyKeyboardMarkup:
+    """Foydalanuvchi rolini aniqlab asosiy klaviaturani qaytaradi.
+
+    Jamoa admini va jamoa a'zosi uchun ``👥 Jamoam`` tugmasi har bir
+    ekranda (``📈 Hisobot``, ``📦 Paket``, ``▶️ Start`` va h.k.) saqlanadi.
+    """
+    from core import database as db
+
+    user = await db.get_user(uid) or {}
+    return kb_main(
+        running=running,
+        team_admin=bool(user.get("is_team_admin")),
+        team_member=bool(user.get("team_id")) and not user.get("is_team_admin"),
+    )
+
+
 def kb_groups_menu() -> ReplyKeyboardMarkup:
     """ESKI: foydalanuvchi UI'dan olib tashlangan (faqat admin/legacy oqimlar uchun)."""
     return ReplyKeyboardMarkup(
@@ -489,10 +505,18 @@ def kb_team_admins(admins: list[dict]) -> InlineKeyboardMarkup:
     for admin in admins:
         uid = int(admin.get("uid") or 0)
         name = (admin.get("name") or str(uid))[:28]
+        # Muddati tugagan yoki bloklangan jamoa admini — belgi bilan.
+        icon = "👑"
+        if admin.get("is_blocked"):
+            icon = "🚫"
+        elif admin.get("awaiting_approval"):
+            icon = "⏳"
+        elif _admin_expired(admin):
+            icon = "⌛"
         rows.append(
             [
                 InlineKeyboardButton(
-                    f"👑 {name}",
+                    f"{icon} {name}",
                     callback_data=f"adm:teamadmin:{uid}",
                 )
             ]
@@ -510,8 +534,18 @@ def kb_team_admins(admins: list[dict]) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(rows)
 
 
+def _admin_expired(admin: dict) -> bool:
+    """Jamoa adminining muddati tugaganmi."""
+    expires = admin.get("admin_expires_at")
+    if not expires:
+        return False
+    from core.utils import is_expired
+
+    return is_expired(expires)
+
+
 def kb_team_admin_card(uid: int) -> InlineKeyboardMarkup:
-    """Jamoa admini kartasi — muddat va sig'im boshqaruvi."""
+    """Jamoa admini kartasi — muddat, sig'im va topshirish boshqaruvi."""
     return InlineKeyboardMarkup(
         [
             [
@@ -526,11 +560,38 @@ def kb_team_admin_card(uid: int) -> InlineKeyboardMarkup:
             ],
             [
                 InlineKeyboardButton(
+                    "🔄 Jamoani topshirish", callback_data=f"adm:teamhandover:{uid}"
+                )
+            ],
+            [
+                InlineKeyboardButton(
                     "⬅️ Orqaga", callback_data="adm:teamadmins"
                 )
             ],
         ]
     )
+
+
+def kb_team_handover_options(
+    uid: int, admins: list[dict]
+) -> InlineKeyboardMarkup:
+    """Jamoani topshirish uchun yangi adminni tanlash (super admin)."""
+    rows: list[list[InlineKeyboardButton]] = []
+    for admin in admins:
+        new_uid = int(admin.get("uid") or 0)
+        name = (admin.get("name") or str(new_uid))[:28]
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    f"👑 {name}",
+                    callback_data=f"adm:teamhandoverset:{uid}:{new_uid}",
+                )
+            ]
+        )
+    rows.append(
+        [InlineKeyboardButton("⬅️ Orqaga", callback_data=f"adm:teamadmin:{uid}")]
+    )
+    return InlineKeyboardMarkup(rows)
 
 
 def kb_team_admin_term(uid: int, options: list[int]) -> InlineKeyboardMarkup:
@@ -1377,6 +1438,11 @@ def kb_team_admin_panel() -> InlineKeyboardMarkup:
                     "➕ Do'st qo'shish", callback_data="tadm:addfriend"
                 ),
                 InlineKeyboardButton(
+                    "📋 Do'stlar ro'yxati", callback_data="tadm:invites"
+                ),
+            ],
+            [
+                InlineKeyboardButton(
                     "📨 Xabar yuborish", callback_data="tadm:message"
                 ),
             ],
@@ -1396,6 +1462,16 @@ def kb_team_invites(invites: list[dict]) -> InlineKeyboardMarkup:
         rows.append(
             [InlineKeyboardButton(f"{icon} {phone}", callback_data="tadm:noop")]
         )
+        # Taklifni bekor qilish (o'chirish).
+        if status == "pending":
+            rows.append(
+                [
+                    InlineKeyboardButton(
+                        f"🗑 {phone} — bekor qilish",
+                        callback_data=f"tadm:delinvite:{phone}",
+                    )
+                ]
+            )
     rows.append([InlineKeyboardButton("⬅️ Orqaga", callback_data="tadm:back")])
     return InlineKeyboardMarkup(rows)
 
@@ -1474,6 +1550,13 @@ def kb_team_member_card(uid: int, awaiting: bool = False) -> InlineKeyboardMarku
             InlineKeyboardButton(
                 "✅ Blokdan chiqarish", callback_data=f"tadm:unblock:{uid}"
             ),
+        ]
+    )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                "🚪 Jamoadan chiqarish", callback_data=f"tadm:kick:{uid}"
+            )
         ]
     )
     rows.append([InlineKeyboardButton("⬅️ Orqaga", callback_data="tadm:users")])

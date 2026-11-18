@@ -11,7 +11,17 @@ Foydalanuvchi tugmalari ko'pligidan chalg'imasligi uchun menyu **yassi**
 [ 🔍 Guruhlarni topish              ] [ ➖ Guruh o'chirish ]
 [ ➕ Post qo'shish                  ] [ 🗑 Post o'chirish  ]
 [ ⏱ Posting oralig'i                                   ]
+[ 👥 Jamoam  /  🎯 Jamoani tanlash  /  👑 Admin bo'lish    ]  ← qo'shimcha qator
 ```
+
+**Oxirgi qator roli bo'yicha o'zgaradi:**
+
+| Foydalanuvchi | Tugma |
+| ------------- | ----- |
+| 🛡 Super admin | Faqat `🖥 Admin paneli` |
+| 👑 Jamoa admini | `👥 Jamoam` — o'z jamoasini boshqaradi |
+| 👤 Jamoa a'zosi | `👥 Jamoam` — jamoa kartasi + **🚪 Jamoadan chiqish** |
+| 🧑 Oddiy (jamoasiz) | `🎯 Jamoani tanlash` (ixtiyoriy) + `👑 Admin bo'lish` |
 
 - **Holat (ON/OFF) alohida Status tugmasisiz** — Start/Stop tugmasining o'zida:
   to'xtagan bo'lsa `▶️ Start (🔴 OFF)`, ishlayotgan bo'lsa `⛔ Stop (🟢 ON)`.
@@ -37,6 +47,34 @@ Foydalanuvchi tugmalari ko'pligidan chalg'imasligi uchun menyu **yassi**
 Saqlanib qolgan tugmalar: ▶️ Start/⛔ Stop (holat yorlig'i bilan), 📈 Hisobot
 (statistika + paket/limitlar), 👥 Referal, 🔍 Guruhlarni topish,
 ➖ Guruh o'chirish, ➕ Post qo'shish, 🗑 Post o'chirish, ⏱ Posting oralig'i.
+
+**Jamoa bilan bog'liq qo'shimcha tugmalar:** `👥 Jamoam` (jamoa admini va
+a'zolar uchun), `🎯 Jamoani tanlash` (jamoasiz foydalanuvchi uchun),
+`👑 Admin bo'lish` (jamoa yaratish). To'liq tavsif:
+`docs/JAMOA_TIZIMI.md`.
+
+**Jamoa admini paneli (`👥 Jamoam`):**
+
+| Tugma | Vazifasi |
+| ----- | ------- |
+| 👥 A'zolar | A'zolar ro'yxati + a'zo kartasi |
+| ➕ Do'st qo'shish | Telefon raqam bilan do'st taklif qilish |
+| 📋 Do'stlar ro'yxati | Takliflar ro'yxati + 🗑 bekor qilish |
+| 📊 Statistika | A'zolar / faol / kutayotgan / bloklangan / guruh / post |
+| 📨 Xabar yuborish | Jamoasiga xabar |
+| 🔗 Havola | Jamoa va shaxsiy taklif havolalari |
+
+**A'zo kartasi (jamoa admini):** `✅ Tasdiqlash`, `📅 Muddat berish`,
+`🚫 Bloklash`, `✅ Blokdan chiqarish`, `🚪 Jamoadan chiqarish`.
+
+**A'zolar ro'yxati indikatorlari:** 🟢 faol | ⚪ to'xtatilgan |
+⏳ tasdiq kutilmoqda | ⌛ muddati tugagan | 🚫 bloklangan.
+
+**Super admin panelida jamoa adminlari ro'yxati:** 👑 faol | ⌛ muddati
+tugagan | ⏳ tasdiq kutilmoqda | 🚫 bloklangan.
+
+**Jamoa admini kartasi (super admin):** `📅 Muddatni uzaytirish`,
+`👥 Sig'imni o'zgartirish`, `🔄 Jamoani topshirish`.
 
 > Eslatma: eski klaviaturalarda qolib ketgan 📊 Status / 📦 Paket tugmalari
 > bosilsa ham router ularni to'g'ri ekranga yo'naltiradi (orqaga moslik).
@@ -80,4 +118,5 @@ va admin panelini cheklamaydigan yengil yondashuv.
   xabarlarida qoladi, lekin yangi menyuda ko'rinmaydi va yangi foydalanuvchi
   ularga duch kelmaydi.
 - Admin paneli va uning guruh/post boshqaruvi **o'zgarishsiz** qoldi.
-- Testlar: `python -m unittest discover -s tests` — 245 test, barchasi yashil.
+- Testlar: `python -m unittest discover -s tests -t tests` — **370 test**,
+  barchasi yashil.

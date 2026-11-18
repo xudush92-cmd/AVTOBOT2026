@@ -97,7 +97,7 @@ async def save_interval(uid: int, minutes: int, update: Update) -> None:
 
     await update.message.reply_text(
         T.interval_set(minutes),
-        reply_markup=KB.kb_main(running=running),
+        reply_markup=await KB.kb_main_for(uid, running=running),
     )
 
 

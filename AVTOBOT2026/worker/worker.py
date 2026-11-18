@@ -393,6 +393,21 @@ async def posting_loop(uid: int, stop: asyncio.Event) -> None:
                     )
                 break
 
+            # Jamoa a'zosi — jamoa admini bloklangan bo'lsa to'xtaydi.
+            if await db.team_owner_disabled(uid):
+                await db.set_running(uid, False)
+                log(
+                    f"⛔ Worker:{uid} jamoa admini bloklangani uchun to'xtadi",
+                    "warning",
+                )
+                with contextlib.suppress(Exception):
+                    await application.bot.send_message(
+                        uid,
+                        "⛔️ Jamoangiz administratori bloklandi — "
+                        "e'lon yuborish to'xtatildi.",
+                    )
+                break
+
             session = await db.get_session(uid)
             if not session:
                 await db.set_running(uid, False)

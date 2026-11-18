@@ -720,7 +720,7 @@ async def discover_groups(update: Update) -> None:
     running = bool(worker_manager and worker_manager.is_running(uid))
     await update.message.reply_text(
         "🏠 Asosiy menyu",
-        reply_markup=KB.kb_main(running=running),
+        reply_markup=await KB.kb_main_for(uid, running=running),
     )
     log(
         f"🔍 Guruh topish: {uid} → +{len(added)} "
