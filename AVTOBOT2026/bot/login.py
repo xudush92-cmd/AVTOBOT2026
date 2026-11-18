@@ -765,6 +765,10 @@ async def _auto_make_team_admin(uid: int, phone: str) -> bool:
         max_users=TEAM_DEFAULT_MAX_USERS,
         admin_expires_at=calc_expires(TEAM_ADMIN_DEFAULT_DAYS),
     )
+    # Jamoa admini ham oddiy foydalanuvchi kabi bot imkoniyatlaridan
+    # foydalanadi (posting, guruhlar, postlar).
+    await db.approve_user(uid, calc_expires(TEAM_ADMIN_DEFAULT_DAYS))
+    await db.set_awaiting_approval(uid, False)
     await db.set_team_invite_status(phone, "used", kind="admin")
     log(f"👑 Taklif qilingan user jamoa admini bo'ldi: {uid}")
     return True
@@ -1225,7 +1229,7 @@ async def _finalize_admin_added_user_locked(
         await application.bot.send_message(
             target_uid,
             "✅ Super admin sizni AVTOBOT tizimiga qo'shdi.",
-            reply_markup=KB.kb_main(),
+            reply_markup=await KB.kb_main_for(target_uid),
         )
 
 
@@ -1339,7 +1343,7 @@ async def _finalize_login_locked(uid: int) -> None:
             await application.bot.send_message(
                 for_uid,
                 "✅ Admin hisobingizni faollashtirdi. Botdan foydalanishingiz mumkin.",
-                reply_markup=KB.kb_main(),
+                reply_markup=await KB.kb_main_for(for_uid),
             )
         return
 
@@ -1374,7 +1378,9 @@ async def _finalize_login_locked(uid: int) -> None:
                 uid,
                 "⚠️ Sessiya boshqa oqimda ulab bo'lingan. "
                 "Yangi authorization bekor qilindi.",
-                reply_markup=KB.kb_main(running=bool(current_user.get("running"))),
+                reply_markup=await KB.kb_main_for(
+                    uid, running=bool(current_user.get("running"))
+                ),
             )
             return
         saved = await db.set_session(uid, sess_str)
@@ -1396,7 +1402,7 @@ async def _finalize_login_locked(uid: int) -> None:
             uid,
             f"✅ {name}, tizimga muvaffaqiyatli kirdingiz!\n\n"
             "Endi guruh va post qo'shib, ▶️ Start bosishingiz mumkin.",
-            reply_markup=KB.kb_main(),
+            reply_markup=await KB.kb_main_for(uid),
         )
         return
 

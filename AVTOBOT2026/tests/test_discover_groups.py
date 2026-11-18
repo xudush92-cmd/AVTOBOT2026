@@ -26,19 +26,20 @@ os.environ.setdefault("API_HASH", "0123456789abcdef0123456789abcdef")
 os.environ.setdefault("BOT_TOKEN", "123456:TEST_TOKEN")
 os.environ.setdefault("ADMIN_ID", "123456789")
 
-from telethon.errors import (  # noqa: E402
+from cryptography.fernet import Fernet
+from telethon.errors import (
     FloodWaitError,
     UserNotParticipantError,
 )
-from telethon.tl import types  # noqa: E402
+from telethon.tl import types
 
-from bot import groups as G  # noqa: E402
-from bot import texts as T  # noqa: E402
-from core import database as db  # noqa: E402
-from core import session_crypto  # noqa: E402
-from cryptography.fernet import Fernet  # noqa: E402
-from worker import worker as W  # noqa: E402
-from worker.client_pool import PoolBusyError, SessionInvalidError  # noqa: E402
+from bot import discover_sessions
+from bot import groups as G
+from bot import texts as T
+from core import database as db
+from core import session_crypto
+from worker import worker as W
+from worker.client_pool import PoolBusyError, SessionInvalidError
 
 UID = 3001
 _NOW = datetime(2026, 1, 1, tzinfo=timezone.utc)
@@ -113,6 +114,7 @@ class DiscoverGroupsTestCase(unittest.IsolatedAsyncioTestCase):
         await db.upsert_user(UID, name="Vali", is_admin=1, session="SESS")
         # Anti-spam pauzalarni testda tezlashtiramiz va himoya holatini tozalaymiz.
         G.reset_discover_guards()
+        discover_sessions.reset()
         self._sleep_patch = patch.object(G.asyncio, "sleep", new=AsyncMock())
         self._uniform_patch = patch.object(G.random, "uniform", return_value=0)
         self._sleep_patch.start()
@@ -122,6 +124,7 @@ class DiscoverGroupsTestCase(unittest.IsolatedAsyncioTestCase):
         self._sleep_patch.stop()
         self._uniform_patch.stop()
         G.reset_discover_guards()
+        discover_sessions.reset()
         await db.close_db()
         db.DB_PATH = self.old_db_path
         session_crypto._fernet = None
@@ -212,31 +215,38 @@ class DiscoverGroupsTestCase(unittest.IsolatedAsyncioTestCase):
             release=AsyncMock(),
         )
 
-        update, status, message = self._update()
+        update, status, _message = self._update()
         with patch.object(W, "client_pool", pool):
             await G.discover_groups(update)
 
+        # ⚠️ Hech qanday guruh avtomatik qo'shilMADI — tanlov kutilmoqda.
         values = await db.get_chats(UID)
-        self.assertIn("@writable", values)
-        self.assertIn("-777", values)
-        # Broadcast kanallar — begona ham, o'z kanali ham qo'shilmaydi.
+        self.assertNotIn("@writable", values)
+        self.assertNotIn("-777", values)
         self.assertNotIn("@news_channel", values)
         self.assertNotIn("@my_own_channel", values)
         self.assertNotIn("-100555", values)
-        # Mavjud guruh qayta qo'shilmaydi.
+        # Mavjud guruh o'z holatida qoladi (takror qo'shilmaydi).
         self.assertEqual(values.count("@existing"), 1)
         pool.release.assert_awaited_once()
 
-        report = status.edit_text.await_args.args[0]
-        self.assertIn("Qo'shildi: 2", report)
-        self.assertIn("@writable", report)
-        self.assertIn("-777", report)
-        self.assertIn("Yozish huquqi", report)
-        # Ikkita broadcast kanal (readonly + o'z kanal) alohida sanalgan.
-        self.assertIn("Kanallar ataylab qo'shilmadi: 2", report)
-        # Yakunda asosiy menyu qaytariladi.
-        last_text = message.reply_text.await_args_list[-1].args[0]
-        self.assertEqual(last_text, "🏠 Asosiy menyu")
+        # Tanlov sessiyasi topilgan guruhlarni saqladi.
+        selection = discover_sessions.get_session(UID)
+        self.assertIsNotNone(selection, "tanlov sessiyasi yaratilishi kerak")
+        refs = {g.reference for g in selection.groups}
+        self.assertIn("@writable", refs)
+        self.assertIn("-777", refs)
+        # Broadcast kanallar ro'yxatda ham yo'q.
+        self.assertNotIn("@news_channel", refs)
+        self.assertNotIn("@my_own_channel", refs)
+        self.assertNotIn("-100555", refs)
+        # Hech biri belgilangan emas.
+        self.assertEqual(len(selection.selected), 0)
+
+        # Ro'yxat xabari chiqadi.
+        header = status.edit_text.await_args.args[0]
+        self.assertIn("Guruhlar ro'yxati", header)
+        self.assertIn("Topilgan guruh: 2 ta", header)
 
     async def test_cooldown_blocks_second_scan(self) -> None:
         channel = _channel(2002, username="one")
@@ -272,7 +282,10 @@ class DiscoverGroupsTestCase(unittest.IsolatedAsyncioTestCase):
         with patch.object(W, "client_pool", pool):
             update1, status1, _msg1 = self._update()
             await G.discover_groups(update1)
-            self.assertIn("FloodWait", status1.edit_text.await_args.args[0])
+            # FloodWait — guruh topilmadi, bo'sh ro'yxat ko'rsatiladi.
+            self.assertIn(
+                "topilmadi", status1.edit_text.await_args.args[0].lower()
+            )
             self.assertEqual(pool.acquire.await_count, 1)
 
             # FloodWait vaqti tugamay turib qayta urinish bloklanadi.
@@ -343,7 +356,8 @@ class DiscoverGroupsTestCase(unittest.IsolatedAsyncioTestCase):
 
         self.assertIn("sessiya", status.edit_text.await_args.args[0].lower())
 
-    async def test_plan_limit_stops_discovery(self) -> None:
+    async def test_plan_limit_stops_apply(self) -> None:
+        """Paket chegarasi — belgilangan guruhni qo'shishda tekshiriladi."""
         channel = _channel(2001, username="first")
         dialogs = [SimpleNamespace(entity=channel)]
         client = self._client(dialogs, {"first": perms_ok()})
@@ -355,17 +369,42 @@ class DiscoverGroupsTestCase(unittest.IsolatedAsyncioTestCase):
         async def fake_add_chat(uid, value):
             return False, "limit"
 
-        update, status, _message = self._update()
+        update, _status, _message = self._update()
         with (
             patch.object(W, "client_pool", pool),
-            patch.object(G.db, "add_chat", new=fake_add_chat),
             patch.object(G.db, "get_limits", AsyncMock(return_value={"max_groups": 5})),
         ):
             await G.discover_groups(update)
 
-        report = status.edit_text.await_args.args[0]
+        # Tanlovda guruh bor, lekin hali qo'shilmaydi.
+        values = await db.get_chats(UID)
+        self.assertNotIn("@first", values)
+
+        # Endi belgilab qo'shishga urinamiz — paket chegarasi ishlaydi.
+        selection = discover_sessions.get_session(UID)
+        self.assertIsNotNone(selection)
+        selection.toggle(selection.groups[0].key)
+
+        q = SimpleNamespace(
+            data="disc:apply",
+            answer=AsyncMock(),
+            edit_message_text=AsyncMock(),
+            message=SimpleNamespace(edit_text=AsyncMock()),
+        )
+        cb_update = SimpleNamespace(
+            callback_query=q,
+            effective_user=SimpleNamespace(id=UID),
+            message=SimpleNamespace(reply_text=AsyncMock()),
+        )
+        with (
+            patch.object(G.db, "add_chat", new=fake_add_chat),
+            patch.object(G.db, "get_limits", AsyncMock(return_value={"max_groups": 5})),
+        ):
+            await G.handle_discover_callback(cb_update, UID, "disc:apply")
+
+        report = q.edit_message_text.await_args.args[0]
         self.assertIn("Paket chegarasi", report)
-        pool.release.assert_awaited_once()
+        self.assertIn("5", report)
 
 
 if __name__ == "__main__":

@@ -220,7 +220,7 @@ async def begin_add_friend(update: Update, admin_uid: int) -> None:
     if not await _is_team_admin(user):
         await update.message.reply_text(
             "❌ Bu oynadan foydalanish huquqingiz yo'q.",
-            reply_markup=KB.kb_main(),
+            reply_markup=await KB.kb_main_for(admin_uid),
         )
         return
 
@@ -228,7 +228,7 @@ async def begin_add_friend(update: Update, admin_uid: int) -> None:
     if not team:
         await update.message.reply_text(
             T.TEAM_ADMIN_NO_TEAM,
-            reply_markup=KB.kb_main(),
+            reply_markup=await KB.kb_main_for(admin_uid),
         )
         return
 
@@ -258,7 +258,7 @@ async def handle_add_friend_phone(update: Update, admin_uid: int, text: str) -> 
         user_states.pop(admin_uid, None)
         await update.message.reply_text(
             T.TEAM_ADMIN_NO_TEAM,
-            reply_markup=KB.kb_main(),
+            reply_markup=await KB.kb_main_for(admin_uid),
         )
         return
 
@@ -267,7 +267,7 @@ async def handle_add_friend_phone(update: Update, admin_uid: int, text: str) -> 
         user_states.pop(admin_uid, None)
         await update.message.reply_text(
             "🚫 Jamoa sig'imi to'lgan. Super admin limitni oshirishi kerak.",
-            reply_markup=KB.kb_main(),
+            reply_markup=await KB.kb_main_for(admin_uid),
         )
         return
 
@@ -281,7 +281,7 @@ async def handle_add_friend_phone(update: Update, admin_uid: int, text: str) -> 
                 phone=phone,
                 team=(old_team or {}).get("name") or "boshqa jamoa",
             ),
-            reply_markup=KB.kb_main(),
+            reply_markup=await KB.kb_main_for(admin_uid),
         )
         return
 
@@ -291,32 +291,47 @@ async def handle_add_friend_phone(update: Update, admin_uid: int, text: str) -> 
     user_states.pop(admin_uid, None)
 
     await update.message.reply_text(
-        T.TEAM_ADD_FRIEND_DONE.format(
+        T.TEAM_ADD_FRIEND_DONE_WITH_ADMIN_LINK.format(
             phone=phone,
             team=team.get("name") or "Jamoangiz",
             link=team_link(int(team["id"])),
+            admin_link=admin_link(admin_uid),
         ),
-        reply_markup=KB.kb_main(),
+        reply_markup=await KB.kb_main_for(admin_uid),
     )
     log(f"➕ Do'st qo'shildi: admin {admin_uid} → {phone}")
 
 
-async def show_team_invites(update: Update, admin_uid: int) -> None:
-    """Admin qo'shgan do'stlar ro'yxatini ko'rsatadi."""
-    invites = await db.get_team_invites(admin_uid)
-    if not invites:
-        await update.message.reply_text(
-            T.TEAM_INVITES_EMPTY,
-            reply_markup=KB.kb_team_admin_panel(),
-        )
-        return
+async def show_team_invites(
+    update: Update, admin_uid: int, edit: bool = False
+) -> None:
+    """Admin qo'shgan do'stlar ro'yxatini ko'rsatadi.
 
+    ``edit=True`` — inline xabar holati (callback dan chaqirilganda).
+    """
     team = await primary_team(admin_uid)
-    await update.message.reply_text(
-        T.TEAM_INVITES_TEXT.format(total=len(invites))
-        + f"\n🔗 {team_link(int((team or {}).get('id') or 0))}",
-        reply_markup=KB.kb_team_invites(invites),
-    )
+    if not team:
+        text = T.TEAM_ADMIN_NO_TEAM
+        markup = await KB.kb_main_for(admin_uid)
+        invites = []
+    else:
+        invites = await db.get_team_invites(admin_uid)
+        if not invites:
+            text = T.TEAM_INVITES_EMPTY
+            markup = KB.kb_team_admin_panel()
+        else:
+            text = T.TEAM_INVITES_TEXT.format(total=len(invites)) + (
+                f"\n🔗 {team_link(int(team['id']))}"
+            )
+            markup = KB.kb_team_invites(invites)
+
+    if edit:
+        q = update.callback_query
+        if q is not None:
+            with contextlib.suppress(Exception):
+                await q.edit_message_text(text, reply_markup=markup)
+                return
+    await update.message.reply_text(text, reply_markup=markup)
 
 
 async def begin_team_admin_register(update: Update, uid: int) -> None:
@@ -327,7 +342,7 @@ async def begin_team_admin_register(update: Update, uid: int) -> None:
     if await _is_team_admin(user):
         await update.message.reply_text(
             "✅ Siz allaqachon jamoa adminisiz.",
-            reply_markup=KB.kb_main(),
+            reply_markup=await KB.kb_main_for(uid),
         )
         return
 
@@ -336,7 +351,7 @@ async def begin_team_admin_register(update: Update, uid: int) -> None:
         await update.message.reply_text(
             f"✅ Sizning jamoangiz mavjud: {existing[0].get('name')}\n\n"
             "«👥 Jamoam» orqali boshqaring.",
-            reply_markup=KB.kb_main(),
+            reply_markup=await KB.kb_main_for(uid),
         )
         return
 
@@ -417,8 +432,13 @@ async def handle_team_admin_name(update: Update, uid: int, text: str) -> None:
         max_users=size,
         admin_expires_at=expires,
     )
-    # Jamoa admini ham o'z jamoasining a'zosi.
+    # Jamoa admini ham o'z jamoasining a'zosi — lekin u allaqachon
+    # tasdiqlangan (jamoani o'ziga yaratgan admin ustiga tasdiq kutilmaydi).
     await db.set_team_pending(uid, int(team["id"]), uid)
+    await db.set_awaiting_approval(uid, False)
+    # Jamoa admini ham oddiy foydalanuvchi kabi posting qila oladi.
+    if not (await db.get_user(uid) or {}).get("is_admin"):
+        await db.approve_user(uid, expires)
 
     user_states.pop(uid, None)
     log(f"👑 Yangi jamoa admini: {uid} — {name} (max {size})")
@@ -433,7 +453,7 @@ async def handle_team_admin_name(update: Update, uid: int, text: str) -> None:
             expires=_expiry_text(expires),
             link=team_link(int(team["id"])),
         ),
-        reply_markup=KB.kb_main(),
+        reply_markup=await KB.kb_main_for(uid),
     )
 
 
@@ -482,12 +502,23 @@ async def show_team_admin_panel(update: Update, admin_uid: int) -> None:
     if not team:
         await update.message.reply_text(
             T.TEAM_ADMIN_NO_TEAM,
-            reply_markup=KB.kb_main(),
+            reply_markup=await KB.kb_main_for(admin_uid),
         )
         return
 
     members = await db.count_team_members(int(team["id"]))
     expires = await db.get_user(admin_uid) or {}
+
+    # Muddati tugagan jamoa admini — ogohlantiriladi.
+    if await db.team_admin_expired(admin_uid):
+        await update.message.reply_text(
+            T.TEAM_ADMIN_EXPIRED.format(
+                expires=_expiry_text(expires.get("admin_expires_at"))
+            ),
+            reply_markup=await KB.kb_main_for(admin_uid),
+        )
+        return
+
     await update.message.reply_text(
         T.team_admin_menu_text(
             team,
@@ -498,6 +529,17 @@ async def show_team_admin_panel(update: Update, admin_uid: int) -> None:
     )
 
 
+async def _stop_member_worker(uid: int) -> None:
+    """A'zoning e'lon yuborishini darhol to'xtatadi (bloklashda)."""
+    with contextlib.suppress(Exception):
+        from bot.menu import worker_manager
+
+        if worker_manager:
+            await worker_manager.stop_worker(uid)
+    with contextlib.suppress(Exception):
+        await db.set_running(uid, False)
+
+
 async def show_team_member_panel(update: Update, uid: int) -> None:
     """Oddiy jamoa a'zosi uchun jamoa kartasi va chiqish tugmasi."""
     user = await db.get_user(uid) or {}
@@ -506,7 +548,7 @@ async def show_team_member_panel(update: Update, uid: int) -> None:
     if not team_id:
         await update.message.reply_text(
             T.TEAM_ADMIN_NO_TEAM,
-            reply_markup=KB.kb_main(),
+            reply_markup=await KB.kb_main_for(uid),
         )
         return
 
@@ -517,7 +559,7 @@ async def show_team_member_panel(update: Update, uid: int) -> None:
         await update.message.reply_text(
             "ℹ️ Jamoangiz endi mavjud emas.\n\n"
             "👑 «Admin bo'lish» tugmasi orqali yangi jamoa yaratishingiz mumkin.",
-            reply_markup=KB.kb_main(),
+            reply_markup=await KB.kb_main_for(uid),
         )
         return
 
@@ -593,7 +635,7 @@ async def handle_team_member_callback(update: Update, uid: int, data: str) -> No
 
         await q.edit_message_text(
             T.TEAM_MEMBER_LEFT.format(name=team_name),
-            reply_markup=KB.kb_main(),
+            reply_markup=await KB.kb_main_for(uid),
         )
         log(f"👋 {uid} jamoadan chiqdi: {team_name}")
         return
@@ -622,7 +664,20 @@ async def handle_team_admin_callback(update: Update, uid: int, data: str) -> Non
         return
 
     if action == "invites":
-        await show_team_invites(update, uid)
+        await show_team_invites(update, uid, edit=True)
+        return
+
+    if action == "delinvite":
+        phone = parts[2] if len(parts) > 2 else ""
+        invite = await db.get_team_invite(phone, kind="member")
+        if not invite or int(invite.get("owner_admin_uid") or 0) != uid:
+            await q.answer(
+                "Bu taklif sizning jamoangizga tegishli emas", show_alert=True
+            )
+            return
+        await db.delete_team_invite(phone, kind="member")
+        await q.answer(f"🗑 {phone} bekor qilindi", show_alert=True)
+        await show_team_invites(update, uid, edit=True)
         return
 
     if action == "link":
@@ -630,9 +685,14 @@ async def handle_team_admin_callback(update: Update, uid: int, data: str) -> Non
         if not team:
             await q.answer(T.TEAM_ADMIN_NO_TEAM, show_alert=True)
             return
-        await q.answer(
-            f"🔗 {team_link(int(team['id']))}",
-            show_alert=True,
+        await q.edit_message_text(
+            "🔗 <b>Jamoangiz havolalari</b>\n\n"
+            "Do'stlaringizga yuboring — ular avtomatik sizning jamoangizga "
+            "birikadi va siz tasdiqlaysiz.\n\n"
+            f"🔗 Jamoa havolasi:\n{team_link(int(team['id']))}\n\n"
+            f"🔗 Shaxsiy havolangiz:\n{admin_link(uid)}",
+            parse_mode="HTML",
+            reply_markup=KB.kb_team_admin_panel(),
         )
         return
 
@@ -762,6 +822,8 @@ async def handle_team_admin_callback(update: Update, uid: int, data: str) -> Non
             await q.answer("Bu foydalanuvchi sizning jamoangizda emas", show_alert=True)
             return
         await db.set_user_limits(target, is_blocked=1)
+        # E'lon yuborish darhol to'xtatiladi.
+        await _stop_member_worker(target)
         await q.answer("🚫 Foydalanuvchi bloklandi", show_alert=True)
         await _send(target, T.BLOCKED)
         return
@@ -778,6 +840,48 @@ async def handle_team_admin_callback(update: Update, uid: int, data: str) -> Non
         await db.set_user_limits(target, is_blocked=0)
         await q.answer("✅ Blokdan chiqarildi", show_alert=True)
         await _send(target, "✅ Blokdan chiqarildingiz. Botdan foydalanishingiz mumkin.")
+        return
+
+    if action == "kick":
+        try:
+            target = int(parts[2])
+        except (ValueError, IndexError):
+            return
+        member = await db.get_user(target)
+        if not member or int(member.get("owner_admin_uid") or 0) != uid:
+            await q.answer("Bu foydalanuvchi sizning jamoangizda emas", show_alert=True)
+            return
+        # Jamoa egasi jamoasidan chiqarilmaydi.
+        if member.get("is_team_admin"):
+            await q.answer("Jamoa egasi jamoasidan chiqarilmaydi", show_alert=True)
+            return
+
+        team = await primary_team(uid)
+        team_name = (team or {}).get("name") or "Jamoangiz"
+        result = await db.leave_team(target)
+        if not result:
+            await q.answer("Jamoadan chiqarib bo'lmadi", show_alert=True)
+            return
+
+        await _stop_member_worker(target)
+        await q.answer(
+            f"🚪 {member.get('name') or target} jamoadan chiqarildi",
+            show_alert=True,
+        )
+        await q.edit_message_text(
+            f"🚪 <b>{member.get('name') or target}</b> jamoadan chiqarildi.\n\n"
+            f"📋 Jamoa: {team_name}\n"
+            "ℹ️ Uning jamoa muddati ham tugdi.",
+            parse_mode="HTML",
+            reply_markup=KB.kb_team_admin_panel(),
+        )
+        with contextlib.suppress(Exception):
+            await _send(
+                target,
+                f"🚪 Siz <b>{team_name}</b> jamoasidan chiqarildingiz.\n\n"
+                "ℹ️ Jamoa muddati ham tugdi.",
+            )
+        log(f"🚪 Admin {uid} → a'zoni jamoadan chiqardi: {target}")
         return
 
     if action == "stats":
@@ -848,6 +952,8 @@ def _member_status(member: dict) -> str:
         return "⏳ Tasdiq kutilmoqda"
     if member.get("is_blocked"):
         return "🚫 Bloklangan"
+    if T.member_expired(member):
+        return "⌛ Muddati tugagan"
     if member.get("running"):
         return "🟢 Ishlamoqda"
     return "⚪ To'xtatilgan"
@@ -939,6 +1045,6 @@ async def send_team_message(update: Update, uid: int, text: str) -> None:
 
     await update.message.reply_text(
         T.TEAM_ADMIN_MESSAGE_SENT.format(count=sent),
-        reply_markup=KB.kb_main(),
+        reply_markup=await KB.kb_main_for(uid),
     )
     log(f"📨 Jamoa xabari: admin {uid} → {sent} ta foydalanuvchi")

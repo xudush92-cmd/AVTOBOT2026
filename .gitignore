@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Virtualenv (test muhiti)
+.venv/
+.venv-work/
+venv/
+
+# Bot ma'lumotlari (sessiya kaliti, DB, media)
+AVTOBOT2026/data/
+AVTOBOT2026/*.db
+AVTOBOT2026/*.db-journal
+AVTOBOT2026/*.session*
+AVTOBOT2026/media/
+
+# Atrof-muhit
+.env
+.env.*
+!.env.example
+
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/

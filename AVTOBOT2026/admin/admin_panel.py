@@ -163,6 +163,22 @@ async def handle_admin_callback(update: Update, uid: int, data: str) -> None:
             return
         await set_team_admin_limit(update, target, size)
         return
+    if data.startswith("adm:teamhandover:"):
+        try:
+            target = int(data.split(":")[2])
+        except (ValueError, IndexError):
+            return
+        await begin_team_handover(update, target)
+        return
+    if data.startswith("adm:teamhandoverset:"):
+        parts = data.split(":")
+        try:
+            target = int(parts[2])
+            new_admin = int(parts[3])
+        except (ValueError, IndexError):
+            return
+        await set_team_handover(update, target, new_admin)
+        return
 
     # Broadcast
     if data == "adm:broadcast":
@@ -584,6 +600,11 @@ async def handle_add_team_admin_phone(update: Update, uid: int, text: str) -> No
             max_users=TEAM_DEFAULT_MAX_USERS,
             admin_expires_at=calc_expires(TEAM_ADMIN_DEFAULT_DAYS),
         )
+        # Jamoa admini ham oddiy foydalanuvchi kabi bot imkoniyatlaridan
+        # foydalanadi — tasdiqlanmagan bo'lsa, tasdiqlaymiz.
+        if not existing.get("is_admin") or existing.get("awaiting_approval"):
+            await db.approve_user(target, calc_expires(TEAM_ADMIN_DEFAULT_DAYS))
+            await db.set_awaiting_approval(target, False)
         await update.message.reply_text(
             T.ADMIN_ADD_ADMIN_ALREADY.format(
                 phone=phone,
@@ -622,9 +643,25 @@ async def show_team_admins(update: Update) -> None:
         expires = format_expires(admin.get("admin_expires_at"))
         limit = int(admin.get("admin_max_users") or 0)
         limit_text = f"{limit} ta" if limit else "cheksiz"
-        lines.append(f"👑 {name} — muddat: {expires}, sig'im: {limit_text}")
+        icon = "👑"
+        if admin.get("is_blocked"):
+            icon = "🚫"
+        elif admin.get("awaiting_approval"):
+            icon = "⏳"
+        elif KB._admin_expired(admin):
+            icon = "⌛"
+        lines.append(f"{icon} {name} — muddat: {expires}, sig'im: {limit_text}")
+    lines.append("")
+    lines.append(
+        "👑 faol | ⌛ muddati tugagan | ⏳ tasdiq kutilmoqda | 🚫 bloklangan"
+    )
     lines.append("")
     lines.append("Boshqarish uchun adminni tanlang:")
+    lines.append("")
+    lines.append(
+        "➕ Yangi jamoa admini qo'shish uchun — «➕ Admin qo'shish» "
+        "tugmasini bosing (telefon raqamini kiriting)."
+    )
 
     await q.edit_message_text(
         "\n".join(lines),
@@ -686,6 +723,9 @@ async def set_team_admin_term(update: Update, target: int, days: int) -> None:
     teams = await db.get_teams(target)
     if teams:
         await db.update_team(int(teams[0]["id"]), expires_at=expires)
+    # Jamoa adminining o'z tarif muddati ham yangilanadi — aks holda u
+    # muddat uzaytirilgandan keyin ham "muddati tugagan" bo'lib qoladi.
+    await db.set_user_limits(target, tariff_expires_at=expires)
 
     await q.edit_message_text(
         f"✅ Muddat yangilandi: {admin.get('name') or target}\n\n"
@@ -719,3 +759,124 @@ async def set_team_admin_limit(update: Update, target: int, size: int) -> None:
         reply_markup=KB.kb_team_admin_card(target),
     )
     log(f"👥 Jamoa admini sig'imi yangilandi: {target} → {size}")
+
+
+async def begin_team_handover(update: Update, target: int) -> None:
+    """Jamoani boshqa adminga topshirishni boshlaydi (super admin)."""
+    q = update.callback_query
+    admin = await db.get_user(target)
+    if not admin or not admin.get("is_team_admin"):
+        await q.edit_message_text(
+            "❌ Jamoa admini topilmadi.",
+            reply_markup=KB.kb_admin_back(),
+        )
+        return
+
+    teams = await db.get_teams(target)
+    team_name = teams[0].get("name") if teams else "—"
+    admins = [
+        a
+        for a in await db.get_team_admins()
+        if int(a.get("uid") or 0) != int(target)
+    ]
+    if not admins:
+        await q.edit_message_text(
+            "ℹ️ Topshirish uchun boshqa jamoa admini yo'q.\n\n"
+            "Avval «➕ Admin qo'shish» orqali yangi jamoa adminini tayinlang, "
+            "keyin jamoani topshirishingiz mumkin.",
+            reply_markup=KB.kb_team_admin_card(target),
+        )
+        return
+
+    await q.edit_message_text(
+        f"🔄 <b>{team_name}</b> jamoasini kimga topshiramiz?\n\n"
+        "ℹ️ Tanlangan admin jamoaning egasi bo'ladi — a'zolar va jamoa "
+        "muddatiga ega bo'ladi. Eski admin jamoa boshqaruvidan chiqadi.",
+        parse_mode="HTML",
+        reply_markup=KB.kb_team_handover_options(target, admins),
+    )
+
+
+async def set_team_handover(update: Update, target: int, new_admin: int) -> None:
+    """Jamoani boshqa jamoa adminga topshiradi (super admin)."""
+    q = update.callback_query
+    old_admin = await db.get_user(target)
+    new = await db.get_user(new_admin)
+    if not old_admin or not old_admin.get("is_team_admin"):
+        await q.edit_message_text(
+            "❌ Jamoa admini topilmadi.",
+            reply_markup=KB.kb_admin_back(),
+        )
+        return
+    if not new or not new.get("is_team_admin"):
+        await q.edit_message_text(
+            "❌ Yangi admin jamoa admini emas.",
+            reply_markup=KB.kb_team_admin_card(target),
+        )
+        return
+    if int(new_admin) == int(target):
+        await q.edit_message_text(
+            "ℹ️ Bu jamoa allaqachon shu adminning.",
+            reply_markup=KB.kb_team_admin_card(target),
+        )
+        return
+
+    teams = await db.get_teams(target)
+    if not teams:
+        await q.edit_message_text(
+            "❌ Topshiriladigan jamoa topilmadi.",
+            reply_markup=KB.kb_team_admin_card(target),
+        )
+        return
+    team_id = int(teams[0]["id"])
+    team_name = teams[0].get("name") or "Jamoa"
+
+    # Jamoaning egasi yangi admin bo'ladi.
+    await db.update_team_owner(team_id, new_admin)
+
+    # Yangi admin jamoani boshqaradi — muddat va sig'im o'tadi.
+    expires = old_admin.get("admin_expires_at")
+    max_users = int(old_admin.get("admin_max_users") or 0) or TEAM_DEFAULT_MAX_USERS
+    await db.set_team_admin(
+        new_admin,
+        team_id,
+        max_users=max_users,
+        admin_expires_at=expires,
+    )
+    await db.set_awaiting_approval(new_admin, False)
+    if not new.get("is_admin"):
+        await db.approve_user(new_admin, expires)
+    # Admin muddati o'z tarifiga ham ko'chiriladi.
+    await db.set_user_limits(new_admin, tariff_expires_at=expires)
+
+    # Eski admin endi jamoa admini emas.
+    await db.clear_team_admin(target)
+
+    # Barcha a'zolar yangi admin ostiga o'tadi.
+    await db.reassign_team_members(team_id, new_admin)
+
+    await q.edit_message_text(
+        f"✅ Jamoa topshirildi!\n\n"
+        f"📋 Jamoa: {team_name}\n"
+        f"👤 Yangi admin: {new.get('name') or new_admin}\n"
+        f"👤 Eski admin: {old_admin.get('name') or target}\n\n"
+        "ℹ️ Barcha a'zolar yangi admin ostiga o'tdi. Eski admin jamoa "
+        "boshqaruvidan chiqdi.",
+        reply_markup=KB.kb_team_admin_card(new_admin),
+    )
+    with contextlib.suppress(Exception):
+        await application.bot.send_message(
+            new_admin,
+            f"🎉 Siz <b>{team_name}</b> jamoasining yangi admini bo'ldingiz!\n\n"
+            "👥 A'zolar sizga o'tdi. Jamoani «👥 Jamoam» orqali boshqaring.",
+            parse_mode="HTML",
+        )
+    with contextlib.suppress(Exception):
+        await application.bot.send_message(
+            target,
+            f"ℹ️ Sizning jamoangiz <b>{team_name}</b> boshqa adminga "
+            "topshirildi.\n\n"
+            "Endi siz faqat oddiy foydalanuvchi sifatida ishlaysiz.",
+            parse_mode="HTML",
+        )
+    log(f"🔄 Jamoa topshirildi: {team_name} — {target} → {new_admin}")

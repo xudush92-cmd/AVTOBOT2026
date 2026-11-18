@@ -1377,3 +1377,470 @@ class TeamLeaveTests(unittest.IsolatedAsyncioTestCase):
 
         user = await db.get_user(ADMIN_A)
         self.assertEqual(int(user["team_id"]), int(team["id"]))
+
+
+class TeamAdminRegistrationTests(unittest.IsolatedAsyncioTestCase):
+    """Jamoa admini bo'lish oqimi — darhol tasdiqlangan bo'lishi kerak."""
+
+    async def asyncSetUp(self) -> None:
+        await db.close_db()
+        self.temp = tempfile.TemporaryDirectory()
+        self.old_db_path = db.DB_PATH
+        db.DB_PATH = Path(self.temp.name) / "test.db"
+        session_crypto._fernet = __import__(
+            "cryptography.fernet", fromlist=["Fernet"]
+        ).Fernet(
+            __import__("cryptography.fernet", fromlist=["Fernet"]).Fernet.generate_key()
+        )
+        await db.init_db()
+
+    async def asyncTearDown(self) -> None:
+        await db.close_db()
+        db.DB_PATH = self.old_db_path
+        session_crypto._fernet = None
+        self.temp.cleanup()
+
+    async def test_new_team_admin_is_not_awaiting_approval(self) -> None:
+        """Jamoani yaratgan admin ustiga tasdiq kutilmasligi kerak."""
+        update = SimpleNamespace(
+            message=SimpleNamespace(reply_text=AsyncMock()),
+            effective_user=SimpleNamespace(id=ADMIN_A),
+        )
+        with patch.object(Tm, "application", None):
+            await Tm.handle_team_admin_size(update, ADMIN_A, "5")
+            await Tm.handle_team_admin_name(update, ADMIN_A, "Mening jamoam")
+
+        user = await db.get_user(ADMIN_A)
+        self.assertTrue(user["is_team_admin"], "admin bo'lishi kerak")
+        self.assertFalse(
+            user["awaiting_approval"],
+            "jamoa admini tasdiq kutilmasligi kerak",
+        )
+        self.assertIsNotNone(user["team_id"])
+        self.assertTrue(
+            user["is_admin"],
+            "jamoa admini ham oddiy user kabi posting qila olishi kerak",
+        )
+        self.assertIsNotNone(user["tariff_expires_at"])
+
+    async def test_team_admin_can_access_panel_immediately(self) -> None:
+        """Jamoa admini darhol o'z paneliga kirishi kerak."""
+        update = SimpleNamespace(
+            message=SimpleNamespace(reply_text=AsyncMock()),
+            effective_user=SimpleNamespace(id=ADMIN_A),
+        )
+        with patch.object(Tm, "application", None):
+            await Tm.handle_team_admin_size(update, ADMIN_A, "5")
+            await Tm.handle_team_admin_name(update, ADMIN_A, "Mening jamoam")
+
+        panel = SimpleNamespace(
+            data="tadm:back",
+            answer=AsyncMock(),
+            edit_message_text=AsyncMock(),
+            message=SimpleNamespace(reply_text=AsyncMock()),
+        )
+        cb_update = SimpleNamespace(
+            callback_query=panel,
+            effective_user=SimpleNamespace(id=ADMIN_A),
+            message=SimpleNamespace(reply_text=AsyncMock()),
+        )
+        with patch.object(Tm, "application", None):
+            await Tm.handle_team_admin_callback(cb_update, ADMIN_A, "tadm:back")
+
+        # Panel ochildi (rad etilmadi).
+        called = (
+            panel.edit_message_text.await_args is not None
+            or cb_update.message.reply_text.await_args is not None
+        )
+        self.assertTrue(called, "jamoa admini paneli ochilishi kerak")
+
+
+class TeamBlockTests(unittest.IsolatedAsyncioTestCase):
+    """Jamoa admini bloklansa — jamoasi ham to'xtaydi."""
+
+    async def asyncSetUp(self) -> None:
+        await db.close_db()
+        self.temp = tempfile.TemporaryDirectory()
+        self.old_db_path = db.DB_PATH
+        db.DB_PATH = Path(self.temp.name) / "test.db"
+        session_crypto._fernet = __import__(
+            "cryptography.fernet", fromlist=["Fernet"]
+        ).Fernet(
+            __import__("cryptography.fernet", fromlist=["Fernet"]).Fernet.generate_key()
+        )
+        await db.init_db()
+
+    async def asyncTearDown(self) -> None:
+        await db.close_db()
+        db.DB_PATH = self.old_db_path
+        session_crypto._fernet = None
+        self.temp.cleanup()
+
+    async def test_team_owner_disabled_when_admin_blocked(self) -> None:
+        """Jamoa admini bloklanganda a'zo uchun True."""
+        team = await db.create_team("Jamoa", ADMIN_A, max_users=5)
+        await db.set_team_admin(
+            ADMIN_A, int(team["id"]), max_users=5, admin_expires_at=calc_expires(365)
+        )
+        await db.upsert_user(
+            USER_1,
+            name="A'zo",
+            team_id=int(team["id"]),
+            owner_admin_uid=ADMIN_A,
+        )
+        self.assertFalse(await db.team_owner_disabled(USER_1))
+
+        await db.set_blocked(ADMIN_A, True)
+        self.assertTrue(
+            await db.team_owner_disabled(USER_1),
+            "bloklangan jamoa admini a'zosi uchun True bo'lishi kerak",
+        )
+
+    async def test_team_owner_disabled_false_for_plain_user(self) -> None:
+        """Oddiy user uchun False."""
+        await db.upsert_user(USER_1, name="Oddiy")
+        self.assertFalse(await db.team_owner_disabled(USER_1))
+
+    async def test_blocked_admin_team_members_stopped(self) -> None:
+        """Bloklashda jamoa a'zolarining postingi to'xtatiladi."""
+        from admin import admin_actions
+
+        team = await db.create_team("Jamoa", ADMIN_A, max_users=5)
+        await db.set_team_admin(
+            ADMIN_A, int(team["id"]), max_users=5, admin_expires_at=calc_expires(365)
+        )
+        await db.upsert_user(
+            USER_1,
+            name="A'zo",
+            team_id=int(team["id"]),
+            owner_admin_uid=ADMIN_A,
+        )
+        await db.set_running(USER_1, True)
+
+        with patch.object(admin_actions, "application", None):
+            stopped = await admin_actions._stop_blocked_admin_team(ADMIN_A)
+
+        self.assertEqual(stopped, 1, "a'zo to'xtatilishi kerak")
+        member = await db.get_user(USER_1)
+        self.assertFalse(member["running"], "a'zoning postingi to'xtatilishi kerak")
+
+
+class TeamKickAndExpiryTests(unittest.IsolatedAsyncioTestCase):
+    """Jamoadan chiqarish, muddati tugagan indikator va muddat yangilash."""
+
+    async def asyncSetUp(self) -> None:
+        await db.close_db()
+        self.temp = tempfile.TemporaryDirectory()
+        self.old_db_path = db.DB_PATH
+        db.DB_PATH = Path(self.temp.name) / "test.db"
+        session_crypto._fernet = __import__(
+            "cryptography.fernet", fromlist=["Fernet"]
+        ).Fernet(
+            __import__("cryptography.fernet", fromlist=["Fernet"]).Fernet.generate_key()
+        )
+        await db.init_db()
+
+    async def asyncTearDown(self) -> None:
+        await db.close_db()
+        db.DB_PATH = self.old_db_path
+        session_crypto._fernet = None
+        self.temp.cleanup()
+
+    async def _make_team(self) -> dict:
+        team = await db.create_team("Jamoa", ADMIN_A, max_users=5)
+        await db.set_team_admin(
+            ADMIN_A,
+            int(team["id"]),
+            max_users=5,
+            admin_expires_at=calc_expires(365),
+        )
+        await db.upsert_user(
+            USER_1,
+            name="A'zo",
+            team_id=int(team["id"]),
+            owner_admin_uid=ADMIN_A,
+        )
+        return team
+
+    async def test_kick_removes_member_from_team(self) -> None:
+        """Admin a'zoni jamoadan chiqarishi — a'zo jamoasiz qoladi."""
+        await self._make_team()
+        await db.set_running(USER_1, True)
+
+        q = SimpleNamespace(
+            data=f"tadm:kick:{USER_1}",
+            answer=AsyncMock(),
+            edit_message_text=AsyncMock(),
+        )
+        update = SimpleNamespace(
+            callback_query=q,
+            effective_user=SimpleNamespace(id=ADMIN_A),
+            message=SimpleNamespace(reply_text=AsyncMock()),
+        )
+        with patch.object(Tm, "application", None), patch.object(
+            Tm, "_send", AsyncMock(return_value=True)
+        ):
+            await Tm.handle_team_admin_callback(update, ADMIN_A, f"tadm:kick:{USER_1}")
+
+        member = await db.get_user(USER_1)
+        self.assertIsNone(member["team_id"], "jamoadan chiqarilishi kerak")
+        self.assertFalse(member["running"], "posting to'xtatilishi kerak")
+
+    async def test_kick_cannot_target_other_team_member(self) -> None:
+        """Boshqa jamoaning a'zosini chiqarib bo'lmaydi (izolyatsiya)."""
+        await self._make_team()
+        # USER_2 boshqa jamoada
+        other = await db.create_team("Boshqa jamoa", ADMIN_B, max_users=5)
+        await db.upsert_user(
+            USER_2,
+            name="Begona",
+            team_id=int(other["id"]),
+            owner_admin_uid=ADMIN_B,
+        )
+
+        q = SimpleNamespace(
+            data=f"tadm:kick:{USER_2}",
+            answer=AsyncMock(),
+            edit_message_text=AsyncMock(),
+        )
+        update = SimpleNamespace(
+            callback_query=q,
+            effective_user=SimpleNamespace(id=ADMIN_A),
+            message=SimpleNamespace(reply_text=AsyncMock()),
+        )
+        with patch.object(Tm, "application", None):
+            await Tm.handle_team_admin_callback(update, ADMIN_A, f"tadm:kick:{USER_2}")
+
+        member = await db.get_user(USER_2)
+        self.assertIsNotNone(member["team_id"], "begona jamoaga tegilishi mumkin emas")
+
+    async def test_kick_cannot_remove_team_owner(self) -> None:
+        """Jamoa egasi jamoasidan chiqarilmaydi."""
+        await self._make_team()
+        q = SimpleNamespace(
+            data=f"tadm:kick:{ADMIN_A}",
+            answer=AsyncMock(),
+            edit_message_text=AsyncMock(),
+        )
+        update = SimpleNamespace(
+            callback_query=q,
+            effective_user=SimpleNamespace(id=ADMIN_A),
+            message=SimpleNamespace(reply_text=AsyncMock()),
+        )
+        with patch.object(Tm, "application", None):
+            await Tm.handle_team_admin_callback(update, ADMIN_A, f"tadm:kick:{ADMIN_A}")
+
+        owner = await db.get_user(ADMIN_A)
+        self.assertIsNotNone(owner["team_id"], "jamoa egasi chiqarilmaydi")
+
+    async def test_expired_member_has_indicator(self) -> None:
+        """Muddati tugagan a'zo ro'yxatda ⌛ bilan ko'rinadi."""
+        team = await self._make_team()
+        await db.set_user_limits(USER_1, tariff_expires_at="2020-01-01 00:00:00")
+
+        members = await db.get_team_members(int(team["id"]))
+        text = T.team_members_text(members)
+        self.assertIn("⌛", text, "muddati tugagan indikator kerak")
+        self.assertIn("muddat", text.lower())
+
+    async def test_active_member_has_no_expiry_indicator(self) -> None:
+        """Faol a'zo ⌛ olmaydi."""
+        team = await self._make_team()
+        await db.set_user_limits(USER_1, tariff_expires_at=calc_expires(30))
+        members = await db.get_team_members(int(team["id"]))
+        text = T.team_members_text(members)
+        self.assertNotIn("⌛ A'zo", text)
+
+    async def test_member_expired_helper(self) -> None:
+        """member_expired to'g'ri ishlaydi."""
+        self.assertFalse(T.member_expired({}))
+        self.assertFalse(T.member_expired({"tariff_expires_at": calc_expires(10)}))
+        self.assertTrue(
+            T.member_expired({"tariff_expires_at": "2020-01-01 00:00:00"})
+        )
+
+
+class MainKeyboardRoleTests(unittest.IsolatedAsyncioTestCase):
+    """Asosiy menyuda jamoa tugmalari har bir ekranda saqlanishi kerak."""
+
+    async def asyncSetUp(self) -> None:
+        await db.close_db()
+        self.temp = tempfile.TemporaryDirectory()
+        self.old_db_path = db.DB_PATH
+        db.DB_PATH = Path(self.temp.name) / "test.db"
+        session_crypto._fernet = __import__(
+            "cryptography.fernet", fromlist=["Fernet"]
+        ).Fernet(
+            __import__("cryptography.fernet", fromlist=["Fernet"]).Fernet.generate_key()
+        )
+        await db.init_db()
+
+    async def asyncTearDown(self) -> None:
+        await db.close_db()
+        db.DB_PATH = self.old_db_path
+        session_crypto._fernet = None
+        self.temp.cleanup()
+
+    @staticmethod
+    def _buttons(markup) -> list[str]:
+        return [b.text for row in markup.keyboard for b in row]
+
+    async def test_team_admin_sees_team_menu_button(self) -> None:
+        """Jamoa admini asosiy menyuda «👥 Jamoam» tugmasini ko'radi."""
+        team = await db.create_team("Jamoa", ADMIN_A, max_users=5)
+        await db.set_team_admin(
+            ADMIN_A, int(team["id"]), max_users=5, admin_expires_at=calc_expires(365)
+        )
+        markup = await KB.kb_main_for(ADMIN_A)
+        self.assertIn(T.BTN_TEAM_MENU, self._buttons(markup))
+
+    async def test_team_member_sees_team_menu_button(self) -> None:
+        """Jamoa a'zosi ham «👥 Jamoam» tugmasini ko'radi (chiqish uchun)."""
+        team = await db.create_team("Jamoa", ADMIN_A, max_users=5)
+        await db.upsert_user(
+            USER_1, name="A'zo", team_id=int(team["id"]), owner_admin_uid=ADMIN_A
+        )
+        markup = await KB.kb_main_for(USER_1)
+        self.assertIn(T.BTN_TEAM_MENU, self._buttons(markup))
+
+    async def test_plain_user_sees_team_pick_button(self) -> None:
+        """Jamoasiz foydalanuvchi «🎯 Jamoani tanlash» tugmasini ko'radi."""
+        await db.upsert_user(USER_1, name="Oddiy")
+        markup = await KB.kb_main_for(USER_1)
+        self.assertIn(T.BTN_TEAM_PICK, self._buttons(markup))
+        self.assertNotIn(T.BTN_TEAM_MENU, self._buttons(markup))
+
+    async def test_team_admin_does_not_see_team_pick(self) -> None:
+        """Jamoa adminiga jamoani tanlash tugmasi kerak emas."""
+        team = await db.create_team("Jamoa", ADMIN_A, max_users=5)
+        await db.set_team_admin(
+            ADMIN_A, int(team["id"]), max_users=5, admin_expires_at=calc_expires(365)
+        )
+        markup = await KB.kb_main_for(ADMIN_A)
+        self.assertNotIn(T.BTN_TEAM_PICK, self._buttons(markup))
+
+
+class TeamHandoverTests(unittest.IsolatedAsyncioTestCase):
+    """Jamoani boshqa adminga topshirish (super admin)."""
+
+    async def asyncSetUp(self) -> None:
+        await db.close_db()
+        self.temp = tempfile.TemporaryDirectory()
+        self.old_db_path = db.DB_PATH
+        db.DB_PATH = Path(self.temp.name) / "test.db"
+        session_crypto._fernet = __import__(
+            "cryptography.fernet", fromlist=["Fernet"]
+        ).Fernet(
+            __import__("cryptography.fernet", fromlist=["Fernet"]).Fernet.generate_key()
+        )
+        await db.init_db()
+
+    async def asyncTearDown(self) -> None:
+        await db.close_db()
+        db.DB_PATH = self.old_db_path
+        session_crypto._fernet = None
+        self.temp.cleanup()
+
+    async def _setup(self) -> tuple[dict, int]:
+        from admin import admin_panel
+
+        team = await db.create_team("Jamoa", ADMIN_A, max_users=7)
+        await db.set_team_admin(
+            ADMIN_A,
+            int(team["id"]),
+            max_users=7,
+            admin_expires_at=calc_expires(60),
+        )
+        await db.set_team_admin(
+            ADMIN_B,
+            0,
+            max_users=5,
+            admin_expires_at=calc_expires(30),
+        )
+        await db.upsert_user(
+            USER_1,
+            name="A'zo",
+            team_id=int(team["id"]),
+            owner_admin_uid=ADMIN_A,
+        )
+        await db.set_user_limits(ADMIN_A, tariff_expires_at=calc_expires(60))
+        return team, admin_panel
+
+    async def test_handover_moves_team_and_members(self) -> None:
+        """Topshirishdan keyin jamoa va a'zolar yangi admin ostida."""
+        team, admin_panel = await self._setup()
+        q = SimpleNamespace(
+            data=f"adm:teamhandoverset:{ADMIN_A}:{ADMIN_B}",
+            answer=AsyncMock(),
+            edit_message_text=AsyncMock(),
+        )
+        update = SimpleNamespace(
+            callback_query=q,
+            effective_user=SimpleNamespace(id=SUPER_ADMIN),
+            message=SimpleNamespace(reply_text=AsyncMock()),
+        )
+        with patch.object(admin_panel, "application", None):
+            await admin_panel.set_team_handover(update, ADMIN_A, ADMIN_B)
+
+        # Jamoaning egasi yangi admin.
+        teams = await db.get_teams(ADMIN_B)
+        self.assertTrue(teams, "yangi admin jamoani olishi kerak")
+        self.assertEqual(int(teams[0]["id"]), int(team["id"]))
+
+        # A'zolar yangi admin ostida.
+        member = await db.get_user(USER_1)
+        self.assertEqual(int(member["owner_admin_uid"]), ADMIN_B)
+
+        # Eski admin endi jamoa admini emas.
+        old = await db.get_user(ADMIN_A)
+        self.assertFalse(old["is_team_admin"])
+
+        # Yangi admin jamoa admini bo'ldi.
+        new = await db.get_user(ADMIN_B)
+        self.assertTrue(new["is_team_admin"])
+        self.assertEqual(int(new["team_id"]), int(team["id"]))
+
+    async def test_handover_keeps_team_limit_and_expiry(self) -> None:
+        """Sig'im va muddat yangi adminga o'tadi."""
+        _, admin_panel = await self._setup()
+        q = SimpleNamespace(
+            data=f"adm:teamhandoverset:{ADMIN_A}:{ADMIN_B}",
+            answer=AsyncMock(),
+            edit_message_text=AsyncMock(),
+        )
+        update = SimpleNamespace(
+            callback_query=q,
+            effective_user=SimpleNamespace(id=SUPER_ADMIN),
+            message=SimpleNamespace(reply_text=AsyncMock()),
+        )
+        with patch.object(admin_panel, "application", None):
+            await admin_panel.set_team_handover(update, ADMIN_A, ADMIN_B)
+
+        new = await db.get_user(ADMIN_B)
+        self.assertEqual(int(new["admin_max_users"]), 7, "sig'im o'tishi kerak")
+        self.assertIsNotNone(new["admin_expires_at"], "muddat o'tishi kerak")
+        self.assertFalse(new["awaiting_approval"], "tasdiq kutilmasligi kerak")
+
+    async def test_handover_rejects_non_team_admin(self) -> None:
+        """Jamoa admini bo'lmagan user topshirilmaydi."""
+        await self._setup()
+        await db.upsert_user(USER_2, name="Oddiy")
+        q = SimpleNamespace(
+            data=f"adm:teamhandoverset:{ADMIN_A}:{USER_2}",
+            answer=AsyncMock(),
+            edit_message_text=AsyncMock(),
+        )
+        update = SimpleNamespace(
+            callback_query=q,
+            effective_user=SimpleNamespace(id=SUPER_ADMIN),
+            message=SimpleNamespace(reply_text=AsyncMock()),
+        )
+        from admin import admin_panel
+
+        with patch.object(admin_panel, "application", None):
+            await admin_panel.set_team_handover(update, ADMIN_A, USER_2)
+
+        new = await db.get_user(USER_2)
+        self.assertFalse(new["is_team_admin"], "topshirilmasligi kerak")
+        old = await db.get_user(ADMIN_A)
+        self.assertTrue(old["is_team_admin"], "eski admin o'z o'rnida qolishi kerak")

@@ -117,7 +117,9 @@ async def show_status(update: Update) -> None:
             groups=len(snapshot["chats"]), posts=len(snapshot["posts"])
         )
 
-    await update.message.reply_text(text, reply_markup=KB.kb_main(running=snapshot["running"]))
+    await update.message.reply_text(
+        text, reply_markup=await KB.kb_main_for(uid, running=snapshot["running"])
+    )
 
 
 async def show_report(update: Update) -> None:
@@ -175,7 +177,7 @@ async def show_report(update: Update) -> None:
     )
     text = f"{report}\n\n──────────────────\n\n{plan}"
     await update.message.reply_text(
-        text, reply_markup=KB.kb_main(running=snapshot["running"])
+        text, reply_markup=await KB.kb_main_for(uid, running=snapshot["running"])
     )
 
 
@@ -195,7 +197,9 @@ async def show_plan(update: Update) -> None:
         expires=format_expires(snapshot["expires"]),
         daily_left=daily_left,
     )
-    await update.message.reply_text(text, reply_markup=KB.kb_main(running=snapshot["running"]))
+    await update.message.reply_text(
+        text, reply_markup=await KB.kb_main_for(uid, running=snapshot["running"])
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -324,6 +328,11 @@ async def confirm_start(uid: int) -> tuple[bool, str]:
             "⛔️ Jamoangiz adminining muddati tugadi.\n\n"
             "💡 Administratoringiz super admin bilan bog'lanib, "
             "muddatni uzaytirishi kerak."
+        )
+    if await db.team_owner_disabled(uid):
+        return False, (
+            "⛔️ Jamoangiz administratori bloklandi.\n\n"
+            "💡 Administratoringiz super admin bilan bog'laning."
         )
 
     chats = await db.get_chats(uid)
@@ -473,7 +482,7 @@ async def route_menu_button(update: Update, text: str) -> bool:
         running = bool(worker_manager and worker_manager.is_running(uid))
         await update.message.reply_text(
             "🏠 Asosiy menyu",
-            reply_markup=KB.kb_main(running=running),
+            reply_markup=await KB.kb_main_for(uid, running=running),
         )
         return True
 

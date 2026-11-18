@@ -15,6 +15,17 @@ Telegram guruhlariga reklama postlarini avtomatik joylashtiruvchi bot.
 - ✅ **Jamoa (team) tizimi** — jamoa admini o'z jamoasini mustaqil boshqaradi:
   tarif berish, bloklash, xabar yuborish, statistika. Boshqa adminlarning
   jamoalariga tasir qilmaydi
+- ✅ **Do'st qo'shish (telefon bilan)** — jamoa admini do'stining telefon
+  raqamini yozadi; do'st ro'yxatdan o'tganda avtomatik jamoaga birikadi
+- ✅ **Yangi jamoa admini qo'shish** — super admin telefon raqam kiritsa, yangi
+  admin avtomatik jamoa admini bo'ladi
+- ✅ **Muddat chegarasi (anti-fraud)** — jamoa admini a'zosiga maksimal 60 kun;
+  firibgar adminlardan himoya
+- ✅ **Jamoadan chiqish** — a'zo jamoasidan chiqsa, jamoa muddati ham tugaydi
+- ✅ **Jamoadan chiqarish** — jamoa admini a'zoni jamoasidan chiqaradi
+- ✅ **Jamoani topshirish** — super admin jamoani boshqa jamoa adminga o'tkazadi
+  (a'zolar, sig'im va muddat yangi admin ostiga o'tadi)
+- ✅ **Do'stlar ro'yxati** — taklif qilingan raqamlarni ko'rish va bekor qilish
 - ✅ Super admin paneli (to'liq nazorat)
 - ✅ Ommaviy xabar yuborish (broadcast)
 - ✅ Muddat tizimi (admin yangi muddat beradi — oldingi muddat bekor bo'lib,
@@ -49,12 +60,19 @@ uchun migratsiya yangi ustunlarni qo'shadi, intervalni esa umumiy sozlamadan ola
 **🔍 Guruhlarni topish (foydalanuvchi oqimi):** foydalanuvchi tugmani bossa,
 bot ulangan Telethon sessiyasi orqali akkauntning barcha dialoglarini
 (`iter_dialogs`) ko'rib chiqadi va a'zo hamda yozish huquqi bor
-guruh/megaguruplarni avtomatik qo'shadi. **Broadcast kanallar, jumladan
-akkaunt egasi bo'lgan kanallar ham, siyosat bo'yicha qo'shilmaydi** — faqat
-guruhlar olinadi. Username borlar `@username`, yopiq guruhlar marked peer ID
-(`-100...`, `-...`) bilan saqlanadi; takror va huquqsiz dialoglar o'tkazib
-yuboriladi, paket limiti hurmat qilinadi. Keraksiz guruhlar **➖ Guruh
-o'chirish** ro'yxatidan o'chiriladi.
+guruh/megaguruplarni **topadi**.
+
+> ⚠️ **Hech qanday guruh avtomatik qo'shilmaydi.** Topilgan guruhlar
+> foydalanuvchiga **ro'yxat qilib ko'rsatiladi** (sahifalash — 15 ta/sahifa),
+> u keraklilarini **✅ belgilaydi** va faqat **«Tanlanganlarni qo'shish»**
+> tugmasi bosilganda **belgilanganlar** botga qo'shiladi.
+> **Belgilanmagan guruhlar hech qachon qo'shilmaydi.**
+
+**Broadcast kanallar, jumladan akkaunt egasi bo'lgan kanallar ham, siyosat
+bo'yicha ko'rsatilmaydi** — faqat guruhlar. Username borlar `@username`,
+yopiq guruhlar marked peer ID (`-100...`, `-...`) bilan saqlanadi; takror va
+huquqsiz dialoglar o'tkazib yuboriladi, paket limiti hurmat qilinadi.
+Tanlov sessiyasi 30 daqiqa davomida yashaydi, keyin tozalanadi.
 
 Anti-spam himoyasi: har guruh tekshiruvi orasida 1–3 soniyali tasodifiy pauza,
 har foydalanuvchi uchun 10 daqiqalik cooldown, Telegram FloodWait berganda
@@ -86,9 +104,10 @@ izchil snapshot yaratadi.
      mosligi tekshiriladi;
    - Telegram qaytargan telefon normalize qilinadi;
    - telefon boshqa UID'ga biriktirilgan bo'lsa sessiya umuman saqlanmaydi.
-5. Super adminga tasdiq xabari boradi: **30 kunlik tarif**, **60 daqiqalik
+5. Super adminga tasdiq xabari boradi: muddat tanlash oynasi, **60 daqiqalik
    posting oralig'i** va "qayta kod kiritish shart emas" eslatmasi bilan.
-6. Admin **✅ Tasdiqlash** bosganda pending sessiya Telegram orqali yana
+6. Admin **📅 Muddatni tanlang** oynasidan kunni tanlaydi (1/7/30/90/180/365)
+   va **✅ Tasdiqlash** bosganda pending sessiya Telegram orqali yana
    tekshiriladi (`get_me()` UID solishtiriladi) va faqat aynan shu UID'ga
    tegishli bo'lsa atomik ravishda `pending_session` → `session` ko'chiriladi:
    - pending sessiya **revoke qilinmaydi** — u aynan shu UID uchun
@@ -106,8 +125,9 @@ izchil snapshot yaratadi.
 7. Ariza rad etilsa avval pending authorization Telegramda xavfsiz revoke
    qilinadi, keyin user o'chiriladi. Revoke vaqtinchalik xato bersa user va
    pending ma'lumotlari saqlanadi.
-8. Birinchi marta tasdiqlangan foydalanuvchi avtomatik **30 kunlik tarif**
-   (`DEFAULT_DURATION_DAYS`) va **60 daqiqalik posting oralig'i**
+8. Birinchi marta tasdiqlangan foydalanuvchiga **tanlangan muddat**
+   (standart `DEFAULT_DURATION_DAYS` — 30 kun) va **60 daqiqalik posting
+   oralig'i**
    (`DEFAULT_INTERVAL_MIN`, `MIN_INTERVAL_MIN`–`MAX_INTERVAL_MIN` oralig'iga
    clamp qilinadi) oladi. Bu super admin qo'shgan yangi foydalanuvchiga ham
    tegishli. Allaqachon tasdiqlangan foydalanuvchining qo'lda o'zgartirilgan
@@ -135,8 +155,8 @@ ustunlarini bo'shatib, `VACUUM` qiladi.
 
 Foydalanuvchi kartasidagi **⏰ Tarif muddati** orqali berilgan muddat
 **hozirdan boshlab** hisoblanadi va oldingi muddatni **bekor qiladi** — u
-mavjud muddat ustiga **qo'shilmaydi** (tayyor `1/7/30/90 kun` tugmalari ham,
-**✏️ Qo'lda kiritish** ham):
+mavjud muddat ustiga **qo'shilmaydi** (tayyor `1/7/30/90/180/365 kun` tugmalari
+ham, **✏️ Qo'lda kiritish** ham):
 
 | Holat | Natija |
 | --- | --- |
@@ -157,6 +177,21 @@ mavjud muddat ustiga **qo'shilmaydi** (tayyor `1/7/30/90 kun` tugmalari ham,
 - Kod: `admin/admin_actions.py` → `give_new_term()` (tugma ham, qo'lda
   kiritish ham shu yagona funksiyadan foydalanadi).
 
+### Tasdiqlashda muddat tanlash
+
+Tasdiqlash **ikki bosqichli** — avval muddat tanlanadi, keyin tasdiqlash
+yakunlanadi. Bu **barcha adminlar uchun** bir xil:
+
+| Admin | Tugmalar | Chegara |
+| --- | --- | --- |
+| 🛡 Super admin | 1 / 7 / 30 / 90 / 180 / 365 kun | Cheksiz (`SUPER_ADMIN_MAX_DAYS=0`) |
+| 👑 Jamoa admini | 1 / 7 / 30 / 60 kun | **Maksimal 60 kun** (`TEAM_MEMBER_MAX_DAYS=60`) |
+
+Muddat chegarasi **firibgar jamoa adminlaridan himoya** qiladi: ular a'zosiga
+uzun muddat berib, uddadan olib, botni tark etishi mumkin edi. Jamoa admini
+chegaradan oshgan muddat so'rasa — tizim uni avtomatik qisqartiradi, chegara
+oshsan rad etiladi.
+
 ### Super admin orqali foydalanuvchi qo'shish
 
 **🖥 Super Admin → ➕ Foydalanuvchi qo'shish** orqali avval ism-familiya
@@ -176,11 +211,14 @@ to'xtatish”** tugmasi bilan bekor qilish mumkin.
   Bir nechta media yuborilsa ular bitta post bo'lib saqlanadi va guruhga
   **bitta albom** bo'lib chiqadi (alohida-alohida spam bo'lmaydi).
   **Video butunlay rad etiladi** (`ALLOW_VIDEO_MEDIA=1` bilan qayta yoqiladi).
-- **🔍 Guruhlarni topish** — bitta tugma bilan akkauntdagi yozish mumkin bo'lgan
-  guruh va megaguruplar avtomatik aniqlanib qo'shiladi (broadcast kanallar,
-  jumladan o'z kanali ham, qo'shilmaydi; takror va huquqsizlar o'tkazib
-  yuboriladi); anti-spam pauza, 10 daqiqalik cooldown va FloodWait himoyasi
-  bilan ishlaydi; ➖ Guruh o'chirish ro'yxatidan keraksizlari tozalanadi.
+- **🔍 Guruhlarni topish** — akkauntdagi yozish mumkin bo'lgan guruh va
+  megaguruplar **topiladi va ro'yxat qilib ko'rsatiladi** (sahifalash, 15
+  ta/sahifa). Foydalanuvchi kerakli guruhlarni **✅ belgilaydi** — faqat
+  belgilanganlar qo'shiladi, **belgilanmaganlar hech qachon qo'shilmaydi**.
+  Broadcast kanallar, jumladan o'z kanali ham, ko'rsatilmaydi; takror va
+  huquqsizlar o'tkazib yuboriladi; anti-spam pauza, 10 daqiqalik cooldown va
+  FloodWait himoyasi bilan ishlaydi; ➖ Guruh o'chirish ro'yxatidan keraksizlari
+  tozalanadi.
 - **🧭 Yassi menyu** — barcha asosiy amallar bitta ekranda: Start/Stop (holat
   ON/OFF tugmaning o'zida), Hisobot (statistika **va** paket/limitlar bitta
   ekranda), Guruh topish/o'chirish, Post qo'shish/o'chirish, Posting oralig'i,
@@ -200,14 +238,41 @@ to'xtatish”** tugmasi bilan bekor qilish mumkin.
   olib tashlangan**: referal endi faqat statistika (kim kimni taklif qilgani)
   uchun, muddatga hech qanday kun qo'shilmaydi. Jamoa admini o'z jamoasining
   havolasini tarqatsa, kelgan foydalanuvchilar avtomatik shu jamoaga birikadi.
-- **👑 Jamoa admini** — ro'yxatdan o'tuvchi foydalanuvchilar jamoalarni
-  ko'rib, o'z jamoasini tanlaydi (minimal 2 ta foydalanuvchi). Jamoa admini:
+- **👑 Jamoa admini** — foydalanuvchilar jamoalarni ko'rib, o'z jamoasini
+  tanlaydi (minimal 2 ta foydalanuvchi). Jamoani yaratgan admin **darhol
+  tasdiqlangan** bo'ladi (tasdiq kutilmaydi). Jamoa admini:
   jamoasiga **tarif (muddat) beradi**, foydalanuvchilarni tasdiqlaydi,
   bloklaydi, xabar yuboradi va statistikani ko'radi. Boshqa adminlarning
   jamoalariga **hech qanday ta'sir qilmaydi**. Jamoa admini ham oddiy
   foydalanuvchi kabi o'z postlarini yubora oladi. Jamoa adminining muddati
-  tugasa — uning jamoasi ham to'xtaydi. Super admin jamoa adminlarining
-  muddati va sig'imini boshqaradi.
+  tugasa **yoki bloklansa** — uning jamoasi ham to'xtaydi. Super admin jamoa
+  adminlarining muddati va sig'imini boshqaradi; muddat uzaytirilganda
+  adminning **o'z tarif muddati ham** yangilanadi.
+- **➕ Do'st qo'shish** (jamoa admini) — do'stingizning **telefon raqamini**
+  yozing (`+998123456789`). Do'st ro'yxatdan o'tganda avtomatik sizning
+  jamoangizga birikadi va siz tasdiqlaysiz. Admin do'stiga taklif havolasini
+  ham yuborishi mumkin.
+- **🚪 Jamoadan chiqish** (oddiy a'zo) — «👥 Jamoam» orqali jamoasidan
+  chiqishi mumkin. Chiqsa — **berilgan jamoa muddati ham tugaydi** va
+  e'lon yuborish to'xtaydi. Jamoa egasi jamoasidan chiqmaydi.
+- **🚪 Jamoadan chiqarish** (jamoa admini) — a'zo kartasida «🚪 Jamoadan
+  chiqarish» tugmasi. A'zo jamoadan butunlay chiqadi va postingi to'xtaydi.
+- **📋 Do'stlar ro'yxati** (jamoa admini) — taklif qilingan raqamlar
+  ro'yxati (`⏳` — kelmagan, `✅` — biriktirilgan) va **🗑 bekor qilish**
+  tugmasi. Do'stga yuborish uchun **jamoa havolasi** va **shaxsiy havolа**
+  ikkalasi ham beriladi.
+- **🔄 Jamoani topshirish** (super admin) — jamoa admini kartasida
+  «🔄 Jamoani topshirish» tugmasi. Tanlangan admin jamoaning yangi egasi
+  bo'ladi — a'zolar, sig'im va muddat unga o'tadi. Eski admin jamoa
+  boshqaruvidan chiqadi.
+- **📊 A'zolar ro'yxati indikatorlari** — 🟢 faol | ⚪ to'xtatilgan |
+  ⏳ tasdiq kutilmoqda | ⌛ muddati tugagan | 🚫 bloklangan. Muddati
+  tugagan a'zolar soni alohida ko'rsatiladi.
+- **🎯 Jamoani tanlash** (jamoasiz foydalanuvchi) — ixtiyoriy. Boshqa yangi
+  foydalanuvchilar **to'g'ridan-to'g'ri ro'yxatdan o'tadi** — hech qanday
+  savol berilmaydi.
+- **👑 Admin bo'lish** — o'z jamoangizni yarating. Super admin telefoningizni
+  kiritsa — siz avtomatik jamoa admini bo'lasiz.
 - **⚡ Tez tasdiqlash** (`AUTO_APPROVE_ENABLED=1` bo'lsa) — past riskli arizalar
   admin navbatini kutmasdan tasdiqlanadi; har bir avto-tasdiq adminga xabar
   qilinadi.

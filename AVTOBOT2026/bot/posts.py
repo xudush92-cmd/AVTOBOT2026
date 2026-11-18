@@ -416,7 +416,7 @@ async def _respond(
     from bot.menu import worker_manager
 
     running = bool(worker_manager and worker_manager.is_running(uid))
-    markup = KB.kb_main(running=running)
+    markup = await KB.kb_main_for(uid, running=running)
     if msg is not None:
         await msg.reply_text(text, reply_markup=markup)
         return

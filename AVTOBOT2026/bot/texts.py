@@ -23,7 +23,7 @@ from core.utils import format_expires
 # ─────────────────────────────────────────────────────────────────────────
 WELCOME_SHORT = (
     "🤖 AVTOBOT\n\n"
-    "Telegram guruhlaringizga reklama postlarini avtomatik joylashtiruvchi bot.\n\n"
+    "Telegram guruhlarningizga reklama postlarini avtomatik joylashtiruvchi bot.\n\n"
     "📌 Boshlash (🔑 Login yoki /start):\n"
     "1. Ism va familiyangizni bitta xabarda kiriting\n"
     "2. Telefon raqamingizni kiriting — Telegram kodi darhol so'raladi\n"
@@ -32,6 +32,10 @@ WELCOME_SHORT = (
     "4. Login tugagach so'rov admin tasdig'iga tushadi\n"
     "5. Admin tasdiqlagach sessiya avtomatik faollashadi — kodni qayta "
     "kiritish shart emas\n\n"
+    "👥 Jamoa — bir nechta foydalanuvchining bitta guruhi. Jamoa "
+    "administratori sizga tarif (muddat) beradi va tasdiqlaydi. Agar sizga "
+    "taklif havolasi yuborilgan bo'lsa — avtomatik o'sha jamoaga birikasiz, "
+    "alohida tanlash shart emas.\n\n"
     f"📱 Yordam: {ADMIN_CONTACT_PHONE}"
 )
 
@@ -559,7 +563,9 @@ DISCOVER_NO_SESSION = (
 DISCOVER_START = (
     "🔍 Guruhlaringiz xavfsiz rejimda qidirilmoqda...\n\n"
     "Bot ulangan Telegram akkauntingizdagi GURUHLARNI (kanallarsiz) birma-bir "
-    "ko'rib chiqib, yozish huquqingiz borlarini avtomatik qo'shadi.\n\n"
+    "ko'rib chiqadi.\n\n"
+    "⚠️ **Hech bir guruh avtomatik qo'shilmaydi!** Sizga ro'yxat ko'rsatiladi — "
+    "kerakli guruhlarni o'zingiz ✅ belgilaysiz, keyin faqat shular qo'shiladi.\n\n"
     "Anti-spam uchun har guruh orasida qisqa pauza bor — jarayon bir necha "
     "daqiqa olishi mumkin. Iltimos, sabr qiling va tugmani qayta bosmang."
 )
@@ -581,7 +587,7 @@ def discover_cooldown_text(wait_min: int) -> str:
         "🛡 Anti-spam himoyasi\n\n"
         f"Guruhlarni qayta skanerlash uchun taxminan {wait_min} daqiqa kutish "
         "kerak. Bu Telegram akkauntingizni shubhali harakatlardan himoya qiladi.\n\n"
-        "Qo'shilgan guruhlar allaqachon saqlangan — keraksizlarini ➖ Guruh "
+        "Avval qo'shgan guruhlar saqlangan qoladi — keraksizlarini ➖ Guruh "
         "o'chirish orqali tozalashingiz mumkin."
     )
 
@@ -617,6 +623,11 @@ def discover_report(
     limit_hit: bool = False,
     limit: int = 0,
 ) -> str:
+    """Guruh tanlash yakuniy hisoboti (belgilanganlar qo'shilgandan keyin).
+
+    ``discover_groups`` endi hech narsani avtomatik qo'shmaydi — bu matn
+    «Tanlanganlarni qo'shish» bosilgandan keyin ishlatiladi.
+    """
     lines = ["🔍 GURUHLARNI TOPISH NATIJASI\n"]
     lines.append(f"✅ Qo'shildi: {len(added)} ta")
     if added:
@@ -654,6 +665,45 @@ def discover_report(
         "\nKeraksiz guruhlarni ➖ «Guruh o'chirish» tugmasi orqali o'chiring."
     )
     return "\n".join(lines)
+
+
+# ── Guruh tanlash (qo'lda belgilash) ──
+DISCOVER_PICK_HEADER = (
+    "🔍 <b>Guruhlar ro'yxati</b>\n\n"
+    "Topilgan guruh: {total} ta\n"
+    "Sahifa: {page}/{pages}\n"
+    "✅ Belgilangan: {selected} ta\n\n"
+    "Kerakli guruhlarni <b>✅ belgisi</b> orqali tanlang. "
+    "Oxirida «Tanlanganlarni qo'shish» tugmasini bosing."
+)
+
+DISCOVER_PICK_EMPTY = (
+    "😔 Akkauntingizda yozish huquqiga ega guruh topilmadi.\n\n"
+    "Guruhga a'zo bo'lganingiz va xabar yoza olishingizni tekshiring."
+)
+
+DISCOVER_PICK_EXPIRED = (
+    "⌛ Tanlov sessiyasi muddati tugagan.\n\n"
+    "🔍 «Guruhlarni topish» tugmasini qayta bosing."
+)
+
+DISCOVER_APPLY_HEADER = (
+    "✅ <b>Tanlangan guruhlar qo'shildi</b>\n\n"
+    "Qo'shildi: {added} ta\n"
+    "Allaqachon bo'lgan: {duplicates} ta\n"
+    "O'tkazib yuborildi: {skipped} ta\n\n"
+    "ℹ️ Endi e'lon yuborishni ▶️ Start tugmasi bilan yoqing."
+)
+
+DISCOVER_APPLY_NONE = (
+    "ℹ️ Hech qanday guruh belgilanmagan.\n\n"
+    "Avval kerakli guruhlarni ✅ belgilaning."
+)
+
+DISCOVER_LIMIT_HIT = (
+    "\n🧱 Paket chegarasi: {limit} ta guruh. Qolganlari qo'shilmadi — "
+    "keraksizlarini ➖ Guruh o'chirish bilan o'chiring yoki paketni kengaytiring."
+)
 GROUP_INTERVAL_PICK = (
     "⏱ Intervalini sozlash uchun guruhni tanlang.\n"
     "Umumiy intervalni o'zgartirish uchun «Posting oralig'i» menyusidan foydalaning."
@@ -1328,11 +1378,12 @@ def status_next_step(groups: int, posts: int) -> str:
 # ─────────────────────────────────────────────────────────────────────────
 TEAM_PICK_TITLE = (
     "🎯 JAMOA TANLANG\n\n"
-    "Ro'yxatdan o'tish uchun jamoangizni tanlang:\n"
-    "Jamoa egasi sizga tarif (muddat) beradi.\n\n"
-    "🔎 Referal orqali kelgan bo'lsangiz — jamoangiz avtomatik tanlangan.\n\n"
-    "👥 Guruh bilan ishlash — jamoani tanlang.\n"
-    "🙋 Jamoasiz — «Jamoasiz davom etish» tugmasini bosing."
+    "Jamoa — bir nechta foydalanuvchining bitta guruhi. Jamoa "
+    "administratori sizga tarif (muddat) beradi va tasdiqlaydi.\n\n"
+    "🔎 Taklif havolasi bilan kelgan bo'lsangiz — jamoangiz allaqachon "
+    "tanlangan, bu oyna umuman chiqmaydi.\n\n"
+    "👥 Guruh bilan ishlash uchun — jamoani tanlang.\n"
+    "🙋 Jamoasiz ishlash uchun — «Jamoasiz davom etish» tugmasini bosing."
 )
 
 TEAM_PICK_EMPTY = (
@@ -1381,9 +1432,16 @@ TEAM_ADMIN_REGISTERED = (
     "📋 Jamoa: {name}\n"
     "👥 Sig'im: {max_users} ta foydalanuvchi\n"
     "📅 Muddat: {expires}\n\n"
-    "🔗 Jamoa havolangiz (ro'yxatdan o'tuvchilar shu orqali keladi):\n"
-    "{link}\n\n"
-    "Endi «👥 Jamoam» orqali foydalanuvchilarni boshqarishingiz mumkin."
+    "📤 Do'stlaringizni qo'shish uchun ikkita yo'l bor:\n\n"
+    "1️⃣ Telefon raqam qo'shish — «👥 Jamoam» → «➕ Do'st qo'shish».\n"
+    "   Do'st ro'yxatdan o'tganda avtomatik sizning jamoangizga birikadi.\n\n"
+    "2️⃣ Havola yuborish — pastdagi havolani do'stlaringizga yuboring.\n"
+    "   Ular shu havoladan kirsa ham, avtomatik sizning jamoangizga "
+    "birikadi.\n\n"
+    "🔗 Jamoa havolasi:\n{link}\n\n"
+    "Har bir do'stni tasdiqlash va muddat berish sizning vazifangiz "
+    "(maksimal 60 kun).\n\n"
+    "Boshqarish uchun «👥 Jamoam» tugmasini bosing."
 )
 
 TEAM_ADMIN_ASK_SIZE = (
@@ -1475,6 +1533,17 @@ TEAM_ADD_FRIEND_DONE = (
     "{link}\n\n"
     "Shu havoladan kirsa — u avtomatik sizning jamoangizga biriktiriladi "
     "va siz tasdiqlaysiz."
+)
+
+TEAM_ADD_FRIEND_DONE_WITH_ADMIN_LINK = (
+    "✅ Do'st qo'shildi!\n\n"
+    "📱 {phone}\n"
+    "📋 Jamoa: {team}\n\n"
+    "📤 Do'stingizga yuboring:\n"
+    "🔗 Jamoa havolasi: {link}\n"
+    "🔗 Shaxsiy havolangiz: {admin_link}\n\n"
+    "Ikkalasi ham ishlaydi — foydalanuvchi avtomatik sizning jamoangizga "
+    "biriktiriladi va siz tasdiqlaysiz."
 )
 
 TEAM_ADD_FRIEND_EXISTS = (
@@ -1599,8 +1668,8 @@ def team_pick_text(teams: list[dict], page: int = 0, page_size: int = 10) -> str
     lines = [
         "🎯 JAMOA TANLANG",
         "",
-        "Ro'yxatdan o'tish uchun jamoangizni tanlang:",
-        "Jamoa egasi sizga tarif (muddat) beradi.",
+        "Jamoa — bir nechta foydalanuvchining bitta guruhi.",
+        "Jamoa administratori sizga tarif (muddat) beradi va tasdiqlaydi.",
         "",
     ]
     for team in window:
@@ -1635,11 +1704,15 @@ def team_members_text(members: list[dict]) -> str:
     if not members:
         return TEAM_ADMIN_EMPTY
     lines = [f"👥 JAMOA A'ZOLARI ({len(members)} ta)", ""]
+    expired_count = 0
     for user in members:
         if user.get("awaiting_approval"):
             icon = "⏳"
         elif user.get("is_blocked"):
             icon = "🚫"
+        elif member_expired(user):
+            icon = "⌛"
+            expired_count += 1
         elif user.get("running"):
             icon = "🟢"
         else:
@@ -1647,5 +1720,26 @@ def team_members_text(members: list[dict]) -> str:
         name = user.get("name") or "Noma'lum"
         lines.append(f"{icon} {name}")
     lines.append("")
+    lines.append(
+        "🟢 — faol | ⚪ — to'xtatilgan | ⏳ — tasdiq kutilmoqda | "
+        "⌛ — muddati tugagan | 🚫 — bloklangan"
+    )
+    if expired_count:
+        lines.append("")
+        lines.append(
+            f"⌛ {expired_count} ta a'zoning muddati tugagan — ularga muddat "
+            "berish uchun tanlang."
+        )
+    lines.append("")
     lines.append("Tarif berish uchun a'zoni tanlang:")
     return "\n".join(lines)
+
+
+def member_expired(user: dict) -> bool:
+    """A'zoning tarif muddati tugaganmi."""
+    expires = user.get("tariff_expires_at")
+    if not expires:
+        return False
+    from core.utils import is_expired
+
+    return is_expired(expires)

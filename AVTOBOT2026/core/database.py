@@ -2185,6 +2185,45 @@ async def update_team(team_id: int, **fields: Any) -> bool:
     return cur.rowcount > 0
 
 
+async def update_team_owner(team_id: int, owner_admin_uid: int) -> bool:
+    """Jamoaning egasini almashtiradi (topshirish)."""
+    cur = await _execute_write(
+        "UPDATE teams SET owner_admin_uid = ? WHERE id = ?",
+        (int(owner_admin_uid), int(team_id)),
+    )
+    return cur.rowcount > 0
+
+
+async def reassign_team_members(team_id: int, new_owner_uid: int) -> int:
+    """Jamoa a'zolarini yangi admin ostiga o'tkazadi (topshirish).
+
+    Jamoaning o'z egasi ham ``owner_admin_uid`` yangilanadi — chunki u ham
+    a'zolar ro'yxatida turadi.
+
+    Returns:
+        O'tkazilgan a'zolar soni.
+    """
+    cur = await _execute_write(
+        "UPDATE users SET owner_admin_uid = ?, updated_at = ? WHERE team_id = ?",
+        (int(new_owner_uid), iso_now(), int(team_id)),
+    )
+    return cur.rowcount
+
+
+async def clear_team_admin(uid: int) -> bool:
+    """Foydalanuvchini jamoa admini roligidan olib tashlaydi.
+
+    Jamoaning egasi emas (boshqa admin topshirdi bo'lsa) — jamoa bilan
+    bog'liq admin roli tozalanadi. Oddiy a'zo sifatida qoladi.
+    """
+    cur = await _execute_write(
+        "UPDATE users SET is_team_admin = 0, admin_expires_at = NULL, "
+        "admin_max_users = 0, updated_at = ? WHERE uid = ?",
+        (iso_now(), int(uid)),
+    )
+    return cur.rowcount > 0
+
+
 async def delete_team(team_id: int) -> bool:
     cur = await _execute_write(
         "DELETE FROM teams WHERE id = ?", (int(team_id),)
@@ -2532,3 +2571,30 @@ async def team_owner_expired(uid: int) -> bool:
     if not owner or not owner.get("is_team_admin"):
         return False
     return await team_admin_expired(owner_uid)
+
+
+async def team_owner_disabled(uid: int) -> bool:
+    """Jamoa admini bloklanganmi — jamoasi ham to'xtashi kerak.
+
+    Bloklangan jamoa admini o'z jamoasiga xabar yubora olmaydi va uning
+    a'zolari ham ishlay olmasligi kerak — aks holda firibgar jamoa admini
+    bloklanishidan keyin ham jamoasini boshqarishda davom etadi.
+    """
+    user = await get_user(uid)
+    if not user:
+        return False
+    owner_uid = int(user.get("owner_admin_uid") or 0)
+    if not owner_uid or owner_uid == int(uid):
+        return False
+    owner = await get_user(owner_uid)
+    if not owner or not owner.get("is_team_admin"):
+        return False
+    return bool(owner.get("is_blocked"))
+
+
+async def get_team_member_uids(team_id: int) -> list[int]:
+    """Jamoa a'zolarining UID ro'yxati (jamoa admini ham)."""
+    async with _conn().execute(
+        "SELECT uid FROM users WHERE team_id = ?", (int(team_id),)
+    ) as cur:
+        return [int(row["uid"]) for row in await cur.fetchall()]
