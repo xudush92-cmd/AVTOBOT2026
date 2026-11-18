@@ -545,7 +545,20 @@ async def handle_team_admin_callback(update: Update, uid: int, data: str) -> Non
             target = int(parts[2])
         except (ValueError, IndexError):
             return
-        await approve_team_member(update, uid, target)
+        # Avval muddatni tanlash — keyin tasdiqlash.
+        await q.edit_message_text(
+            "📅 Muddatni tanlang — foydalanuvchiga qancha kun beriladi?",
+            reply_markup=KB.kb_team_approve_term_options(target, DURATION_OPTIONS),
+        )
+        return
+
+    if action == "approveterm":
+        try:
+            target = int(parts[2])
+            days = int(parts[3])
+        except (ValueError, IndexError):
+            return
+        await approve_team_member(update, uid, target, days=days)
         return
 
 
@@ -559,12 +572,16 @@ def _member_status(member: dict) -> str:
     return "⚪ To'xtatilgan"
 
 
-async def approve_team_member(update: Update, admin_uid: int, target: int) -> None:
+async def approve_team_member(
+    update: Update,
+    admin_uid: int,
+    target: int,
+    days: int | None = None,
+) -> None:
     """Jamoa admini o'z jamoasidagi foydalanuvchini tasdiqlaydi.
 
-    Foydalanuvchi super admin tomonidan avval tasdiqlanmagan bo'lsa,
-    tasdiqlash super adminning tasdiqini talab qiladi (zinxiraviy
-    tasdiqlashning oldini olish).
+    ``days`` — beriladigan muddat (kun). Berilmasa standart
+    ``DEFAULT_DURATION_DAYS`` ishlatiladi.
     """
     q = update.callback_query
     member = await db.get_user(target)
@@ -593,7 +610,8 @@ async def approve_team_member(update: Update, admin_uid: int, target: int) -> No
             )
             return
 
-    expires = _admin_expiry(DEFAULT_DURATION_DAYS)
+    duration_days = max(1, int(days if days is not None else DEFAULT_DURATION_DAYS))
+    expires = _admin_expiry(duration_days)
     await db.approve_user(target, expires)
 
     team_name = (team or {}).get("name") or "Jamoangiz"

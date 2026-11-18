@@ -21,6 +21,7 @@ from bot.login import (
 from bot.menu import confirm_start, confirm_stop
 from config.config import (
     CODE_LENGTH,
+    DURATION_OPTIONS,
     LOGIN_TIMEOUT_S,
     MAX_CODE_LENGTH,
     SUPER_ADMIN,
@@ -691,7 +692,17 @@ async def handle_admin_approve(update: Update, uid: int, data: str) -> None:
 
     async def apply_target_action() -> None:
         if action == "yes":
-            await admin_actions.action_approve(update, uid, target)
+            # Avval muddatni tanlash — keyin tasdiqlash.
+            await q.edit_message_text(
+                "📅 Muddatni tanlang — foydalanuvchiga qancha kun beriladi?",
+                reply_markup=KB.kb_approve_term_options(target, DURATION_OPTIONS),
+            )
+        elif action == "term":
+            try:
+                days = int(parts[3])
+            except (ValueError, IndexError):
+                return
+            await admin_actions.action_approve(update, uid, target, days=days)
         elif action == "rejectconfirm":
             token = parts[3] if len(parts) > 3 else ""
             if not action_tokens.consume(uid, f"app:reject:{target}", token):
@@ -699,7 +710,7 @@ async def handle_admin_approve(update: Update, uid: int, data: str) -> None:
                 return
             await admin_actions.action_reject(update, uid, target)
 
-    if action not in {"yes", "rejectconfirm"}:
+    if action not in {"yes", "term", "rejectconfirm"}:
         return
     target_lock = user_update_lock(target)
     if target_lock is user_update_lock(uid):

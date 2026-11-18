@@ -403,6 +403,46 @@ def kb_admin_approve(uid: int) -> InlineKeyboardMarkup:
     )
 
 
+def kb_approve_term_options(uid: int, options: list[int]) -> InlineKeyboardMarkup:
+    """Tasdiqlashda muddat (kun) tanlash — super admin uchun."""
+    rows: list[list[InlineKeyboardButton]] = []
+    row: list[InlineKeyboardButton] = []
+    for days in options:
+        row.append(
+            InlineKeyboardButton(
+                f"{days} kun",
+                callback_data=f"app:term:{uid}:{days}",
+            )
+        )
+        if len(row) == 3:
+            rows.append(row)
+            row = []
+    if row:
+        rows.append(row)
+    rows.append([InlineKeyboardButton("❌ Rad etish", callback_data=f"app:rejectask:{uid}")])
+    return InlineKeyboardMarkup(rows)
+
+
+def kb_team_approve_term_options(uid: int, options: list[int]) -> InlineKeyboardMarkup:
+    """Tasdiqlashda muddat (kun) tanlash — jamoa admini uchun."""
+    rows: list[list[InlineKeyboardButton]] = []
+    row: list[InlineKeyboardButton] = []
+    for days in options:
+        row.append(
+            InlineKeyboardButton(
+                f"{days} kun",
+                callback_data=f"tadm:approveterm:{uid}:{days}",
+            )
+        )
+        if len(row) == 3:
+            rows.append(row)
+            row = []
+    if row:
+        rows.append(row)
+    rows.append([InlineKeyboardButton("⬅️ Orqaga", callback_data=f"tadm:member:{uid}")])
+    return InlineKeyboardMarkup(rows)
+
+
 def kb_admin_panel() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [

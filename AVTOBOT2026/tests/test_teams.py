@@ -655,9 +655,28 @@ class TeamApprovalSeparationTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(Tm, "application", None):
             await Tm.handle_team_admin_callback(update, ADMIN_A, f"tadm:approve:{USER_1}")
 
+        # Birinchi bosqich — muddat tanlash oynasi ochiladi.
+        markup = q.edit_message_text.await_args.kwargs.get("reply_markup")
+        callbacks = {
+            b.callback_data
+            for row in markup.inline_keyboard
+            for b in row
+            if b.callback_data
+        }
+        self.assertIn(f"tadm:approveterm:{USER_1}:7", callbacks)
+
+        # Ikkinchi bosqich — muddat tanlanadi va tasdiqlanadi.
+        await Tm.handle_team_admin_callback(
+            update, ADMIN_A, f"tadm:approveterm:{USER_1}:7"
+        )
         member = await db.get_user(USER_1)
         self.assertTrue(member["is_admin"], "jamoa admini a'zosini tasdiqlashi kerak")
         self.assertIsNotNone(member["tariff_expires_at"])
+
+        # Muddat tanlangan (7 kun) — standart 30 kun emas.
+        from core.utils import calc_expires
+
+        self.assertEqual(member["tariff_expires_at"], calc_expires(7))
 
     async def test_notify_goes_to_team_admin(self) -> None:
         """Ariza xabari jamoa adminiga boradi, super admin ga emas."""
@@ -706,3 +725,131 @@ class TeamApprovalSeparationTests(unittest.IsolatedAsyncioTestCase):
         targets = [chat_id for chat_id, _ in sent]
         self.assertIn(SUPER_ADMIN, targets)
         self.assertNotIn(ADMIN_A, targets)
+
+
+class ApprovalDurationTests(unittest.IsolatedAsyncioTestCase):
+    """Tasdiqlashda muddatni tanlash — super admin va jamoa admini uchun."""
+
+    async def asyncSetUp(self) -> None:
+        await db.close_db()
+        self.temp = tempfile.TemporaryDirectory()
+        self.old_db_path = db.DB_PATH
+        db.DB_PATH = Path(self.temp.name) / "test.db"
+        session_crypto._fernet = __import__(
+            "cryptography.fernet", fromlist=["Fernet"]
+        ).Fernet(
+            __import__("cryptography.fernet", fromlist=["Fernet"]).Fernet.generate_key()
+        )
+        await db.init_db()
+
+    async def asyncTearDown(self) -> None:
+        await db.close_db()
+        db.DB_PATH = self.old_db_path
+        session_crypto._fernet = None
+        self.temp.cleanup()
+
+    async def test_super_admin_approve_offers_durations(self) -> None:
+        """Super admin tasdiqlashda muddat tanlash oynasi ochiladi."""
+        kb = KB.kb_approve_term_options(USER_1, [1, 7, 30, 90])
+        callbacks = {
+            b.callback_data for row in kb.inline_keyboard for b in row if b.callback_data
+        }
+        self.assertIn(f"app:term:{USER_1}:1", callbacks)
+        self.assertIn(f"app:term:{USER_1}:7", callbacks)
+        self.assertIn(f"app:term:{USER_1}:30", callbacks)
+        self.assertIn(f"app:term:{USER_1}:90", callbacks)
+
+    async def test_team_approve_offers_durations(self) -> None:
+        """Jamoa admini tasdiqlashda muddat tanlash oynasi ochiladi."""
+        kb = KB.kb_team_approve_term_options(USER_1, [1, 7, 30, 90])
+        callbacks = {
+            b.callback_data for row in kb.inline_keyboard for b in row if b.callback_data
+        }
+        self.assertIn(f"tadm:approveterm:{USER_1}:7", callbacks)
+        self.assertIn(f"tadm:approveterm:{USER_1}:30", callbacks)
+
+    async def test_approve_with_chosen_duration(self) -> None:
+        """Tanlangan muddat beriladi (standart 30 kun emas)."""
+        from admin import admin_actions
+
+        await db.upsert_user(USER_1, name="Vali", awaiting_approval=1)
+
+        q = SimpleNamespace(
+            data=f"app:term:{USER_1}:7",
+            answer=AsyncMock(),
+            edit_message_text=AsyncMock(),
+            message=SimpleNamespace(reply_text=AsyncMock()),
+        )
+        update = SimpleNamespace(
+            callback_query=q,
+            effective_user=SimpleNamespace(id=SUPER_ADMIN),
+            message=SimpleNamespace(reply_text=AsyncMock()),
+        )
+        with patch.object(admin_actions, "application", None):
+            await admin_actions.action_approve(update, SUPER_ADMIN, USER_1, days=7)
+
+        user = await db.get_user(USER_1)
+        from core.utils import calc_expires
+
+        self.assertTrue(user["is_admin"])
+        self.assertEqual(user["tariff_expires_at"], calc_expires(7))
+
+    async def test_approve_defaults_to_configured_duration(self) -> None:
+        """Muddat berilmasa standart qiymat ishlatiladi."""
+        from admin import admin_actions
+        from config.config import DEFAULT_DURATION_DAYS
+
+        await db.upsert_user(USER_1, name="Vali", awaiting_approval=1)
+
+        q = SimpleNamespace(
+            data=f"app:term:{USER_1}",
+            answer=AsyncMock(),
+            edit_message_text=AsyncMock(),
+            message=SimpleNamespace(reply_text=AsyncMock()),
+        )
+        update = SimpleNamespace(
+            callback_query=q,
+            effective_user=SimpleNamespace(id=SUPER_ADMIN),
+            message=SimpleNamespace(reply_text=AsyncMock()),
+        )
+        with patch.object(admin_actions, "application", None):
+            await admin_actions.action_approve(update, SUPER_ADMIN, USER_1)
+
+        user = await db.get_user(USER_1)
+        from core.utils import calc_expires
+
+        self.assertEqual(
+            user["tariff_expires_at"], calc_expires(DEFAULT_DURATION_DAYS)
+        )
+
+    async def test_super_admin_cannot_approve_team_user(self) -> None:
+        """Super admin jamoali foydalanuvchini tasdiqlamaydi."""
+        from admin import admin_actions
+
+        team = await db.create_team("Jamoa", ADMIN_A, max_users=5)
+        await db.upsert_user(
+            USER_1,
+            name="A'zo",
+            team_id=int(team["id"]),
+            owner_admin_uid=ADMIN_A,
+            awaiting_approval=1,
+        )
+
+        q = SimpleNamespace(
+            data=f"app:term:{USER_1}:7",
+            answer=AsyncMock(),
+            edit_message_text=AsyncMock(),
+            message=SimpleNamespace(reply_text=AsyncMock()),
+        )
+        update = SimpleNamespace(
+            callback_query=q,
+            effective_user=SimpleNamespace(id=SUPER_ADMIN),
+            message=SimpleNamespace(reply_text=AsyncMock()),
+        )
+        with patch.object(admin_actions, "application", None):
+            await admin_actions.action_approve(update, SUPER_ADMIN, USER_1, days=7)
+
+        user = await db.get_user(USER_1)
+        self.assertFalse(user["is_admin"], "super admin jamoali userni tasdiqlamasligi kerak")
+        text = q.edit_message_text.await_args.args[0]
+        self.assertIn("jamoa adminining vazifasi", text)

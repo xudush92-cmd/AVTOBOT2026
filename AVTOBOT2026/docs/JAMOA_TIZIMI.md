@@ -117,6 +117,19 @@ Super Admin → 🖥 Super Admin → 👑 Jamoa adminlari → [Admin A]
 Jamoa admini a'zoga muddat (1 / 7 / 30 / 90 kun) beradi. Muddat berilganda
 foydalanuvchi tasdiqlanadi (agar avval tasdiqlanmagan bo'lsa).
 
+### Tasdiqlashda muddat tanlash
+
+Tasdiqlash **ikki bosqichli** — avval muddat tanlanadi, keyin tasdiqlash
+yakunlanadi. Bu **barcha adminlar uchun** bir xil:
+
+| Admin | Tugmalar | Yakun |
+| ----- | -------- | ----- |
+| **Super Admin** | `1 kun` / `7 kun` / `30 kun` / `90 kun` | `app:term:<uid>:<kun>` |
+| **Jamoa admini** | `1 kun` / `7 kun` / `30 kun` / `90 kun` | `tadm:approveterm:<uid>:<kun>` |
+
+Super adminning "Foydalanuvchi qo'shish" oqimi esa alohida — u tasdiqlash
+emas, to'g'ridan-to'g'ri qo'shish.
+
 ---
 
 ## 6. Izolyatsiya qoidalari
