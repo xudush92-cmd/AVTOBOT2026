@@ -366,6 +366,38 @@ class SuperAdminAddTests(InviteBaseTest):
         }
         self.assertIn("adm:addteamadmin", callbacks)
 
+    async def test_empty_team_admins_screen_has_add_button(self) -> None:
+        """Bo'sh ro'yxat oynasida ham '+ Admin qo'shish' tugmasi chiqishi kerak.
+
+        Aks holda super admin birinchi jamoa adminini qo'shira olmaydi —
+        tugma ko'rinmaydi.
+        """
+        from admin import admin_panel as AP
+
+        q = SimpleNamespace(
+            edit_message_text=AsyncMock(),
+            answer=AsyncMock(),
+        )
+        update = SimpleNamespace(callback_query=q)
+
+        with patch.object(AP.db, "get_team_admins", AsyncMock(return_value=[])):
+            await AP.show_team_admins(update)
+
+        q.edit_message_text.assert_awaited()
+        markup = q.edit_message_text.await_args.kwargs.get("reply_markup")
+        self.assertIsNotNone(markup, "klaviatura berilishi kerak")
+        callbacks = {
+            b.callback_data
+            for row in markup.inline_keyboard
+            for b in row
+            if b.callback_data
+        }
+        self.assertIn(
+            "adm:addteamadmin",
+            callbacks,
+            "bo'sh ro'yxatda ham '+ Admin qo'shish' tugmasi bo'lishi kerak",
+        )
+
 
 class TeamPickOptionalTests(InviteBaseTest):
     """Jamoani tanlash — ixtiyoriy, menyudan ochiladi."""
