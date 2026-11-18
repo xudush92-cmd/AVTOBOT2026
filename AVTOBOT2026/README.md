@@ -60,12 +60,19 @@ uchun migratsiya yangi ustunlarni qo'shadi, intervalni esa umumiy sozlamadan ola
 **🔍 Guruhlarni topish (foydalanuvchi oqimi):** foydalanuvchi tugmani bossa,
 bot ulangan Telethon sessiyasi orqali akkauntning barcha dialoglarini
 (`iter_dialogs`) ko'rib chiqadi va a'zo hamda yozish huquqi bor
-guruh/megaguruplarni avtomatik qo'shadi. **Broadcast kanallar, jumladan
-akkaunt egasi bo'lgan kanallar ham, siyosat bo'yicha qo'shilmaydi** — faqat
-guruhlar olinadi. Username borlar `@username`, yopiq guruhlar marked peer ID
-(`-100...`, `-...`) bilan saqlanadi; takror va huquqsiz dialoglar o'tkazib
-yuboriladi, paket limiti hurmat qilinadi. Keraksiz guruhlar **➖ Guruh
-o'chirish** ro'yxatidan o'chiriladi.
+guruh/megaguruplarni **topadi**.
+
+> ⚠️ **Hech qanday guruh avtomatik qo'shilmaydi.** Topilgan guruhlar
+> foydalanuvchiga **ro'yxat qilib ko'rsatiladi** (sahifalash — 15 ta/sahifa),
+> u keraklilarini **✅ belgilaydi** va faqat **«Tanlanganlarni qo'shish»**
+> tugmasi bosilganda **belgilanganlar** botga qo'shiladi.
+> **Belgilanmagan guruhlar hech qachon qo'shilmaydi.**
+
+**Broadcast kanallar, jumladan akkaunt egasi bo'lgan kanallar ham, siyosat
+bo'yicha ko'rsatilmaydi** — faqat guruhlar. Username borlar `@username`,
+yopiq guruhlar marked peer ID (`-100...`, `-...`) bilan saqlanadi; takror va
+huquqsiz dialoglar o'tkazib yuboriladi, paket limiti hurmat qilinadi.
+Tanlov sessiyasi 30 daqiqa davomida yashaydi, keyin tozalanadi.
 
 Anti-spam himoyasi: har guruh tekshiruvi orasida 1–3 soniyali tasodifiy pauza,
 har foydalanuvchi uchun 10 daqiqalik cooldown, Telegram FloodWait berganda
@@ -204,11 +211,14 @@ to'xtatish”** tugmasi bilan bekor qilish mumkin.
   Bir nechta media yuborilsa ular bitta post bo'lib saqlanadi va guruhga
   **bitta albom** bo'lib chiqadi (alohida-alohida spam bo'lmaydi).
   **Video butunlay rad etiladi** (`ALLOW_VIDEO_MEDIA=1` bilan qayta yoqiladi).
-- **🔍 Guruhlarni topish** — bitta tugma bilan akkauntdagi yozish mumkin bo'lgan
-  guruh va megaguruplar avtomatik aniqlanib qo'shiladi (broadcast kanallar,
-  jumladan o'z kanali ham, qo'shilmaydi; takror va huquqsizlar o'tkazib
-  yuboriladi); anti-spam pauza, 10 daqiqalik cooldown va FloodWait himoyasi
-  bilan ishlaydi; ➖ Guruh o'chirish ro'yxatidan keraksizlari tozalanadi.
+- **🔍 Guruhlarni topish** — akkauntdagi yozish mumkin bo'lgan guruh va
+  megaguruplar **topiladi va ro'yxat qilib ko'rsatiladi** (sahifalash, 15
+  ta/sahifa). Foydalanuvchi kerakli guruhlarni **✅ belgilaydi** — faqat
+  belgilanganlar qo'shiladi, **belgilanmaganlar hech qachon qo'shilmaydi**.
+  Broadcast kanallar, jumladan o'z kanali ham, ko'rsatilmaydi; takror va
+  huquqsizlar o'tkazib yuboriladi; anti-spam pauza, 10 daqiqalik cooldown va
+  FloodWait himoyasi bilan ishlaydi; ➖ Guruh o'chirish ro'yxatidan keraksizlari
+  tozalanadi.
 - **🧭 Yassi menyu** — barcha asosiy amallar bitta ekranda: Start/Stop (holat
   ON/OFF tugmaning o'zida), Hisobot (statistika **va** paket/limitlar bitta
   ekranda), Guruh topish/o'chirish, Post qo'shish/o'chirish, Posting oralig'i,

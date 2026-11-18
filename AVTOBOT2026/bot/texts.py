@@ -563,7 +563,9 @@ DISCOVER_NO_SESSION = (
 DISCOVER_START = (
     "🔍 Guruhlaringiz xavfsiz rejimda qidirilmoqda...\n\n"
     "Bot ulangan Telegram akkauntingizdagi GURUHLARNI (kanallarsiz) birma-bir "
-    "ko'rib chiqib, yozish huquqingiz borlarini avtomatik qo'shadi.\n\n"
+    "ko'rib chiqadi.\n\n"
+    "⚠️ **Hech bir guruh avtomatik qo'shilmaydi!** Sizga ro'yxat ko'rsatiladi — "
+    "kerakli guruhlarni o'zingiz ✅ belgilaysiz, keyin faqat shular qo'shiladi.\n\n"
     "Anti-spam uchun har guruh orasida qisqa pauza bor — jarayon bir necha "
     "daqiqa olishi mumkin. Iltimos, sabr qiling va tugmani qayta bosmang."
 )
@@ -585,7 +587,7 @@ def discover_cooldown_text(wait_min: int) -> str:
         "🛡 Anti-spam himoyasi\n\n"
         f"Guruhlarni qayta skanerlash uchun taxminan {wait_min} daqiqa kutish "
         "kerak. Bu Telegram akkauntingizni shubhali harakatlardan himoya qiladi.\n\n"
-        "Qo'shilgan guruhlar allaqachon saqlangan — keraksizlarini ➖ Guruh "
+        "Avval qo'shgan guruhlar saqlangan qoladi — keraksizlarini ➖ Guruh "
         "o'chirish orqali tozalashingiz mumkin."
     )
 
@@ -621,6 +623,11 @@ def discover_report(
     limit_hit: bool = False,
     limit: int = 0,
 ) -> str:
+    """Guruh tanlash yakuniy hisoboti (belgilanganlar qo'shilgandan keyin).
+
+    ``discover_groups`` endi hech narsani avtomatik qo'shmaydi — bu matn
+    «Tanlanganlarni qo'shish» bosilgandan keyin ishlatiladi.
+    """
     lines = ["🔍 GURUHLARNI TOPISH NATIJASI\n"]
     lines.append(f"✅ Qo'shildi: {len(added)} ta")
     if added:
@@ -658,6 +665,45 @@ def discover_report(
         "\nKeraksiz guruhlarni ➖ «Guruh o'chirish» tugmasi orqali o'chiring."
     )
     return "\n".join(lines)
+
+
+# ── Guruh tanlash (qo'lda belgilash) ──
+DISCOVER_PICK_HEADER = (
+    "🔍 <b>Guruhlar ro'yxati</b>\n\n"
+    "Topilgan guruh: {total} ta\n"
+    "Sahifa: {page}/{pages}\n"
+    "✅ Belgilangan: {selected} ta\n\n"
+    "Kerakli guruhlarni <b>✅ belgisi</b> orqali tanlang. "
+    "Oxirida «Tanlanganlarni qo'shish» tugmasini bosing."
+)
+
+DISCOVER_PICK_EMPTY = (
+    "😔 Akkauntingizda yozish huquqiga ega guruh topilmadi.\n\n"
+    "Guruhga a'zo bo'lganingiz va xabar yoza olishingizni tekshiring."
+)
+
+DISCOVER_PICK_EXPIRED = (
+    "⌛ Tanlov sessiyasi muddati tugagan.\n\n"
+    "🔍 «Guruhlarni topish» tugmasini qayta bosing."
+)
+
+DISCOVER_APPLY_HEADER = (
+    "✅ <b>Tanlangan guruhlar qo'shildi</b>\n\n"
+    "Qo'shildi: {added} ta\n"
+    "Allaqachon bo'lgan: {duplicates} ta\n"
+    "O'tkazib yuborildi: {skipped} ta\n\n"
+    "ℹ️ Endi e'lon yuborishni ▶️ Start tugmasi bilan yoqing."
+)
+
+DISCOVER_APPLY_NONE = (
+    "ℹ️ Hech qanday guruh belgilanmagan.\n\n"
+    "Avval kerakli guruhlarni ✅ belgilaning."
+)
+
+DISCOVER_LIMIT_HIT = (
+    "\n🧱 Paket chegarasi: {limit} ta guruh. Qolganlari qo'shilmadi — "
+    "keraksizlarini ➖ Guruh o'chirish bilan o'chiring yoki paketni kengaytiring."
+)
 GROUP_INTERVAL_PICK = (
     "⏱ Intervalini sozlash uchun guruhni tanlang.\n"
     "Umumiy intervalni o'zgartirish uchun «Posting oralig'i» menyusidan foydalaning."

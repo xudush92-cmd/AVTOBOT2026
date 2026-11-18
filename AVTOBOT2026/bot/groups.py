@@ -23,16 +23,21 @@ from telethon.errors import (
     InviteHashExpiredError,
     InviteHashInvalidError,
     PeerIdInvalidError,
-    UserNotParticipantError,
     UsernameInvalidError,
     UsernameNotOccupiedError,
+    UserNotParticipantError,
 )
 from telethon.sessions import StringSession
 from telethon.tl import types
 from telethon.tl.functions.messages import CheckChatInviteRequest
 
+from bot import discover_sessions
 from bot import keyboards as KB
 from bot import texts as T
+from bot.discover_sessions import (
+    GROUPS_PAGE_SIZE,
+    DiscoveredGroup,
+)
 from config.config import API_HASH, API_ID
 from core import database as db
 from core.logger import log
@@ -77,6 +82,34 @@ def _is_group_entity(entity) -> bool:
         entity,
         (types.Chat, types.Channel, types.ChatForbidden, types.ChannelForbidden),
     )
+
+
+def _dialog_title(entity, dialog=None) -> str:
+    """Dialog nomini oladi (guruh nomi)."""
+    for source in (entity, dialog):
+        if source is None:
+            continue
+        title = getattr(source, "title", None)
+        if title:
+            return str(title)
+        name = getattr(source, "name", None)
+        if name:
+            return str(name)
+    return ""
+
+
+def _dialog_members(entity) -> int:
+    """Guruh a'zolarining taxminiy soni."""
+    for attr in ("participants_count", "count"):
+        value = getattr(entity, attr, None)
+        if isinstance(value, int) and value > 0:
+            return value
+    return 0
+
+
+def _is_megagroup(entity) -> bool:
+    """Megaguruh (supergroup) yoki oddiy guruh emas."""
+    return bool(getattr(entity, "megagroup", False))
 
 
 def _message_sending_is_banned(rights) -> bool:
@@ -225,7 +258,7 @@ async def check_group_access(session_str: str, group: str) -> tuple[bool, str]:
         return False, "invalid"
     except FloodWaitError:
         return False, "flood"
-    except (asyncio.TimeoutError, TimeoutError):
+    except TimeoutError:
         return False, "timeout"
     except ValueError:
         return False, "invalid"
@@ -519,13 +552,16 @@ def _is_broadcast_channel(entity) -> bool:
 
 
 async def discover_groups(update: Update) -> None:
-    """🔍 Guruhlarni topish: akkaunt a'zo bo'lgan, yozish mumkin GURUHLARNI qo'shadi.
+    """🔍 Guruhlarni topish — ro'yxat ko'rsatadi, hech narsa avtomatik qo'shilmaydi.
 
     Qo'lda havola yuborish o'rniga bot ulangan Telegram sessiyasi orqali barcha
     dialoglarni ko'rib chiqadi va yozish huquqi bor guruh/megaguruplarni
-    avtomatik saqlaydi. Broadcast kanallar (obuna kanallari) siyosat bo'yicha
-    umuman qo'shilmaydi. Takrorlar va huquqsizlar o'tkazib yuboriladi; paket
-    chegarasi hurmat qilinadi.
+    **topadi**. Lekin ular **hech qachon avtomatik qo'shilmaydi** — topilgan
+    guruhlar ro'yxat qilib ko'rsatiladi va foydalanuvchi keraklilarini
+    qo'lda ✅ belgilaydi.
+
+    Broadcast kanallar (obuna kanallari) siyosat bo'yicha umuman ko'rsatilmaydi.
+    Takrorlar va huquqsizlar o'tkazib yuboriladi.
 
     Anti-spam himoyasi:
     - har guruh tekshiruvi orasida 1–3 soniyali tasodifiy pauza;
@@ -598,17 +634,19 @@ async def discover_groups(update: Update) -> None:
     _last_discover_ts[uid] = time.time()
     _discover_running.add(uid)
 
-    added: list[str] = []
+    found: list[DiscoveredGroup] = []
     duplicate_count = 0
     skipped = 0
     channels_skipped = 0
     errors: list[str] = []
-    limit_hit = False
     scanned = 0
 
     existing_keys = {
-        group_reference_key(value) for value in await db.get_chats(uid)
+        discover_sessions.build_key(value)
+        for value in await db.get_chats(uid)
     }
+    existing_keys.discard("")
+    seen_keys: set[str] = set()
 
     def _remember_flood(seconds: int) -> None:
         wait_s = max(1, int(seconds))
@@ -628,18 +666,24 @@ async def discover_groups(update: Update) -> None:
                 entity, (types.ChatForbidden, types.ChannelForbidden)
             ) or bool(getattr(entity, "left", False)):
                 continue
-            # Siyosat: broadcast kanallar (obuna kanallari) qo'shilmaydi —
-            # faqat oddiy guruhlar va megaguruplar qoladi.
+            # Siyosat: broadcast kanallar (obuna kanallari) ko'rsatilmaydi —
+            # faqat oddiy guruhlar va megaguruplar.
             if _is_broadcast_channel(entity):
                 channels_skipped += 1
                 continue
 
             scanned += 1
             reference = _dialog_reference(entity)
-            key = group_reference_key(reference)
+            key = discover_sessions.build_key(reference)
+            if not key:
+                skipped += 1
+                continue
             if key in existing_keys:
                 duplicate_count += 1
                 continue
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
 
             try:
                 permissions = await asyncio.wait_for(
@@ -653,7 +697,7 @@ async def discover_groups(update: Update) -> None:
                 PeerIdInvalidError,
             ):
                 skipped += 1
-            except (asyncio.TimeoutError, TimeoutError):
+            except TimeoutError:
                 skipped += 1
             except FloodWaitError as exc:
                 log(f"discover_groups FloodWait {uid}: {exc.seconds}s", "warning")
@@ -669,22 +713,21 @@ async def discover_groups(update: Update) -> None:
                 if rejection:
                     skipped += 1
                 else:
-                    saved, reason = await db.add_chat(uid, reference)
-                    if saved:
-                        added.append(reference)
-                        existing_keys.add(key)
-                    elif reason == "duplicate":
-                        duplicate_count += 1
-                    elif reason == "limit":
-                        limit_hit = True
-                        break
-                    else:
-                        errors.append(reference)
+                    # ⚠️ Hali saqlanmaydi — foydalanuvchi tanlagandan keyin.
+                    found.append(
+                        DiscoveredGroup(
+                            reference=reference,
+                            title=_dialog_title(entity, dialog),
+                            members=_dialog_members(entity),
+                            kind="megaguruh" if _is_megagroup(entity) else "guruh",
+                            key=key,
+                        )
+                    )
 
             if scanned % 20 == 0:
                 with contextlib.suppress(Exception):
                     await status_msg.edit_text(
-                        T.discover_progress(scanned, len(added))
+                        T.discover_progress(scanned, len(found))
                     )
 
             # Anti-spam: har bir tekshirilgan guruh orasida odamga o'xshash
@@ -701,29 +744,203 @@ async def discover_groups(update: Update) -> None:
         _discover_running.discard(uid)
         await pool.release(uid)
 
-    limits = await db.get_limits(uid)
-    max_groups = int(limits.get("max_groups") or 0)
-    report = T.discover_report(
-        added,
-        duplicate_count,
-        skipped,
-        errors,
-        channels_skipped=channels_skipped,
-        limit_hit=limit_hit,
-        limit=max_groups,
-    )
+    # Hech narsa qo'shilmedi — endi tanlov sessiyasini boshlaymiz.
+    selection = discover_sessions.start_session(uid, found)
+
+    if not found:
+        with contextlib.suppress(Exception):
+            await status_msg.edit_text(T.DISCOVER_PICK_EMPTY)
+        from bot.menu import worker_manager
+
+        running = bool(worker_manager and worker_manager.is_running(uid))
+        await update.message.reply_text(
+            "🏠 Asosiy menyu",
+            reply_markup=await KB.kb_main_for(uid, running=running),
+        )
+        log(
+            f"🔍 Guruh topish: {uid} — topilmadi "
+            f"(o'tkazildi {skipped}, kanal {channels_skipped}, xato {len(errors)})"
+        )
+        return
+
+    # Ro'yxatni bir xabarda ko'rsatamiz — «qidirilmoqda» xabari almashtiriladi.
+    rendered = False
     with contextlib.suppress(Exception):
-        await status_msg.edit_text(report)
-
-    from bot.menu import worker_manager
-
-    running = bool(worker_manager and worker_manager.is_running(uid))
-    await update.message.reply_text(
-        "🏠 Asosiy menyu",
-        reply_markup=await KB.kb_main_for(uid, running=running),
-    )
+        await status_msg.edit_text(
+            T.DISCOVER_PICK_HEADER.format(
+                total=len(selection.groups),
+                page=1,
+                pages=selection.page_count(GROUPS_PAGE_SIZE),
+                selected=len(selection.selected),
+            ),
+            parse_mode="HTML",
+            reply_markup=KB.kb_discover_groups(
+                selection.page_groups(0, GROUPS_PAGE_SIZE),
+                selection.selected,
+                page=0,
+                page_size=GROUPS_PAGE_SIZE,
+                total=len(selection.groups),
+                pages=selection.page_count(GROUPS_PAGE_SIZE),
+            ),
+        )
+        rendered = True
+    if not rendered:
+        await _render_discover_list(update, status_msg, uid, selection, page=0)
     log(
-        f"🔍 Guruh topish: {uid} → +{len(added)} "
-        f"(takror {duplicate_count}, o'tkazildi {skipped}, "
+        f"🔍 Guruh topish: {uid} — {len(found)} ta topildi, "
+        f"tanlov kutilmoqda (takror {duplicate_count}, o'tkazildi {skipped}, "
         f"kanal {channels_skipped}, xato {len(errors)})"
     )
+
+
+async def _render_discover_list(
+    update: Update,
+    message,
+    uid: int,
+    selection,
+    page: int = 0,
+    edit: bool = False,
+) -> None:
+    """Topilgan guruhlar ro'yxatini ko'rsatadi (sahifalash bilan).
+
+    ``edit=True`` — mavjud xabar tahrirlanadi (inline callback dan).
+    Aks holda yangi xabar yuboriladi.
+    """
+    pages = selection.page_count(GROUPS_PAGE_SIZE)
+    page = max(0, min(page, pages - 1))
+    groups = selection.page_groups(page, GROUPS_PAGE_SIZE)
+    header = T.DISCOVER_PICK_HEADER.format(
+        total=len(selection.groups),
+        page=page + 1,
+        pages=pages,
+        selected=len(selection.selected),
+    )
+    markup = KB.kb_discover_groups(
+        groups,
+        selection.selected,
+        page=page,
+        page_size=GROUPS_PAGE_SIZE,
+        total=len(selection.groups),
+        pages=pages,
+    )
+    if edit and message is not None:
+        with contextlib.suppress(Exception):
+            await message.edit_text(header, parse_mode="HTML", reply_markup=markup)
+            return
+    await update.message.reply_text(
+        header, parse_mode="HTML", reply_markup=markup
+    )
+
+
+async def handle_discover_callback(update: Update, uid: int, data: str) -> None:
+    """Guruh tanlash inline callback'lari."""
+    q = update.callback_query
+    parts = data.split(":")
+    action = parts[1] if len(parts) > 1 else ""
+
+    if action == "noop":
+        await q.answer()
+        return
+
+    selection = discover_sessions.get_session(uid)
+    if selection is None:
+        await q.answer(T.DISCOVER_PICK_EXPIRED, show_alert=True)
+        with contextlib.suppress(Exception):
+            await q.edit_message_text(
+                T.DISCOVER_PICK_EXPIRED,
+                reply_markup=await KB.kb_main_for(uid),
+            )
+        return
+
+    if action == "toggle":
+        try:
+            index = int(parts[2])
+        except (ValueError, IndexError):
+            return
+        if index < 0 or index >= len(selection.groups):
+            await q.answer("Bu guruh topilmadi", show_alert=True)
+            return
+        group = selection.groups[index]
+        now_selected = selection.toggle(group.key)
+        await q.answer(
+            f"{'✅ Tanlandi' if now_selected else '⬜ Bekor qilindi'}: "
+            f"{group.title or group.reference}",
+            show_alert=True,
+        )
+        await _render_discover_list(
+            update, q.message, uid, selection, page=index // GROUPS_PAGE_SIZE, edit=True
+        )
+        return
+
+    if action == "page":
+        try:
+            page = int(parts[2])
+        except (ValueError, IndexError):
+            return
+        await q.answer()
+        await _render_discover_list(
+            update, q.message, uid, selection, page=page, edit=True
+        )
+        return
+
+    if action == "cancel":
+        discover_sessions.clear_session(uid)
+        await q.answer("Bekor qilindi")
+        with contextlib.suppress(Exception):
+            await q.edit_message_text(
+                "🚫 Bekor qilindi. Hech qanday guruh qo'shilmadi.",
+                reply_markup=await KB.kb_main_for(uid),
+            )
+        return
+
+    if action == "apply":
+        selected = selection.selected_groups()
+        if not selected:
+            await q.answer(T.DISCOVER_APPLY_NONE, show_alert=True)
+            return
+
+        added: list[str] = []
+        duplicates = 0
+        skipped = 0
+        limit_hit = False
+        limits = await db.get_limits(uid)
+        max_groups = int(limits.get("max_groups") or 0)
+
+        for group in selected:
+            saved, reason = await db.add_chat(uid, group.reference)
+            if saved:
+                added.append(group.reference)
+            elif reason == "duplicate":
+                duplicates += 1
+            elif reason == "limit":
+                limit_hit = True
+                break
+            else:
+                skipped += 1
+
+        discover_sessions.clear_session(uid)
+
+        limits = await db.get_limits(uid)
+        max_groups = int(limits.get("max_groups") or 0)
+        report = T.DISCOVER_APPLY_HEADER.format(
+            added=len(added),
+            duplicates=duplicates,
+            skipped=skipped,
+        )
+        if limit_hit:
+            report += T.DISCOVER_LIMIT_HIT.format(limit=max_groups)
+        await q.answer(
+            f"✅ {len(added)} ta guruh qo'shildi",
+            show_alert=True,
+        )
+        with contextlib.suppress(Exception):
+            await q.edit_message_text(
+                report,
+                parse_mode="HTML",
+                reply_markup=await KB.kb_main_for(uid),
+            )
+        log(
+            f"✅ Tanlangan guruhlar qo'shildi: {uid} → +{len(added)} "
+            f"(takror {duplicates}, o'tkazildi {skipped})"
+        )
+        return

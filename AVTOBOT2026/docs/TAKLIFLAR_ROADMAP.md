@@ -541,8 +541,26 @@ qayta ko'rib chiqildi.
 
 ### 📊 Testlar
 
-**370 test** (`python -m unittest discover -s tests -t tests`) — hammasi o'tadi.
+**385 test** (`python -m unittest discover -s tests -t tests`) — hammasi o'tadi.
 Ruff — o'zgartirilgan modullarda yangi xato yo'q.
+
+### 🔍 Guruhlarni topish — qo'lda belgilash (2026-11-14)
+
+Foydalanuvchi shikoyat qildi: *«🔍 Guruhlarni topish bosilganda barcha
+guruhlar yig'ilib, xabar yuborish boshlanadi — keraksiz guruhlar ham
+qo'shiladi»*.
+
+**O'zgarish:**
+
+| Oldin | Endi |
+| ----- | ---- |
+| Bitta tugma → barcha guruhlar avtomatik qo'shilib, **darhol e'lon yuborish** | Tugma → guruhlar **topiladi va ro'yxat ko'rsatiladi** → ✅ belgilash → **faqat belgilanganlar** qo'shiladi |
+
+- Sahifalash: **15 ta guruh / sahifa**
+- Tanlov sessiyasi: **30 daqiqa** (`bot/discover_sessions.py`)
+- Inline callback'lar: `disc:toggle`, `disc:page`, `disc:apply`, `disc:cancel`
+- **Baza sxemasi o'zgarmadi** — yangi jadval qo'shilmadi
+- Belgilanmagan guruhlar **hech qachon** botga qo'shilmaydi
 
 ### ⏳ Hali deploy qilinmagan
 

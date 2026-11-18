@@ -33,7 +33,7 @@ Foydalanuvchi tugmalari ko'pligidan chalg'imasligi uchun menyu **yassi**
 
 | Eski holat | Yangi holat |
 | ---------- | ----------- |
-| ➕ Guruh qo'shish (qo'lda havola yuborish) | **🔍 Guruhlarni topish** — bot ulangan akkauntning barcha dialoglarini ko'rib, yozish huquqi bor guruh/kanallarni avtomatik qo'shadi |
+| ➕ Guruh qo'shish (qo'lda havola yuborish) | **🔍 Guruhlarni topish** — bot ulangan akkauntning barcha dialoglarini ko'rib, yozish huquqi bor guruhlarni topadi va **ro'yxat qilib ko'rsatadi**; foydalanuvchi ✅ belgilaydi, faqat belgilanganlar qo'shiladi |
 | 💬 Guruhlar ichki menyusi | Olib tashlandi — ➖ Guruh o'chirish to'g'ridan-to'g'ri ro'yxatni inline tugma qilib ko'rsatadi |
 | ⏱ Guruh intervali (har guruhga alohida) | Foydalanuvchidan olib tashlandi — faqat **admin** o'z panelidan (`uc:gint`) sozlaydi |
 | 🔎 Guruhni tekshirish | Olib tashlandi — topish paytida yozish huquqi avtomatik tekshiriladi |
@@ -81,17 +81,45 @@ tugagan | ⏳ tasdiq kutilmoqda | 🚫 bloklangan.
 
 ## 🔍 Guruhlarni topish texnik xususiyati
 
+> ⚠️ **Avtomatik qo'shish yo'q.** Skaner faqat **topadi** — hech qanday
+> guruh botga avtomatik qo'shilmaydi. Ro'yxat chiqadi, foydalanuvchi
+> **✅ belgilaydi**, faqat **belgilanganlar** qo'shiladi.
+
+### Oqim
+
+```
+🔍 Guruhlarni topish
+   ↓
+Telethon iter_dialogs() — barcha dialoglar ko'rib chiqiladi
+   ↓
+Faqat yozish huquqi bor guruh/megaguruplar topiladi
+   ↓
+📋 Guruhlar ro'yxati (sahifalash, 15 ta/sahifa)
+   ├── ⬜ Guruh A  →  ✅ belgilash
+   ├── ⬜ Guruh B
+   └── ⬜ Guruh C
+   ↓
+«✅ Tanlanganlarni qo'shish (N)»  →  faqat belgilanganlar qo'shiladi
+```
+
+### Texnik jihatlar
+
 - `bot/groups.py::discover_groups` — Telethon `iter_dialogs()` orqali ishlaydi.
+- Topilgan guruhlar **vaqtinchalik sessiyada** saqlanadi
+  (`bot/discover_sessions.py`) — bot DB'siga **hali yozilmaydi**.
+- `bot/discover_sessions.py::DiscoverSession` — tanlov, sahifalash va muddat
+  (30 daqiqa, `DISCOVER_SELECTION_TTL_S`) boshqaruvi.
+- Inline tugmalar: `disc:toggle:<indeks>`, `disc:page:<sahifa>`,
+  `disc:apply`, `disc:cancel`. `callback_data` hajti cheklanganligi uchun
+  guruh o'rniga **sessiya indeksi** ishlatiladi.
 - Faqat akkaunt a'zo bo'lgan va **yozish huquqi** bor oddiy guruhlar va
-  megaguruplar qo'shiladi (`_posting_rejection` tekshiruvi).
-- **Broadcast kanallar siyosat bo'yicha umuman qo'shilmaydi** — akkaunt kanal
-  egasi yoki admin bo'lsa ham (`_is_broadcast_channel` filtri); hisobotda
-  alohida «kanallar qo'shilmadi» qatorida sanaladi.
+  megaguruplar topiladi (`_posting_rejection` tekshiruvi).
+- **Broadcast kanallar siyosat bo'yicha umuman ko'rsatilmaydi** — akkaunt kanal
+  egasi yoki admin bo'lsa ham (`_is_broadcast_channel` filtri).
 - Username bor guruhlar `@username`, yopiq guruhlar marked ID (`-100…`, `-…`)
   bilan saqlanadi — posting vaqtida mavjud `resolve_group_entity` ishlaydi.
 - Takror guruhlar, huquqsiz/chiqib ketilgan dialoglar o'tkazib yuboriladi.
-- Paket limiti (`max_groups`) hurmat qilinadi; bitta skanerlash 500 dialog
-  bilan chegaralangan, har 20 dialogda progress ko'rsatiladi.
+- Paket limiti (`max_groups`) **qo'shish bosqichida** tekshiriladi.
 - Foydalanuvchi keraksiz guruhlarni ➖ Guruh o'chirish orqali tozalaydi.
 
 ### 🛡 Anti-spam himoyasi (eng muhim qism)
@@ -118,5 +146,5 @@ va admin panelini cheklamaydigan yengil yondashuv.
   xabarlarida qoladi, lekin yangi menyuda ko'rinmaydi va yangi foydalanuvchi
   ularga duch kelmaydi.
 - Admin paneli va uning guruh/post boshqaruvi **o'zgarishsiz** qoldi.
-- Testlar: `python -m unittest discover -s tests -t tests` — **370 test**,
+- Testlar: `python -m unittest discover -s tests -t tests` — **385 test**,
   barchasi yashil.

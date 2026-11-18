@@ -70,10 +70,7 @@ def kb_main(
         [KeyboardButton(T.BTN_TIMER)],
     ]
     # Jamoa adminiga — o'z jamoasini boshqarish tugmasi.
-    if team_admin:
-        rows.append([KeyboardButton(T.BTN_TEAM_MENU)])
-    # Oddiy jamoa a'zosiga — o'z jamoasi haqida ma'lumot va undan chiqish.
-    elif team_member:
+    if team_admin or team_member:
         rows.append([KeyboardButton(T.BTN_TEAM_MENU)])
     # Jamoasiz foydalanuvchi — jamoani qo'lda tanlash mumkin.
     else:
@@ -1617,3 +1614,64 @@ def kb_team_admin_register() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [[InlineKeyboardButton("❌ Bekor qilish", callback_data="team:back")]]
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# GURUHLARNI TOPISH — QO'LDA BELGILASH
+# ─────────────────────────────────────────────────────────────────────────
+def kb_discover_groups(
+    groups: list,
+    selected: set[str],
+    page: int = 0,
+    page_size: int = 15,
+    total: int = 0,
+    pages: int = 1,
+) -> InlineKeyboardMarkup:
+    """Topilgan guruhlar ro'yxati — ✅ belgilash va sahifalash.
+
+    ``callback_data`` hajmi cheklangan (64 bayt) — shuning uchun guruh
+    o'rniga **sessiya indeksi** ishlatiladi.
+    """
+    rows: list[list[InlineKeyboardButton]] = []
+    offset = page * page_size
+    for index, group in enumerate(groups):
+        abs_index = offset + index
+        key = getattr(group, "key", "") or ""
+        is_on = key in selected
+        icon = "✅" if is_on else "⬜"
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    f"{icon} {group.display()}",
+                    callback_data=f"disc:toggle:{abs_index}",
+                )
+            ]
+        )
+
+    # Navigatsiya
+    nav: list[InlineKeyboardButton] = []
+    if page > 0:
+        nav.append(InlineKeyboardButton("⬅️", callback_data=f"disc:page:{page - 1}"))
+    nav.append(
+        InlineKeyboardButton(f"📄 {page + 1}/{pages}", callback_data="disc:noop")
+    )
+    if page + 1 < pages:
+        nav.append(InlineKeyboardButton("➡️", callback_data=f"disc:page:{page + 1}"))
+    if nav:
+        rows.append(nav)
+
+    # Har sahifada «tanlanganlarni ko'rish» — tanlangan boshqa sahifada bo'lsa.
+    count = len(selected)
+    if count:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    f"✅ Tanlanganlarni qo'shish ({count})",
+                    callback_data="disc:apply",
+                )
+            ]
+        )
+    rows.append(
+        [InlineKeyboardButton("🚫 Bekor qilish", callback_data="disc:cancel")]
+    )
+    return InlineKeyboardMarkup(rows)

@@ -104,6 +104,7 @@ async def _handle_callback_locked(update: Update, uid: int) -> None:
             "lp:",
             "gchk:",
             "ref:",
+            "disc:",
         )
         if uid != SUPER_ADMIN and data.startswith(ordinary_prefixes):
             # Admin lifecycle amali central tekshiruvdan keyin lock kutayotgan
@@ -179,6 +180,11 @@ async def _handle_callback_locked(update: Update, uid: int) -> None:
 
         if data.startswith("app:"):
             await handle_admin_approve(update, uid, data)
+            return
+        if data.startswith("disc:"):
+            from bot import groups as G
+
+            await G.handle_discover_callback(update, uid, data)
             return
         if data.startswith("team:"):
             from bot import teams as Tm
