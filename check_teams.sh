@@ -38,12 +38,12 @@ echo "════════ SUPER ADMIN BOYLIK RAMKASI ═══════�
 import asyncio, sys
 sys.path.insert(0, "/root/avtobot_v2/AVTOBOT2026")
 from core import database as db
-from config.config import SUPER_ADMIN_ID
+from config.config import SUPER_ADMIN
 
 async def main():
     await db.init_db()
-    print(f"SUPER_ADMIN_ID = {SUPER_ADMIN_ID}")
-    u = await db.get_user(SUPER_ADMIN_ID)
+    print(f"SUPER_ADMIN = {SUPER_ADMIN}")
+    u = await db.get_user(SUPER_ADMIN)
     if u:
         print("Super admin bazada:", {k: u.get(k) for k in
               ("uid", "name", "is_admin", "is_team_admin", "team_id", "session")})
