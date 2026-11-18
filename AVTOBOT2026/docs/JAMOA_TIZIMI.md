@@ -14,6 +14,15 @@ aralashmaydi.
 | **Jamoa admini** | `is_team_admin = 1` bo'lgan user | Faqat **o'z jamoasini** boshqaradi |
 | **Foydalanuvchi** | Oddiy user | O'z botidan foydalanadi |
 
+### Tasdiqlash kimga boradi?
+
+| Foydalanuvchi | Tasdiqlaydi | Super admin ro'yxatida |
+| -------------- | ----------- | ---------------------- |
+| **Jamoali** (jamoa tanlangan) | **Jamoa admini** | ❌ chiqmaydi |
+| **Jamoasiz** | **Super Admin** | ✅ chiqadi |
+
+Jamoali arizalar super admin'ga yuborilmaydi, avto-tasdiqdan ham chiqariladi.
+
 ---
 
 ## 2. Rol taqsimoti
@@ -79,6 +88,7 @@ Har bir jamoa admini **faqat o'z a'zolarini** ko'radi va boshqaradi:
 ```
 
 **Qoidalar:**
+- Jamoali foydalanuvchi **faqat jamoa admini** tasdiqlaydi (super admin emas)
 - Jamoa tanlash **ixtiyoriy** — «🙋 Jamoasiz davom etish» tugmasi bilan
   jamoasiz ham ro'yxatdan o'tib, to'liq ishlash mumkin
 - Limit to'lgan jamoani tanlab bo'lmaydi ("Jamoa to'ldi")

@@ -1522,6 +1522,17 @@ async def _action_approve_locked(update: Update, admin_uid: int, target: int) ->
         )
         return
 
+    # Jamoali foydalanuvchini tasdiqlash — jamoa adminining vazifasi.
+    # Super admin jamoalarni tasdiqlamaydi.
+    owner_uid = int(user.get("owner_admin_uid") or 0)
+    if owner_uid and owner_uid != SUPER_ADMIN:
+        await q.edit_message_text(
+            "ℹ️ Bu foydalanuvchi jamoaga tegishli — uni tasdiqlash "
+            "jamoa adminining vazifasi.",
+            reply_markup=await user_card_markup(target),
+        )
+        return
+
     pending = await db.get_pending(target)
     if pending:
         # Pending sessiyaning UID bindingiga ishonmaymiz: avval Telegramning

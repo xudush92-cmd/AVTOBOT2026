@@ -1345,11 +1345,37 @@ async def _finalize_login_locked(uid: int) -> None:
 # ADMINGA XABAR
 # ─────────────────────────────────────────────────────────────────────────
 async def notify_super_for_approval(uid: int) -> None:
-    """Super adminga yangi foydalanuvchi haqida xabar."""
+    """Yangi foydalanuvchi haqida tasdiqlovchiga xabar beradi.
+
+    - Jamoali foydalanuvchi → xabar **jamoa adminiga** boradi
+      (super admin jamoalarni tasdiqlamaydi).
+    - Jamoasiz foydalanuvchi → xabar **super admin** ga boradi.
+    """
     info = await db.get_user_info(uid)
     name = info.get("name") or "Noma`lum"
     username = info.get("username") or ""
     phone = await db.get_phone(uid) or "—"
+
+    user = await db.get_user(uid) or {}
+    owner_uid = int(user.get("owner_admin_uid") or 0)
+
+    if owner_uid and owner_uid != SUPER_ADMIN:
+        # Jamoali foydalanuvchi — tasdiqlash jamoa adminining vazifasi.
+        team = await db.get_team(int(user.get("team_id") or 0)) if user.get("team_id") else None
+        team_name = (team or {}).get("name") or "Jamoangiz"
+        text = (
+            "🔔 YANGI ARIZA (JAMOA)\n\n"
+            f"👤 {name}\n"
+            f"🆔 {uid}\n"
+            f"📱 {phone}\n"
+            f"📋 Jamoa: {team_name}\n\n"
+            "Tasdiqlash va muddat berish uchun «👥 Jamoam» bo'limidan "
+            "foydalaning."
+        )
+        with contextlib.suppress(Exception):
+            await application.bot.send_message(owner_uid, text)
+        log(f"⏳ Jamoa arizasi yuborildi: {uid} → jamoa admin {owner_uid}")
+        return
 
     text = T.new_user_notification(name, phone, username, uid)
     kb = KB.kb_admin_approve(uid)

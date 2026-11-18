@@ -1975,10 +1975,14 @@ async def get_auto_approvable_candidates(limit: int = 5) -> list[dict]:
 
     Avto-tasdiq navbati shu ro'yxatdan foydalanadi — pending sessiyasiz
     (legacy) arizalar admin tasdig'iga muhtoj bo'lib qoladi.
+
+    Jamoali foydalanuvchilar avto-tasdiqdan chiqariladi — ularni jamoa
+    admini tasdiqlaydi.
     """
     async with _conn().execute(
         "SELECT * FROM users WHERE awaiting_approval = 1 AND pending_session != '' "
         "AND is_admin = 0 AND is_blocked = 0 AND uid != ? "
+        "AND (owner_admin_uid IS NULL OR owner_admin_uid = 0) "
         "ORDER BY created_at ASC LIMIT ?",
         (SUPER_ADMIN, max(1, int(limit))),
     ) as cur:
@@ -2014,8 +2018,14 @@ async def count_users_named(name: str) -> int:
 
 
 async def get_pending_users() -> list[dict]:
+    """Super admin uchun kutayotgan arizalar — faqat jamoasiz foydalanuvchilar.
+
+    Jamoali foydalanuvchilarni jamoa admini tasdiqlaydi, shuning uchun
+    ular super admin ro'yxatida chiqmaydi.
+    """
     async with _conn().execute(
         "SELECT * FROM users WHERE uid != ? AND awaiting_approval = 1 "
+        "AND (owner_admin_uid IS NULL OR owner_admin_uid = 0) "
         "ORDER BY created_at ASC",
         (SUPER_ADMIN,),
     ) as cur:

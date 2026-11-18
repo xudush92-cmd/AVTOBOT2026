@@ -1340,14 +1340,23 @@ def kb_team_members(members: list[dict], page: int = 0, page_size: int = 10) -> 
         for user in window:
             uid = int(user.get("uid") or 0)
             name = (user.get("name") or str(uid))[:28]
-            rows.append(
-                [
-                    InlineKeyboardButton(
-                        f"👤 {name}",
-                        callback_data=f"tadm:member:{uid}",
-                    )
-                ]
+            awaiting = bool(user.get("awaiting_approval"))
+            button = InlineKeyboardButton(
+                f"{'⏳' if awaiting else '👤'} {name}",
+                callback_data=f"tadm:member:{uid}",
             )
+            if awaiting:
+                # Tasdiq kutilayotgan a'zo — to'g'ridan-to'g'ri tasdiqlash.
+                rows.append(
+                    [
+                        button,
+                        InlineKeyboardButton(
+                            "✅ Tasdiqlash", callback_data=f"tadm:approve:{uid}"
+                        ),
+                    ]
+                )
+            else:
+                rows.append([button])
         nav: list[InlineKeyboardButton] = []
         if page > 0:
             nav.append(

@@ -563,3 +563,146 @@ class NumberingConsistencyTests(unittest.IsolatedAsyncioTestCase):
         kb = KB.kb_groups_delete(groups)
         callbacks = [b.callback_data for row in kb.inline_keyboard for b in row]
         self.assertIn("delg:id:77:0", callbacks)
+
+
+class TeamApprovalSeparationTests(unittest.IsolatedAsyncioTestCase):
+    """Jamoali foydalanuvchilarni faqat jamoa admini tasdiqlaydi."""
+
+    async def asyncSetUp(self) -> None:
+        await db.close_db()
+        self.temp = tempfile.TemporaryDirectory()
+        self.old_db_path = db.DB_PATH
+        db.DB_PATH = Path(self.temp.name) / "test.db"
+        session_crypto._fernet = __import__(
+            "cryptography.fernet", fromlist=["Fernet"]
+        ).Fernet(
+            __import__("cryptography.fernet", fromlist=["Fernet"]).Fernet.generate_key()
+        )
+        await db.init_db()
+
+    async def asyncTearDown(self) -> None:
+        await db.close_db()
+        db.DB_PATH = self.old_db_path
+        session_crypto._fernet = None
+        self.temp.cleanup()
+
+    async def test_pending_list_excludes_team_users(self) -> None:
+        """Super admin 'Tasdiq kutilayotganlar' ro'yxatida jamoali userlar yo'q."""
+        await db.upsert_user(USER_1, name="Jamoali", awaiting_approval=1, owner_admin_uid=ADMIN_A)
+        await db.upsert_user(USER_2, name="Jamoasiz", awaiting_approval=1)
+
+        pending = await db.get_pending_users()
+        uids = [int(p["uid"]) for p in pending]
+        self.assertNotIn(USER_1, uids, "jamoali user super admin ro'yxatida bo'lmasligi kerak")
+        self.assertIn(USER_2, uids, "jamoasiz user super admin ro'yxatida bo'lishi kerak")
+
+    async def test_auto_approve_excludes_team_users(self) -> None:
+        """Avto-tasdiq jamoali userlarni tasdiqlamaydi."""
+        await db.upsert_user(
+            USER_1,
+            name="Jamoali",
+            awaiting_approval=1,
+            owner_admin_uid=ADMIN_A,
+            pending_session="enc",
+        )
+        await db.upsert_user(
+            USER_2, name="Jamoasiz", awaiting_approval=1, pending_session="enc"
+        )
+
+        candidates = await db.get_auto_approvable_candidates()
+        uids = [int(c["uid"]) for c in candidates]
+        self.assertNotIn(USER_1, uids)
+        self.assertIn(USER_2, uids)
+
+    async def test_team_member_has_approve_button(self) -> None:
+        """Jamoa admini a'zolar ro'yxatida tasdiqlash tugmasini ko'radi."""
+        members = [
+            {"uid": USER_1, "name": "Kutilmoqda", "awaiting_approval": 1},
+            {"uid": USER_2, "name": "Tasdiqlangan", "awaiting_approval": 0},
+        ]
+        kb = KB.kb_team_members(members)
+        callbacks = {
+            b.callback_data for row in kb.inline_keyboard for b in row if b.callback_data
+        }
+        self.assertIn(f"tadm:approve:{USER_1}", callbacks)
+        self.assertNotIn(f"tadm:approve:{USER_2}", callbacks)
+
+    async def test_team_admin_approves_own_member(self) -> None:
+        """Jamoa admini o'z a'zosini tasdiqlaydi."""
+        team = await db.create_team("Jamoa", ADMIN_A, max_users=5)
+        await db.upsert_user(
+            ADMIN_A, name="Admin", is_team_admin=1, team_id=int(team["id"])
+        )
+        await db.upsert_user(
+            USER_1,
+            name="A'zo",
+            team_id=int(team["id"]),
+            owner_admin_uid=ADMIN_A,
+            awaiting_approval=1,
+        )
+
+        q = SimpleNamespace(
+            data=f"tadm:approve:{USER_1}",
+            answer=AsyncMock(),
+            edit_message_text=AsyncMock(),
+            message=SimpleNamespace(reply_text=AsyncMock()),
+        )
+        update = SimpleNamespace(
+            callback_query=q,
+            effective_user=SimpleNamespace(id=ADMIN_A),
+            message=SimpleNamespace(reply_text=AsyncMock()),
+        )
+        with patch.object(Tm, "application", None):
+            await Tm.handle_team_admin_callback(update, ADMIN_A, f"tadm:approve:{USER_1}")
+
+        member = await db.get_user(USER_1)
+        self.assertTrue(member["is_admin"], "jamoa admini a'zosini tasdiqlashi kerak")
+        self.assertIsNotNone(member["tariff_expires_at"])
+
+    async def test_notify_goes_to_team_admin(self) -> None:
+        """Ariza xabari jamoa adminiga boradi, super admin ga emas."""
+        from bot import login as Login
+
+        team = await db.create_team("Jamoa", ADMIN_A, max_users=5)
+        await db.upsert_user(
+            USER_1,
+            name="A'zo",
+            team_id=int(team["id"]),
+            owner_admin_uid=ADMIN_A,
+            awaiting_approval=1,
+        )
+
+        sent = []
+
+        async def _send(chat_id, text, **kwargs):
+            sent.append((int(chat_id), text))
+
+        app = SimpleNamespace(bot=SimpleNamespace(send_message=_send))
+        with patch.object(Login, "application", app):
+            await Login.notify_super_for_approval(USER_1)
+
+        targets = [chat_id for chat_id, _ in sent]
+        self.assertIn(ADMIN_A, targets, "xabar jamoa adminiga borishi kerak")
+        self.assertNotIn(
+            SUPER_ADMIN, targets, "super admin jamoali arizani olmasligi kerak"
+        )
+        self.assertIn("JAMOA", sent[0][1])
+
+    async def test_notify_goes_to_super_admin_for_teamless(self) -> None:
+        """Jamoasiz ariza super admin ga boradi."""
+        from bot import login as Login
+
+        await db.upsert_user(USER_2, name="Jamoasiz", awaiting_approval=1)
+
+        sent = []
+
+        async def _send(chat_id, text, **kwargs):
+            sent.append((int(chat_id), text))
+
+        app = SimpleNamespace(bot=SimpleNamespace(send_message=_send))
+        with patch.object(Login, "application", app):
+            await Login.notify_super_for_approval(USER_2)
+
+        targets = [chat_id for chat_id, _ in sent]
+        self.assertIn(SUPER_ADMIN, targets)
+        self.assertNotIn(ADMIN_A, targets)
