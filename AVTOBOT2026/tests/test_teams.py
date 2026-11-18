@@ -1750,6 +1750,23 @@ class MainKeyboardRoleTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(T.BTN_TEAM_ADMIN, buttons)
         self.assertIn(T.BTN_LOGIN, buttons)
 
+    async def test_legacy_team_pick_text_still_works(self) -> None:
+        """Eski klaviaturadagi «🎯 Jamoa tanlash» matni ham ishlaydi.
+
+        Avval `BTN_TEAM_PICK` ikki marta belgilangan edi va ikkinchi
+        qiymati ("🎯 Jamoa tanlash") yashirib qolgan edi. Eski klaviatura
+        foydalanuvchilari uchun bu matn qabul qilinishi kerak.
+        """
+        from bot.menu import route_menu_button
+
+        await db.upsert_user(USER_1, name="Oddiy")
+        update = SimpleNamespace(
+            effective_user=SimpleNamespace(id=USER_1),
+            message=SimpleNamespace(reply_text=AsyncMock()),
+        )
+        handled = await route_menu_button(update, "🎯 Jamoa tanlash")
+        self.assertTrue(handled, "eski tugma matni ham ishlashi kerak")
+
     async def test_admin_button_starts_team_creation(self) -> None:
         """«👑 Admin bo'lish» bosilganda jamoa yaratish oqimi boshlanadi."""
         from bot.menu import route_menu_button
