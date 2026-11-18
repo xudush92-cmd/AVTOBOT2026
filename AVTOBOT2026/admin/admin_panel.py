@@ -29,7 +29,7 @@ from config.config import (
 from core import database as db
 from core.logger import log
 from core.update_locks import user_update_lock
-from core.utils import calc_expires, format_expires
+from core.utils import calc_expires, format_expires, reply_text_safe
 
 # Jamoa admini sig'imi uchun taklif qilinadigan variantlar.
 TEAM_LIMIT_OPTIONS = [2, 5, 10, 20, 50, 100]
@@ -567,7 +567,8 @@ async def begin_add_team_admin(update: Update) -> None:
         "step": "super_add_team_admin",
         "ts": time.time(),
     }
-    await update.message.reply_text(
+    await reply_text_safe(
+        update,
         T.ADMIN_ADD_ADMIN_ASK,
         reply_markup=KB.kb_input_cancel(),
     )

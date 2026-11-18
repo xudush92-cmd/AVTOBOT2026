@@ -31,7 +31,7 @@ from config.config import (
 )
 from core import database as db
 from core.logger import log
-from core.utils import format_expires
+from core.utils import format_expires, reply_text_safe
 
 application = None
 
@@ -218,7 +218,8 @@ async def begin_add_friend(update: Update, admin_uid: int) -> None:
 
     user = await db.get_user(admin_uid) or {}
     if not await _is_team_admin(user):
-        await update.message.reply_text(
+        await reply_text_safe(
+            update,
             "❌ Bu oynadan foydalanish huquqingiz yo'q.",
             reply_markup=await KB.kb_main_for(admin_uid),
         )
@@ -226,14 +227,16 @@ async def begin_add_friend(update: Update, admin_uid: int) -> None:
 
     team = await primary_team(admin_uid)
     if not team:
-        await update.message.reply_text(
+        await reply_text_safe(
+            update,
             T.TEAM_ADMIN_NO_TEAM,
             reply_markup=await KB.kb_main_for(admin_uid),
         )
         return
 
     user_states[admin_uid] = {"step": "team_add_friend", "ts": time.time()}
-    await update.message.reply_text(
+    await reply_text_safe(
+        update,
         T.TEAM_ADD_FRIEND_ASK,
         reply_markup=KB.kb_input_cancel(),
     )
@@ -331,7 +334,7 @@ async def show_team_invites(
             with contextlib.suppress(Exception):
                 await q.edit_message_text(text, reply_markup=markup)
                 return
-    await update.message.reply_text(text, reply_markup=markup)
+    await reply_text_safe(update, text, reply_markup=markup)
 
 
 async def begin_team_admin_register(update: Update, uid: int) -> None:
@@ -500,7 +503,8 @@ async def show_team_admin_panel(update: Update, admin_uid: int) -> None:
     """Jamoa admini panelining asosiy oynasi."""
     team = await primary_team(admin_uid)
     if not team:
-        await update.message.reply_text(
+        await reply_text_safe(
+            update,
             T.TEAM_ADMIN_NO_TEAM,
             reply_markup=await KB.kb_main_for(admin_uid),
         )
@@ -511,7 +515,8 @@ async def show_team_admin_panel(update: Update, admin_uid: int) -> None:
 
     # Muddati tugagan jamoa admini — ogohlantiriladi.
     if await db.team_admin_expired(admin_uid):
-        await update.message.reply_text(
+        await reply_text_safe(
+            update,
             T.TEAM_ADMIN_EXPIRED.format(
                 expires=_expiry_text(expires.get("admin_expires_at"))
             ),
@@ -519,7 +524,8 @@ async def show_team_admin_panel(update: Update, admin_uid: int) -> None:
         )
         return
 
-    await update.message.reply_text(
+    await reply_text_safe(
+        update,
         T.team_admin_menu_text(
             team,
             members=members,
