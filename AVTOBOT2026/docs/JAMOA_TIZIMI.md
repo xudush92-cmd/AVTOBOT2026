@@ -124,11 +124,40 @@ yakunlanadi. Bu **barcha adminlar uchun** bir xil:
 
 | Admin | Tugmalar | Yakun |
 | ----- | -------- | ----- |
-| **Super Admin** | `1 kun` / `7 kun` / `30 kun` / `90 kun` | `app:term:<uid>:<kun>` |
-| **Jamoa admini** | `1 kun` / `7 kun` / `30 kun` / `90 kun` | `tadm:approveterm:<uid>:<kun>` |
+| **Super Admin** | `1 / 7 / 30 / 90 / 180 / 365 kun` | `app:term:<uid>:<kun>` |
+| **Jamoa admini** | `1 / 7 / 30 / 60 kun` | `tadm:approveterm:<uid>:<kun>` |
 
 Super adminning "Foydalanuvchi qo'shish" oqimi esa alohida — u tasdiqlash
 emas, to'g'ridan-to'g'ri qo'shish.
+
+### ⛔️ Muddat chegarasi (anti-fraud)
+
+Jamoa admini (2-daraja) — "ikkinchi darajali admin" — foydalanuvchiga
+istalgancha uzun muddat bera olmasligi kerak. Aks holda u foydalanuvchiga
+ko'p muddat berib, uddadan olib, botni tark etishi mumkin (firibgar).
+
+Shuning uchun **har bir admin darajasida muddat chegarasi** belgilanadi:
+
+| Kim | Maksimal muddat | Konfiguratsiya |
+| --- | --------------- | ------------- |
+| 🛡 **Super Admin** | Cheksiz (365+ kun) | `SUPER_ADMIN_MAX_DAYS=0` |
+| 👑 **Jamoa admini (2-daraja)** | **60 kun** | `TEAM_MEMBER_MAX_DAYS=60` |
+
+Qoidalar:
+
+1. **Chegara — beriladigan bir marta muddatga qo'yiladi.** Jamoa admini
+   a'zosiga 365 kun so'rashi mumkin, lekin tizim uni avtomatik **60 kunga**
+   qisqartiradi. Muddat ko'rsatilganida ham chegara oshgan variantlar
+   tugmalarda umuman chiqmaydi.
+2. **Muddat berish** (`tadm:setterm`) ham chegaraga bo'ysunadi — chegara
+   oshsa, rad etiladi va super admin bilan bog'lanishni aytiladi.
+3. **Super admin chegarasiz** — jamoa adminlari uchun muddat uzaytirish,
+   sig'im o'zgartirish va jamoani boshqarish uning qo'lida.
+4. Chegaralar `.env` orqali o'zgartiriladi (serverda to'g'ridan-to'g'ri,
+   kod o'zgartirishsiz).
+
+> **Chegara faqat dastlabki berilgan muddatga tegadi.** Super admin
+> qaroriga ko'ra, chegara keyin bo'sh qoldirilishi mumkin.
 
 ---
 

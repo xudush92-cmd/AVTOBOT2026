@@ -22,7 +22,6 @@ from bot import keyboards as KB
 from bot import texts as T
 from config.config import (
     BOT_USERNAME,
-    DEFAULT_DURATION_DAYS,
     DURATION_OPTIONS,
     SUPER_ADMIN,
     TEAM_ADMIN_DEFAULT_DAYS,
@@ -313,6 +312,9 @@ async def handle_team_admin_name(update: Update, uid: int, text: str) -> None:
     user_states.pop(uid, None)
     log(f"👑 Yangi jamoa admini: {uid} — {name} (max {size})")
 
+    # Super admin'ni xabardor qilamiz — muddat va sig'imni nazorat qilishi uchun.
+    await notify_super_team_admin(uid, name, size)
+
     await update.message.reply_text(
         T.TEAM_ADMIN_REGISTERED.format(
             name=name,
@@ -322,6 +324,35 @@ async def handle_team_admin_name(update: Update, uid: int, text: str) -> None:
         ),
         reply_markup=KB.kb_main(),
     )
+
+
+async def notify_super_team_admin(uid: int, name: str, size: int) -> None:
+    """Super admin'ga yangi jamoa admini haqida xabar beradi.
+
+    Xabar muvaffaqiyatli bo'lmasa ham oqim buzilmaydi — xabarlar
+    ehtimoliy yetkazib borilmagan deb hisoblanadi.
+    """
+    import contextlib
+
+    try:
+        from config.config import SUPER_ADMIN
+
+        user = await db.get_user(uid) or {}
+        display = user.get("name") or f"@{user.get('username') or uid}"
+        text = (
+            "👑 <b>Yangi jamoa admini ro'yxatdan o'tdi</b>\n\n"
+            f"👤 Admin: {display}\n"
+            f"📋 Jamoa: {name}\n"
+            f"👥 Sig'im: {size} ta foydalanuvchi\n\n"
+            "Muddatni va sig'imni tasdiqlash uchun: "
+            "«Jamoa adminlari» bo'limiga o'ting."
+        )
+        with contextlib.suppress(Exception):
+            await application.bot.send_message(
+                SUPER_ADMIN, text, parse_mode="HTML"
+            )
+    except Exception as exc:  # pragma: no cover - xabar yetkazish ixtisosiy
+        log(f"⚠️ Super admin'ga jamoa admini xabari yuborilmadi: {exc}", "warning")
 
 
 def _admin_expiry(days: int) -> str:
@@ -437,12 +468,21 @@ async def handle_team_admin_callback(update: Update, uid: int, data: str) -> Non
         if not member or int(member.get("owner_admin_uid") or 0) != uid:
             await q.answer("Bu foydalanuvchi sizning jamoangizda emas", show_alert=True)
             return
+
+        # Chegara: faqat chegaragacha muddat ko'rsatiladi.
+        from core.duration_policy import cap_note, options_within_cap
+
+        options = options_within_cap(DURATION_OPTIONS, is_super_admin=False)
+        note = cap_note(is_super_admin=False)
+        text = T.TEAM_ADMIN_GIVE_TERM.format(
+            name=member.get("name") or "Noma'lum",
+            uid=target,
+        )
+        if note:
+            text += f"\n\n{note}"
         await q.edit_message_text(
-            T.TEAM_ADMIN_GIVE_TERM.format(
-                name=member.get("name") or "Noma'lum",
-                uid=target,
-            ),
-            reply_markup=KB.kb_team_term_options(target, DURATION_OPTIONS),
+            text,
+            reply_markup=KB.kb_team_term_options(target, options),
         )
         return
 
@@ -456,6 +496,20 @@ async def handle_team_admin_callback(update: Update, uid: int, data: str) -> Non
         if not member or int(member.get("owner_admin_uid") or 0) != uid:
             await q.answer("Bu foydalanuvchi sizning jamoangizda emas", show_alert=True)
             return
+
+        # Chegara: jamoa admini a'zosiga belgilangan maksimal muddatdan
+        # ko'p kun bera olmaydi (firibgar adminlardan himoya).
+        from core.duration_policy import clamp_days, is_over_cap, max_days_for
+
+        if is_over_cap(days, is_super_admin=False):
+            cap = max_days_for(is_super_admin=False)
+            await q.answer(
+                f"⛔️ Maksimal muddat {cap} kun. Super admin bilan bog'laning.",
+                show_alert=True,
+            )
+            return
+
+        days = clamp_days(days, is_super_admin=False)
         expires = _admin_expiry(days)
         await db.set_user_limits(target, tariff_expires_at=expires)
         await db.approve_user(target, expires)
@@ -546,9 +600,16 @@ async def handle_team_admin_callback(update: Update, uid: int, data: str) -> Non
         except (ValueError, IndexError):
             return
         # Avval muddatni tanlash — keyin tasdiqlash.
+        from core.duration_policy import cap_note, options_within_cap
+
+        options = options_within_cap(DURATION_OPTIONS, is_super_admin=False)
+        note = cap_note(is_super_admin=False)
+        text = "📅 Muddatni tanlang — foydalanuvchiga qancha kun beriladi?"
+        if note:
+            text += f"\n{note}"
         await q.edit_message_text(
-            "📅 Muddatni tanlang — foydalanuvchiga qancha kun beriladi?",
-            reply_markup=KB.kb_team_approve_term_options(target, DURATION_OPTIONS),
+            text,
+            reply_markup=KB.kb_team_approve_term_options(target, options),
         )
         return
 
@@ -581,7 +642,7 @@ async def approve_team_member(
     """Jamoa admini o'z jamoasidagi foydalanuvchini tasdiqlaydi.
 
     ``days`` — beriladigan muddat (kun). Berilmasa standart
-    ``DEFAULT_DURATION_DAYS`` ishlatiladi.
+    Standart muddat ishlatiladi (chegara bilan cheklangan).
     """
     q = update.callback_query
     member = await db.get_user(target)
@@ -610,7 +671,11 @@ async def approve_team_member(
             )
             return
 
-    duration_days = max(1, int(days if days is not None else DEFAULT_DURATION_DAYS))
+    # Beriladigan muddat (kun). Jamoa admini uchun chegara bor —
+    # firibgar adminlardan himoya.
+    from core.duration_policy import clamp_days
+
+    duration_days = clamp_days(days, is_super_admin=False)
     expires = _admin_expiry(duration_days)
     await db.approve_user(target, expires)
 

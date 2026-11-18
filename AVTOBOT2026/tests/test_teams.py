@@ -29,8 +29,10 @@ os.environ.setdefault("ADMIN_ID", "123456789")
 
 from bot import keyboards as KB  # noqa: E402
 from bot import media_ingest  # noqa: E402
+from bot import callbacks as Cb  # noqa: E402
 from bot import teams as Tm  # noqa: E402
 from bot import texts as T  # noqa: E402
+from core.utils import calc_expires  # noqa: E402
 from config.config import (  # noqa: E402
     MAX_ALBUM_FILES,
     SUPER_ADMIN,
@@ -674,8 +676,6 @@ class TeamApprovalSeparationTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(member["tariff_expires_at"])
 
         # Muddat tanlangan (7 kun) — standart 30 kun emas.
-        from core.utils import calc_expires
-
         self.assertEqual(member["tariff_expires_at"], calc_expires(7))
 
     async def test_notify_goes_to_team_admin(self) -> None:
@@ -683,6 +683,9 @@ class TeamApprovalSeparationTests(unittest.IsolatedAsyncioTestCase):
         from bot import login as Login
 
         team = await db.create_team("Jamoa", ADMIN_A, max_users=5)
+        await db.set_team_admin(
+            ADMIN_A, int(team["id"]), max_users=5, admin_expires_at=calc_expires(365)
+        )
         await db.upsert_user(
             USER_1,
             name="A'zo",
@@ -789,8 +792,6 @@ class ApprovalDurationTests(unittest.IsolatedAsyncioTestCase):
             await admin_actions.action_approve(update, SUPER_ADMIN, USER_1, days=7)
 
         user = await db.get_user(USER_1)
-        from core.utils import calc_expires
-
         self.assertTrue(user["is_admin"])
         self.assertEqual(user["tariff_expires_at"], calc_expires(7))
 
@@ -816,8 +817,6 @@ class ApprovalDurationTests(unittest.IsolatedAsyncioTestCase):
             await admin_actions.action_approve(update, SUPER_ADMIN, USER_1)
 
         user = await db.get_user(USER_1)
-        from core.utils import calc_expires
-
         self.assertEqual(
             user["tariff_expires_at"], calc_expires(DEFAULT_DURATION_DAYS)
         )
@@ -853,3 +852,250 @@ class ApprovalDurationTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(user["is_admin"], "super admin jamoali userni tasdiqlamasligi kerak")
         text = q.edit_message_text.await_args.args[0]
         self.assertIn("jamoa adminining vazifasi", text)
+
+
+class DurationCapTests(unittest.IsolatedAsyncioTestCase):
+    """Muddat chegarasi (anti-fraud): jamoa admini 60 kundan ko'p bera olmaydi."""
+
+    async def asyncSetUp(self) -> None:
+        await db.close_db()
+        self.temp = tempfile.TemporaryDirectory()
+        self.old_db_path = db.DB_PATH
+        db.DB_PATH = Path(self.temp.name) / "test.db"
+        session_crypto._fernet = __import__(
+            "cryptography.fernet", fromlist=["Fernet"]
+        ).Fernet(
+            __import__("cryptography.fernet", fromlist=["Fernet"]).Fernet.generate_key()
+        )
+        await db.init_db()
+
+    async def asyncTearDown(self) -> None:
+        await db.close_db()
+        db.DB_PATH = self.old_db_path
+        session_crypto._fernet = None
+        self.temp.cleanup()
+
+    def test_default_cap_is_60_days(self) -> None:
+        from config.config import TEAM_MEMBER_MAX_DAYS
+
+        self.assertEqual(TEAM_MEMBER_MAX_DAYS, 60)
+
+    def test_clamp_days_for_team_admin(self) -> None:
+        from core.duration_policy import clamp_days
+
+        self.assertEqual(clamp_days(7, is_super_admin=False), 7)
+        self.assertEqual(clamp_days(30, is_super_admin=False), 30)
+        # Chegaradan oshgan — qisqartiriladi.
+        self.assertEqual(clamp_days(90, is_super_admin=False), 60)
+        self.assertEqual(clamp_days(365, is_super_admin=False), 60)
+        self.assertEqual(clamp_days(1000, is_super_admin=False), 60)
+
+    def test_clamp_days_for_super_admin_unlimited(self) -> None:
+        from core.duration_policy import clamp_days
+
+        self.assertEqual(clamp_days(365, is_super_admin=True), 365)
+        self.assertEqual(clamp_days(9999, is_super_admin=True), 9999)
+
+    def test_is_over_cap(self) -> None:
+        from core.duration_policy import is_over_cap
+
+        self.assertFalse(is_over_cap(60, is_super_admin=False))
+        self.assertTrue(is_over_cap(61, is_super_admin=False))
+        self.assertFalse(is_over_cap(365, is_super_admin=True))
+
+    def test_cap_note(self) -> None:
+        from core.duration_policy import cap_note
+
+        self.assertIn("60", cap_note(is_super_admin=False))
+        self.assertEqual(cap_note(is_super_admin=True), "")
+
+    async def test_team_admin_approval_respects_cap(self) -> None:
+        """Jamoa admini 365 kun so'rasa — 60 kunga qisqaradi."""
+        team = await db.create_team("Jamoa", ADMIN_A, max_users=5)
+        await db.set_team_admin(
+            ADMIN_A, int(team["id"]), max_users=5, admin_expires_at=calc_expires(365)
+        )
+        await db.upsert_user(
+            USER_1,
+            name="A'zo",
+            team_id=int(team["id"]),
+            owner_admin_uid=ADMIN_A,
+            awaiting_approval=1,
+        )
+
+        q = SimpleNamespace(
+            data=f"tadm:approveterm:{USER_1}:365",
+            answer=AsyncMock(),
+            edit_message_text=AsyncMock(),
+            message=SimpleNamespace(reply_text=AsyncMock()),
+        )
+        update = SimpleNamespace(
+            callback_query=q,
+            effective_user=SimpleNamespace(id=ADMIN_A),
+            message=SimpleNamespace(reply_text=AsyncMock()),
+        )
+        with patch.object(Tm, "application", None):
+            await Tm.handle_team_admin_callback(
+                update, ADMIN_A, f"tadm:approveterm:{USER_1}:365"
+            )
+
+        member = await db.get_user(USER_1)
+        self.assertTrue(member["is_admin"])
+        self.assertEqual(
+            member["tariff_expires_at"],
+            calc_expires(60),
+            "jamoa admini 60 kundan ko'p muddat bermasligi kerak",
+        )
+
+    async def test_team_admin_setterm_rejects_over_cap(self) -> None:
+        """Allaqachon tasdiqlangan a'zoga muddat berishda chegara buzilmaydi."""
+        team = await db.create_team("Jamoa", ADMIN_A, max_users=5)
+        await db.set_team_admin(
+            ADMIN_A, int(team["id"]), max_users=5, admin_expires_at=calc_expires(365)
+        )
+        await db.upsert_user(
+            USER_1,
+            name="A'zo",
+            team_id=int(team["id"]),
+            owner_admin_uid=ADMIN_A,
+        )
+
+        q = SimpleNamespace(
+            data=f"tadm:setterm:{USER_1}:365",
+            answer=AsyncMock(),
+            edit_message_text=AsyncMock(),
+            message=SimpleNamespace(reply_text=AsyncMock()),
+        )
+        update = SimpleNamespace(
+            callback_query=q,
+            effective_user=SimpleNamespace(id=ADMIN_A),
+            message=SimpleNamespace(reply_text=AsyncMock()),
+        )
+        with patch.object(Tm, "application", None):
+            await Tm.handle_team_admin_callback(
+                update, ADMIN_A, f"tadm:setterm:{USER_1}:365"
+            )
+
+        # Rad etilgan — muddat o'zgarmagan.
+        q.answer.assert_awaited()
+        alert = q.answer.await_args.kwargs.get("show_alert")
+        self.assertTrue(alert, "foydalanuvchiga ogohlantirish ko'rsatilishi kerak")
+        self.assertIn("60", q.answer.await_args.args[0])
+
+    async def test_team_admin_setterm_allows_within_cap(self) -> None:
+        """Chegara ichidagi muddat beriladi."""
+        team = await db.create_team("Jamoa", ADMIN_A, max_users=5)
+        await db.set_team_admin(
+            ADMIN_A, int(team["id"]), max_users=5, admin_expires_at=calc_expires(365)
+        )
+        await db.upsert_user(
+            USER_1,
+            name="A'zo",
+            team_id=int(team["id"]),
+            owner_admin_uid=ADMIN_A,
+        )
+
+        q = SimpleNamespace(
+            data=f"tadm:setterm:{USER_1}:30",
+            answer=AsyncMock(),
+            edit_message_text=AsyncMock(),
+            message=SimpleNamespace(reply_text=AsyncMock()),
+        )
+        update = SimpleNamespace(
+            callback_query=q,
+            effective_user=SimpleNamespace(id=ADMIN_A),
+            message=SimpleNamespace(reply_text=AsyncMock()),
+        )
+        with patch.object(Tm, "application", None):
+            await Tm.handle_team_admin_callback(
+                update, ADMIN_A, f"tadm:setterm:{USER_1}:30"
+            )
+
+        member = await db.get_user(USER_1)
+        self.assertEqual(member["tariff_expires_at"], calc_expires(30))
+
+    async def test_team_approve_menu_hides_over_cap_options(self) -> None:
+        """Muddat oynasida chegara oshgan variantlar ko'rsatilmaydi."""
+        team = await db.create_team("Jamoa", ADMIN_A, max_users=5)
+        await db.set_team_admin(
+            ADMIN_A, int(team["id"]), max_users=5, admin_expires_at=calc_expires(365)
+        )
+        q = SimpleNamespace(
+            data=f"tadm:approve:{USER_1}",
+            answer=AsyncMock(),
+            edit_message_text=AsyncMock(),
+            message=SimpleNamespace(reply_text=AsyncMock()),
+        )
+        update = SimpleNamespace(
+            callback_query=q,
+            effective_user=SimpleNamespace(id=ADMIN_A),
+            message=SimpleNamespace(reply_text=AsyncMock()),
+        )
+        with patch.object(Tm, "application", None):
+            await Tm.handle_team_admin_callback(update, ADMIN_A, f"tadm:approve:{USER_1}")
+
+        markup = q.edit_message_text.await_args.kwargs.get("reply_markup")
+        callbacks = {
+            b.callback_data
+            for row in markup.inline_keyboard
+            for b in row
+            if b.callback_data
+        }
+        self.assertIn(f"tadm:approveterm:{USER_1}:30", callbacks)
+        self.assertIn(f"tadm:approveterm:{USER_1}:60", callbacks)
+        self.assertNotIn(
+            f"tadm:approveterm:{USER_1}:90", callbacks
+        )
+        self.assertNotIn(
+            f"tadm:approveterm:{USER_1}:365", callbacks
+        )
+
+    async def test_super_admin_approve_menu_keeps_long_options(self) -> None:
+        """Super admin uchun uzun muddat variantlari saqlanadi."""
+        await db.upsert_user(USER_1, name="Vali", awaiting_approval=1)
+        q = SimpleNamespace(
+            data=f"app:yes:{USER_1}",
+            from_user=SimpleNamespace(id=SUPER_ADMIN),
+            answer=AsyncMock(),
+            edit_message_text=AsyncMock(),
+            message=SimpleNamespace(reply_text=AsyncMock()),
+        )
+        update = SimpleNamespace(
+            callback_query=q,
+            effective_user=SimpleNamespace(id=SUPER_ADMIN),
+            effective_chat=SimpleNamespace(type="private"),
+            message=SimpleNamespace(reply_text=AsyncMock()),
+        )
+        with patch.object(Cb, "application", None):
+            await Cb.handle_admin_approve(update, SUPER_ADMIN, f"app:yes:{USER_1}")
+
+        markup = q.edit_message_text.await_args.kwargs.get("reply_markup")
+        callbacks = {
+            b.callback_data
+            for row in markup.inline_keyboard
+            for b in row
+            if b.callback_data
+        }
+        self.assertIn(f"app:term:{USER_1}:365", callbacks)
+
+    async def test_super_admin_approve_not_capped(self) -> None:
+        """Super admin 365 kun bersa — chekalanmaydi."""
+        from admin import admin_actions
+        await db.upsert_user(USER_1, name="Vali", awaiting_approval=1)
+
+        q = SimpleNamespace(
+            data=f"app:term:{USER_1}:365",
+            answer=AsyncMock(),
+            edit_message_text=AsyncMock(),
+            message=SimpleNamespace(reply_text=AsyncMock()),
+        )
+        update = SimpleNamespace(
+            callback_query=q,
+            effective_user=SimpleNamespace(id=SUPER_ADMIN),
+            message=SimpleNamespace(reply_text=AsyncMock()),
+        )
+        with patch.object(admin_actions, "application", None):
+            await admin_actions.action_approve(update, SUPER_ADMIN, USER_1, days=365)
+
+        user = await db.get_user(USER_1)
+        self.assertEqual(user["tariff_expires_at"], calc_expires(365))

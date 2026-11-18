@@ -1548,8 +1548,10 @@ async def _action_approve_locked(
         )
         return
 
-    # Beriladigan muddat (kun). Standart — DEFAULT_DURATION_DAYS.
-    duration_days = max(1, int(days if days is not None else DEFAULT_DURATION_DAYS))
+    # Beriladigan muddat (kun). Chegara super admin uchun yo'q.
+    from core.duration_policy import clamp_days
+
+    duration_days = clamp_days(days, is_super_admin=True)
     expires = calc_expires(duration_days)
 
     pending = await db.get_pending(target)

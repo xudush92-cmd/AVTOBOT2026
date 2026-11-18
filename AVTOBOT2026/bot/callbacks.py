@@ -693,9 +693,12 @@ async def handle_admin_approve(update: Update, uid: int, data: str) -> None:
     async def apply_target_action() -> None:
         if action == "yes":
             # Avval muddatni tanlash — keyin tasdiqlash.
+            from core.duration_policy import options_within_cap
+
+            options = options_within_cap(DURATION_OPTIONS, is_super_admin=True)
             await q.edit_message_text(
                 "📅 Muddatni tanlang — foydalanuvchiga qancha kun beriladi?",
-                reply_markup=KB.kb_approve_term_options(target, DURATION_OPTIONS),
+                reply_markup=KB.kb_approve_term_options(target, options),
             )
         elif action == "term":
             try:

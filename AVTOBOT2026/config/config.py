@@ -197,6 +197,15 @@ CLEANUP_INTERVAL_S: int = max(300, _int("CLEANUP_INTERVAL_S", 1800))
 TEAM_ADMIN_DEFAULT_DAYS: int = max(1, _int("TEAM_ADMIN_DEFAULT_DAYS", 30))
 # Jamoadagi minimal foydalanuvchi soni (bitta jamoa kamida shuncha user).
 TEAM_MIN_MEMBERS: int = max(1, _int("TEAM_MIN_MEMBERS", 2))
+# ─────────────────────────────────────────────────────────────────────────
+# MUDDAT CHEGARASI (anti-fraud)
+# ─────────────────────────────────────────────────────────────────────────
+# Jamoa admini (2-daraja) a'zosiga beradigan MAXIMAL muddat (kun).
+# Chegara 0 = cheksiz. Bu chegara foydalanuvchiga beriladigan bir marta
+# muddatga qo'yiladi — super admin cheklovsiz, jamoa admini cheklangan.
+TEAM_MEMBER_MAX_DAYS: int = max(0, _int("TEAM_MEMBER_MAX_DAYS", 60))
+# Super admin beradigan maksial muddat (kun). 0 = cheksiz.
+SUPER_ADMIN_MAX_DAYS: int = max(0, _int("SUPER_ADMIN_MAX_DAYS", 0))
 # Jamoa adminining sig'imi (0 = cheksiz, faqat super admin belgilaydi).
 TEAM_DEFAULT_MAX_USERS: int = max(0, _int("TEAM_DEFAULT_MAX_USERS", 0))
 # Ro'yxatdan o'tishda jamoa tanlash uchun maksimal ko'rsatiladigan jamoalar.
@@ -238,7 +247,7 @@ BACKUP_DIR.mkdir(parents=True, exist_ok=True)
 # ─────────────────────────────────────────────────────────────────────────
 # MUDDAT TUGMALARI (admin uchun tez tugmalar)
 # ─────────────────────────────────────────────────────────────────────────
-DURATION_OPTIONS: list[int] = [1, 7, 30, 90]
+DURATION_OPTIONS: list[int] = [1, 7, 30, 90, 180, 365]
 
 
 # ─────────────────────────────────────────────────────────────────────────
