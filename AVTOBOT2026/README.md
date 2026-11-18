@@ -11,7 +11,10 @@ Telegram guruhlariga reklama postlarini avtomatik joylashtiruvchi bot.
 - ✅ Har bir post Telegram formatlashni saqlaydi (bold, italic, link)
 - ✅ 🔍 Guruhlarni avtomatik topish — akkauntdagi yozish mumkin guruhlar bir tugma bilan qo'shiladi (qo'lda bulk qo'shish admin/legacy oqimida saqlangan)
 - ✅ Umumiy posting oralig'i va guruh uchun alohida interval — 5–10080 daqiqa; anti-spam jitteri ±5 daqiqa
-- ✅ Referal tizimi
+- ✅ Referal tizimi (faqat statistika — bonus kunlari berilmaydi)
+- ✅ **Jamoa (team) tizimi** — jamoa admini o'z jamoasini mustaqil boshqaradi:
+  tarif berish, bloklash, xabar yuborish, statistika. Boshqa adminlarning
+  jamoalariga tasir qilmaydi
 - ✅ Super admin paneli (to'liq nazorat)
 - ✅ Ommaviy xabar yuborish (broadcast)
 - ✅ Muddat tizimi (admin yangi muddat beradi — oldingi muddat bekor bo'lib,
@@ -169,9 +172,10 @@ to'xtatish”** tugmasi bilan bekor qilish mumkin.
 
 ## ✨ IMKONIYATLAR (2026-10 holati)
 
-- **🖼 Albom va video** — bitta postga 10 tagacha rasm/video/hujjat. Bir nechta
-  media yuborilsa ular bitta post bo'lib saqlanadi va guruhga **bitta albom**
-  bo'lib chiqadi (alohida-alohida spam bo'lmaydi).
+- **🖼 Albom (faqat surat)** — bitta postga **4 tagacha rasm** yuborish mumkin.
+  Bir nechta media yuborilsa ular bitta post bo'lib saqlanadi va guruhga
+  **bitta albom** bo'lib chiqadi (alohida-alohida spam bo'lmaydi).
+  **Video butunlay rad etiladi** (`ALLOW_VIDEO_MEDIA=1` bilan qayta yoqiladi).
 - **🔍 Guruhlarni topish** — bitta tugma bilan akkauntdagi yozish mumkin bo'lgan
   guruh va megaguruplar avtomatik aniqlanib qo'shiladi (broadcast kanallar,
   jumladan o'z kanali ham, qo'shilmaydi; takror va huquqsizlar o'tkazib
@@ -192,9 +196,18 @@ to'xtatish”** tugmasi bilan bekor qilish mumkin.
 - **📦 Tarif paketlari va limitlar** — SINOV/START/PRO/BUSINESS (guruh, post,
   kunlik yuborish soni), kunlik limit va **tungi tanaffus** (faol soatlar) —
   akkaunt Telegram chekloviga uchlamasin.
-- **👥 Referal** — taklif havolasi, faol referallar ro'yxati va **bonus kunlar**
-  (mukofot faqat do'stingiz haqiqatan ishlay boshlagach beriladi), oylik
-  chegara, firibgarlik aniqlansa bonus qaytarib olinadi.
+- **👥 Referal** — taklif havolasi va faol referallar ro'yxati. **Bonus kunlari
+  olib tashlangan**: referal endi faqat statistika (kim kimni taklif qilgani)
+  uchun, muddatga hech qanday kun qo'shilmaydi. Jamoa admini o'z jamoasining
+  havolasini tarqatsa, kelgan foydalanuvchilar avtomatik shu jamoaga birikadi.
+- **👑 Jamoa admini** — ro'yxatdan o'tuvchi foydalanuvchilar jamoalarni
+  ko'rib, o'z jamoasini tanlaydi (minimal 2 ta foydalanuvchi). Jamoa admini:
+  jamoasiga **tarif (muddat) beradi**, foydalanuvchilarni tasdiqlaydi,
+  bloklaydi, xabar yuboradi va statistikani ko'radi. Boshqa adminlarning
+  jamoalariga **hech qanday ta'sir qilmaydi**. Jamoa admini ham oddiy
+  foydalanuvchi kabi o'z postlarini yubora oladi. Jamoa adminining muddati
+  tugasa — uning jamoasi ham to'xtaydi. Super admin jamoa adminlarining
+  muddati va sig'imini boshqaradi.
 - **⚡ Tez tasdiqlash** (`AUTO_APPROVE_ENABLED=1` bo'lsa) — past riskli arizalar
   admin navbatini kutmasdan tasdiqlanadi; har bir avto-tasdiq adminga xabar
   qilinadi.

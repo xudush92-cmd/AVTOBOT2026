@@ -1470,9 +1470,19 @@ async def handle_expire(update: Update, admin_uid: int, data: str) -> None:
 # ─────────────────────────────────────────────────────────────────────────
 # TASDIQLASH / BLOK / O'CHIRISH
 # ─────────────────────────────────────────────────────────────────────────
-async def action_approve(update: Update, admin_uid: int, target: int) -> None:
+async def action_approve(
+    update: Update,
+    admin_uid: int,
+    target: int,
+    days: int | None = None,
+) -> None:
+    """Foydalanuvchini tasdiqlaydi.
+
+    ``days`` — beriladigan muddat (kun). Berilmasa standart
+    ``DEFAULT_DURATION_DAYS`` ishlatiladi.
+    """
     async with user_operation_lock(target):
-        await _action_approve_locked(update, admin_uid, target)
+        await _action_approve_locked(update, admin_uid, target, days=days)
 
 
 async def _send_newly_approved_menu(target: int, text: str) -> None:
@@ -1512,7 +1522,12 @@ async def notify_after_approval(target: int, *, session_activated: bool) -> None
     await _count_approval_referral(target)
 
 
-async def _action_approve_locked(update: Update, admin_uid: int, target: int) -> None:
+async def _action_approve_locked(
+    update: Update,
+    admin_uid: int,
+    target: int,
+    days: int | None = None,
+) -> None:
     q = update.callback_query
     user = await db.get_user(target)
     if not user or not user.get("awaiting_approval"):
@@ -1521,6 +1536,23 @@ async def _action_approve_locked(update: Update, admin_uid: int, target: int) ->
             reply_markup=await user_card_markup(target) if user else KB.kb_admin_back(),
         )
         return
+
+    # Jamoali foydalanuvchini tasdiqlash — jamoa adminining vazifasi.
+    # Super admin jamoalarni tasdiqlamaydi.
+    owner_uid = int(user.get("owner_admin_uid") or 0)
+    if owner_uid and owner_uid != SUPER_ADMIN:
+        await q.edit_message_text(
+            "ℹ️ Bu foydalanuvchi jamoaga tegishli — uni tasdiqlash "
+            "jamoa adminining vazifasi.",
+            reply_markup=await user_card_markup(target),
+        )
+        return
+
+    # Beriladigan muddat (kun). Chegara super admin uchun yo'q.
+    from core.duration_policy import clamp_days
+
+    duration_days = clamp_days(days, is_super_admin=True)
+    expires = calc_expires(duration_days)
 
     pending = await db.get_pending(target)
     if pending:
@@ -1573,7 +1605,7 @@ async def _action_approve_locked(update: Update, admin_uid: int, target: int) ->
             # Sessiya aynan shu UID uchun tasdiqlandi: uni revoke qilmasdan
             # atomik tarzda pending_session → session ko'chiramiz.
             if not await db.approve_pending_user(
-                target, calc_expires(DEFAULT_DURATION_DAYS)
+                target, expires
             ):
                 await q.edit_message_text(
                     "⚠️ Ariza eskirgan yoki allaqachon ko'rib chiqilgan.",
@@ -1582,10 +1614,12 @@ async def _action_approve_locked(update: Update, admin_uid: int, target: int) ->
                 return
             log(
                 f"✅ Admin {admin_uid} → Approve {target} "
+                f"({duration_days} kun) "
                 "(pending sessiya faollashtirildi)"
             )
             await q.edit_message_text(
-                T.approval_result_text(target, session_activated=True),
+                T.approval_result_text(target, session_activated=True)
+                + f"\n📅 Muddat: {format_expires(expires)}",
                 reply_markup=await user_card_markup(target),
             )
             await _send_newly_approved_menu(target, T.USER_APPROVED_ACTIVE)
@@ -1602,10 +1636,11 @@ async def _action_approve_locked(update: Update, admin_uid: int, target: int) ->
         )
 
     # ── Legacy tasdiqlash: pending sessiya yo'q (yoki yaroqsiz) ──
-    await db.approve_user(target, calc_expires(DEFAULT_DURATION_DAYS))
-    log(f"✅ Admin {admin_uid} → Approve {target}")
+    await db.approve_user(target, expires)
+    log(f"✅ Admin {admin_uid} → Approve {target} ({duration_days} kun)")
     await q.edit_message_text(
-        T.approval_result_text(target, session_activated=False),
+        T.approval_result_text(target, session_activated=False)
+        + f"\n📅 Muddat: {format_expires(expires)}",
         reply_markup=await user_card_markup(target),
     )
     with contextlib.suppress(Exception):

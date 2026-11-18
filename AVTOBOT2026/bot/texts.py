@@ -412,6 +412,10 @@ BTN_ADMIN = "🖥 Super Admin"
 BTN_LOGIN = "🔑 Login"
 BTN_PENDING = "⏳ Tasdiq kutilmoqda..."
 BTN_BLOCKED = "🚫 Bloklangan"
+BTN_TEAM_ADMIN = "👑 Admin bo'lish"
+BTN_TEAM_MENU = "👥 Jamoam"
+BTN_TEAM_PICK = "🎯 Jamoani tanlash"
+BTN_TEAM_PICK = "🎯 Jamoa tanlash"
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -1317,3 +1321,331 @@ def status_next_step(groups: int, posts: int) -> str:
     if not posts:
         return "👇 Keyingi qadam: ➕ «Post qo'shish» tugmasini bosing"
     return ""
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# JAMOALAR (TEAMS) — jamoa admini va uning foydalanuvchilari
+# ─────────────────────────────────────────────────────────────────────────
+TEAM_PICK_TITLE = (
+    "🎯 JAMOA TANLANG\n\n"
+    "Ro'yxatdan o'tish uchun jamoangizni tanlang:\n"
+    "Jamoa egasi sizga tarif (muddat) beradi.\n\n"
+    "🔎 Referal orqali kelgan bo'lsangiz — jamoangiz avtomatik tanlangan.\n\n"
+    "👥 Guruh bilan ishlash — jamoani tanlang.\n"
+    "🙋 Jamoasiz — «Jamoasiz davom etish» tugmasini bosing."
+)
+
+TEAM_PICK_EMPTY = (
+    "😔 Hozircha mavjud jamoa yo'q.\n\n"
+    "📱 Yordam uchun admin bilan bog'laning."
+)
+
+TEAM_PICK_SKIPPED = (
+    "🙋 Jamoasiz davom etasiz.\n\n"
+    "Ro'yxatdan o'tish uchun quyidagi qadamlarni bajarib o'ting."
+)
+
+TEAM_PICK_FULL = (
+    "🚫 Bu jamoada joy to'ldi.\n\n"
+    "Boshqa jamoani tanlang yoki admin bilan bog'laning."
+)
+
+TEAM_PICK_PAGE = (
+    "🎯 JAMOA TANLANG\n\n"
+    "Ro'yxatdan o'tish uchun jamoangizni tanlang:\n"
+    "Jamoa egasi sizga tarif (muddat) beradi.\n\n"
+    "📄 Sahifa {page}/{pages}"
+)
+
+TEAM_SELECTED = (
+    "✅ Jamoa tanlandi: {name}\n\n"
+    "⏳ Endi ro'yxatdan o'tishni davom ettiring — admin tasdiqlagach bot "
+    "ishga tushadi."
+)
+
+TEAM_PENDING_APPROVAL = (
+    "⏳ Jamoa admini sizni tasdiqlashni kutilmoqda.\n\n"
+    "📋 Jamoa: {name}\n"
+    "Tasdiqlanach botdan foydalanib bo'lmaydi."
+)
+
+TEAM_APPROVED = (
+    "✅ Jamoa admini sizni tasdiqladi!\n\n"
+    "📋 Jamoa: {name}\n"
+    "📅 Muddat: {expires}\n\n"
+    "Endi botdan to'liq foydalanishingiz mumkin."
+)
+
+TEAM_ADMIN_REGISTERED = (
+    "✅ Jamoangiz yaratildi!\n\n"
+    "📋 Jamoa: {name}\n"
+    "👥 Sig'im: {max_users} ta foydalanuvchi\n"
+    "📅 Muddat: {expires}\n\n"
+    "🔗 Jamoa havolangiz (ro'yxatdan o'tuvchilar shu orqali keladi):\n"
+    "{link}\n\n"
+    "Endi «👥 Jamoam» orqali foydalanuvchilarni boshqarishingiz mumkin."
+)
+
+TEAM_ADMIN_ASK_SIZE = (
+    "👑 JAMOA ADMINI\n\n"
+    "🔢 Jamoangizda qancha foydalanuvchi bo'ladi?\n\n"
+    "Raqam kiriting (masalan: 5).\n"
+    "Super admin keyinroq bu raqamni oshira yoki kamaytira oladi."
+)
+
+TEAM_ADMIN_SIZE_INVALID = (
+    "❌ Iltimos raqam kiriting (masalan: 5).\n\n"
+    "Minimal {min_users} ta foydalanuvchi."
+)
+
+TEAM_ADMIN_ASK_NAME = (
+    "📋 Jamoa nomini kiriting:\n\n"
+    "Masalan: Avtoelon Toshkent\n\n"
+    "Bu nom foydalanuvchilarga ko'rinadi."
+)
+
+TEAM_ADMIN_NAME_INVALID = (
+    "❌ Jamoa nomi 2–40 ta belgidan iborat bo'lishi kerak."
+)
+
+TEAM_ADMIN_NAME_TAKEN = (
+    "❌ Bu nom sizning boshqa jamoangizda allaqachon bor.\n\n"
+    "Boshqa nom kiriting."
+)
+
+TEAM_ADMIN_MENU = (
+    "👥 JAMOA ADMINI PANELI\n\n"
+    "📋 Jamoa: {name}\n"
+    "👥 Foydalanuvchilar: {members}/{limit}\n"
+    "📅 Muddat: {expires}\n\n"
+    "Kerakli bo'limni tanlang:"
+)
+
+TEAM_ADMIN_NO_TEAM = (
+    "😔 Sizning jamoangiz yo'q.\n\n"
+    "👑 «Admin bo'lish» tugmasi orqali jamoa yaratishingiz mumkin."
+)
+
+# ── Oddiy jamoa a'zosi uchun (jamoadan chiqish) ──
+TEAM_MEMBER_INFO = (
+    "👥 <b>{name}</b>\n\n"
+    "Siz ushbu jamoaga biriktirilgansiz.\n"
+    "📅 Muddat: {expires}\n\n"
+    "ℹ️ Muddatni jamoa administratori beradi. Uni faqat super admin "
+    "o'zgartirishi mumkin.\n\n"
+    "🚪 Jamoadan chiqsangiz — berilgan muddat ham tugaydi."
+)
+
+TEAM_MEMBER_LEAVE_CONFIRM = (
+    "🚪 <b>Jamoadan chiqish</b>\n\n"
+    "Siz <b>{name}</b> jamoasidan chiqmoqchisiz.\n\n"
+    "⚠️ Jamoa administratori bergan muddat ham tugaydi va siz botning "
+    "imkoniyatlaridan foydalanishni to'xtatasiz.\n\n"
+    "Chiqishni tasdiqlaysizmi?"
+)
+
+TEAM_MEMBER_LEFT = (
+    "✅ Siz <b>{name}</b> jamoasidan chiqdingiz.\n\n"
+    "📅 Jamoa muddati tugadi.\n"
+    "ℹ️ Yana foydalanish uchun super admin bilan bog'laning."
+)
+
+TEAM_MEMBER_LEAVE_CANCELLED = "ℹ️ Chiqish bekor qilindi."
+
+# ── Do'st qo'shish (telefon raqam bilan) ──
+TEAM_ADD_FRIEND_ASK = (
+    "➕ <b>Do'st qo'shish</b>\n\n"
+    "Do'stingizning <b>telefon raqamini</b> yozing.\n\n"
+    "📱 Format: <code>+998123456789</code>\n\n"
+    "Shu raqam bilan ro'yxatdan o'tsa — u avtomatik sizning jamoangizga "
+    "biriktiriladi va siz tasdiqlaysiz."
+)
+
+TEAM_ADD_FRIEND_INVALID = (
+    "❌ Telefon raqam noto'g'ri.\n\n"
+    "📱 To'g'ri format: <code>+998123456789</code>\n\n"
+    "Qayta urinib ko'ring."
+)
+
+TEAM_ADD_FRIEND_DONE = (
+    "✅ Do'st qo'shildi!\n\n"
+    "📱 {phone}\n"
+    "📋 Jamoa: {team}\n\n"
+    "Endi do'stingizga ushbu havolani yuboring:\n"
+    "{link}\n\n"
+    "Shu havoladan kirsa — u avtomatik sizning jamoangizga biriktiriladi "
+    "va siz tasdiqlaysiz."
+)
+
+TEAM_ADD_FRIEND_EXISTS = (
+    "ℹ️ Bu raqam allaqachon qo'shilgan:\n\n"
+    "📱 {phone}\n"
+    "📋 Jamoa: {team}\n\n"
+    "Uni taklif qilib yuboring — ro'yxatdan o'tganda avtomatik "
+    "biriktiriladi."
+)
+
+TEAM_INVITES_EMPTY = "📋 Hali do'st qo'shmadingiz."
+
+TEAM_INVITES_TEXT = (
+    "📋 <b>Qo'shilgan do'stlar</b> ({total} ta)\n\n"
+    "⏳ — ro'yxatdan o'tmagan | ✅ — jamoaga biriktirilgan\n\n"
+    "Ularga havolani yuboring — ular avtomatik sizning jamoangizga "
+    "kiradi."
+)
+
+# ── Super admin: yangi jamoa admini qo'shish ──
+ADMIN_ADD_ADMIN_ASK = (
+    "👑 <b>Yangi jamoa admini qo'shish</b>\n\n"
+    "Yangi adminning <b>telefon raqamini</b> yozing.\n\n"
+    "📱 Format: <code>+998123456789</code>\n\n"
+    "U shu raqam bilan ro'yxatdan o'tsa — avtomatik jamoa admini "
+    "bo'ladi."
+)
+
+ADMIN_ADD_ADMIN_INVALID = (
+    "❌ Telefon raqam noto'g'ri.\n\n"
+    "📱 To'g'ri format: <code>+998123456789</code>\n\n"
+    "Qayta urinib ko'ring."
+)
+
+ADMIN_ADD_ADMIN_DONE = (
+    "✅ Admin qo'shildi!\n\n"
+    "📱 {phone}\n\n"
+    "U ro'yxatdan o'tsa — avtomatik jamoa admini bo'ladi.\n"
+    "Uni jamoa yaratish uchun yuboring."
+)
+
+ADMIN_ADD_ADMIN_ALREADY = (
+    "ℹ️ Bu raqam allaqachon ro'yxatdan o'tgan:\n\n"
+    "📱 {phone}\n"
+    "👤 Ism: {name}\n\n"
+    "Uni jamoa admini qilish uchun quyidagi tugmalardan foydalaning."
+)
+
+
+
+TEAM_ADMIN_MEMBERS = (
+    "👥 JAMOA A'ZOLARI ({total} ta)\n\n"
+    "Har bir a'zoga tarif (muddat) berish uchun tanlang:\n\n"
+    "🟢 — faol | ⚪ — to'xtatilgan | ⏳ — tasdiq kutilmoqda"
+)
+
+TEAM_ADMIN_EMPTY = "👥 Jamoada hali foydalanuvchi yo'q."
+
+TEAM_ADMIN_GIVE_TERM = (
+    "📅 Muddat berish\n\n"
+    "👤 Foydalanuvchi: {name}\n"
+    "🆔 {uid}\n\n"
+    "Yangi muddatni (kun) tanlang:"
+)
+
+TEAM_ADMIN_TERM_SET = (
+    "✅ Muddat berildi: {name}\n\n"
+    "📅 Yangi muddat: {expires}\n"
+    "📋 Jamoa: {team}"
+)
+
+TEAM_ADMIN_MEMBER_INFO = (
+    "👤 {name}\n\n"
+    "🆔 {uid}\n"
+    "📋 Jamoa: {team}\n"
+    "📅 Muddat: {expires}\n"
+    "🟢 Holat: {status}\n\n"
+    "Kerakli amalni tanlang:"
+)
+
+TEAM_ADMIN_STATS = (
+    "📊 JAMOA STATISTIKASI\n\n"
+    "👥 Foydalanuvchilar: {total} ta\n"
+    "🟢 Faol: {running} ta\n"
+    "⏳ Tasdiq kutilmoqda: {waiting} ta\n"
+    "🚫 Bloklangan: {blocked} ta\n"
+    "💬 Jami guruhlar: {groups} ta\n"
+    "📝 Jami postlar: {posts} ta"
+)
+
+TEAM_ADMIN_MESSAGE = (
+    "📨 Jamoangizga xabar yuboring:\n\n"
+    "Matnni yuboring."
+)
+
+TEAM_ADMIN_MESSAGE_SENT = (
+    "✅ Xabar {count} ta foydalanuvchiga yuborildi."
+)
+
+TEAM_ADMIN_LIMIT_NOTE = (
+    "ℹ️ Jamoa sig'imi {limit} ta foydalanuvchi bilan cheklangan.\n"
+    "Ko'proq foydalanuvchi qo'shish uchun super admin bilan bog'laning."
+)
+
+TEAM_ADMIN_EXPIRED = (
+    "⌛ Jamoangizning muddati tugadi.\n\n"
+    "📅 Muddati: {expires}\n\n"
+    "Muddatni uzaytirish uchun super admin bilan bog'laning."
+)
+
+TEAM_ADMIN_EXPIRED_SHORT = "⌛ Muddattingiz tugagan — jamoa vaqtincha to'xtatilgan."
+
+
+def team_pick_text(teams: list[dict], page: int = 0, page_size: int = 10) -> str:
+    """Jamoalar ro'yxati matni (sahifalash bilan)."""
+    if not teams:
+        return TEAM_PICK_EMPTY
+    total_pages = max(1, (len(teams) + page_size - 1) // page_size)
+    page = min(max(0, page), total_pages - 1)
+    start = page * page_size
+    window = teams[start : start + page_size]
+    lines = [
+        "🎯 JAMOA TANLANG",
+        "",
+        "Ro'yxatdan o'tish uchun jamoangizni tanlang:",
+        "Jamoa egasi sizga tarif (muddat) beradi.",
+        "",
+    ]
+    for team in window:
+        name = team.get("name") or "Noma'lum"
+        limit = int(team.get("max_users") or 0)
+        lines.append(f"• {name}" + (f" (joy: {limit})" if limit else ""))
+    lines.append("")
+    lines.append(f"📄 Sahifa {page + 1}/{total_pages}")
+    return "\n".join(lines)
+
+
+def team_admin_menu_text(
+    team: dict | None,
+    members: int = 0,
+    expires: str = "—",
+) -> str:
+    """Jamoa admini paneli asosiy matni."""
+    if not team:
+        return TEAM_ADMIN_NO_TEAM
+    limit = int(team.get("max_users") or 0)
+    limit_text = f"{limit} ta" if limit else "cheksiz"
+    return TEAM_ADMIN_MENU.format(
+        name=team.get("name") or "Noma'lum",
+        members=members,
+        limit=limit_text,
+        expires=expires,
+    )
+
+
+def team_members_text(members: list[dict]) -> str:
+    """Jamoa a'zolari ro'yxati matni."""
+    if not members:
+        return TEAM_ADMIN_EMPTY
+    lines = [f"👥 JAMOA A'ZOLARI ({len(members)} ta)", ""]
+    for user in members:
+        if user.get("awaiting_approval"):
+            icon = "⏳"
+        elif user.get("is_blocked"):
+            icon = "🚫"
+        elif user.get("running"):
+            icon = "🟢"
+        else:
+            icon = "⚪"
+        name = user.get("name") or "Noma'lum"
+        lines.append(f"{icon} {name}")
+    lines.append("")
+    lines.append("Tarif berish uchun a'zoni tanlang:")
+    return "\n".join(lines)

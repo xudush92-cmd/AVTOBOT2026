@@ -109,6 +109,23 @@ def is_valid_phone(phone: str) -> bool:
     return bool(PHONE_RE.match(phone))
 
 
+def normalize_phone(phone: str) -> str:
+    """Telefon raqamni yagona formatga keltiradi: ``+998123456789``.
+
+    Bo'sh joy, tire va qavs kengaytiriladi. Noto'g'ri format — bo'sh
+    satr qaytariladi (tekshirish uchun ``is_valid_phone`` ishlatiladi).
+    """
+    if not phone:
+        return ""
+    cleaned = re.sub(r"[\s\-()]", "", str(phone).strip())
+    if not cleaned:
+        return ""
+    # O'zbekiston formatidagi raqamlarni avtomatik to'ldiramiz: 998XXXXXXXXX
+    if cleaned.isdigit() and len(cleaned) == 12 and cleaned.startswith("998"):
+        cleaned = "+" + cleaned
+    return cleaned if PHONE_RE.match(cleaned) else ""
+
+
 def is_valid_interval(value: int) -> bool:
     """Posting oralig'ini xavfsiz diapazonda tekshiradi."""
     from config.config import MAX_INTERVAL_MIN, MIN_INTERVAL_MIN

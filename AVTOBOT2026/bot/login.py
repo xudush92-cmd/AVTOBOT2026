@@ -695,6 +695,81 @@ async def handle_phone(update: Update, text: str) -> None:
         await _handle_phone_locked(update, text)
 
 
+async def _auto_bind_team_invite(update: Update, uid: int, phone: str) -> bool:
+    """Admin qo'shgan do'stni avtomatik jamoaga biriktiradi.
+
+    Ro'yxatdan o'tayotgan foydalanuvchining telefon raqami admin tomonidan
+    oldindan qo'shilgan bo'lsa — u shu jamoaga biriktiriladi va jamoa
+    admini tasdiqlash uchun ariza yuboriladi.
+
+    Returns:
+        Jamoaga biriktirilgan bo'lsa — ``True``.
+    """
+    invite = await db.get_team_invite(phone, kind="member")
+    if not invite or (invite.get("status") or "pending") != "pending":
+        # Super admin taklif qilingan jamoa admini bo'lishi mumkin.
+        return await _auto_make_team_admin(uid, phone)
+
+    owner_uid = int(invite.get("owner_admin_uid") or 0)
+    team_id = int(invite.get("team_id") or 0)
+    if not owner_uid or not team_id:
+        return False
+
+    # Jamoa admini faol ekanini tekshiramiz (muddati tugagan jamoa
+    # yangi a'zo qabul qilmaydi).
+    owner = await db.get_user(owner_uid)
+    if not owner or not owner.get("is_team_admin"):
+        return False
+    if await db.team_admin_expired(owner_uid):
+        return False
+
+    team = await db.get_team(team_id)
+    if not team:
+        return False
+
+    # Sig'im to'lgan bo'lsa — biriktirmaymiz (super admin limitni oshirsin).
+    if not await db.team_has_free_slot(team_id):
+        return False
+
+    saved = await db.set_team_pending(
+        uid,
+        team_id,
+        owner_uid,
+        name=update.effective_user.full_name or "",
+        username=update.effective_user.username or "",
+    )
+    if not saved:
+        return False
+
+    # Taklif ishlatildi deb belgilaymiz.
+    await db.set_team_invite_status(phone, "used", kind="member")
+
+    # Jamoa admini tasdiqlashi uchun ariza.
+    await notify_super_for_approval(uid)
+    log(f"👥 Do'st avtomatik biriktirildi: {uid} → jamoa #{team_id}")
+    return True
+
+
+async def _auto_make_team_admin(uid: int, phone: str) -> bool:
+    """Super admin taklif qilgan raqam — ro'yxatdan o'tsa jamoa admini bo'ladi."""
+    from config.config import TEAM_ADMIN_DEFAULT_DAYS, TEAM_DEFAULT_MAX_USERS
+    from core.utils import calc_expires
+
+    invite = await db.get_team_invite(phone, kind="admin")
+    if not invite or (invite.get("status") or "pending") != "pending":
+        return False
+
+    await db.set_team_admin(
+        uid,
+        0,
+        max_users=TEAM_DEFAULT_MAX_USERS,
+        admin_expires_at=calc_expires(TEAM_ADMIN_DEFAULT_DAYS),
+    )
+    await db.set_team_invite_status(phone, "used", kind="admin")
+    log(f"👑 Taklif qilingan user jamoa admini bo'ldi: {uid}")
+    return True
+
+
 async def _handle_phone_locked(update: Update, text: str) -> None:
     """Foydalanuvchi telefon raqamini UID operation lock ichida saqlaydi."""
     uid = update.effective_user.id
@@ -728,6 +803,12 @@ async def _handle_phone_locked(update: Update, text: str) -> None:
         await db.set_user_info(uid, full_name, update.effective_user.username or "")
 
     user_states.pop(uid, None)
+
+    # Admin tomonidan oldindan qo'shilgan do'st — avtomatik jamoaga
+    # biriktiriladi. Referal kabi: jamoa admini tasdiqlaydi.
+    # (Baza yoki taklif jadvali xatosi ro'yxatdan o'tishni to'xtatmasin.)
+    with contextlib.suppress(Exception):
+        await _auto_bind_team_invite(update, uid, phone)
 
     # Telefon validatsiyadan o'tgach kod DARHOL so'raladi — admin tasdig'i
     # faqat Telegram logini tugagach kerak bo'ladi. Har bir kod so'rovi
@@ -1345,11 +1426,37 @@ async def _finalize_login_locked(uid: int) -> None:
 # ADMINGA XABAR
 # ─────────────────────────────────────────────────────────────────────────
 async def notify_super_for_approval(uid: int) -> None:
-    """Super adminga yangi foydalanuvchi haqida xabar."""
+    """Yangi foydalanuvchi haqida tasdiqlovchiga xabar beradi.
+
+    - Jamoali foydalanuvchi → xabar **jamoa adminiga** boradi
+      (super admin jamoalarni tasdiqlamaydi).
+    - Jamoasiz foydalanuvchi → xabar **super admin** ga boradi.
+    """
     info = await db.get_user_info(uid)
     name = info.get("name") or "Noma`lum"
     username = info.get("username") or ""
     phone = await db.get_phone(uid) or "—"
+
+    user = await db.get_user(uid) or {}
+    owner_uid = int(user.get("owner_admin_uid") or 0)
+
+    if owner_uid and owner_uid != SUPER_ADMIN:
+        # Jamoali foydalanuvchi — tasdiqlash jamoa adminining vazifasi.
+        team = await db.get_team(int(user.get("team_id") or 0)) if user.get("team_id") else None
+        team_name = (team or {}).get("name") or "Jamoangiz"
+        text = (
+            "🔔 YANGI ARIZA (JAMOA)\n\n"
+            f"👤 {name}\n"
+            f"🆔 {uid}\n"
+            f"📱 {phone}\n"
+            f"📋 Jamoa: {team_name}\n\n"
+            "Tasdiqlash va muddat berish uchun «👥 Jamoam» bo'limidan "
+            "foydalaning."
+        )
+        with contextlib.suppress(Exception):
+            await application.bot.send_message(owner_uid, text)
+        log(f"⏳ Jamoa arizasi yuborildi: {uid} → jamoa admin {owner_uid}")
+        return
 
     text = T.new_user_notification(name, phone, username, uid)
     kb = KB.kb_admin_approve(uid)

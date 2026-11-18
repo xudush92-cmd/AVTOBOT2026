@@ -1,14 +1,13 @@
-"""Referal mukofoti, anti-fraud va tiklash qoidalari.
+"""Referal tizimi, anti-fraud va tiklash qoidalari.
 
 Qamlov:
 - havola biriktirish faqat yangi foydalanuvchi va tasdiqlangan, bloklanmagan
   referrer uchun ishlaydi (o'zini o'zi taklif qilib bo'lmaydi);
 - hisoblash (counted) va mukofot (bonus kun) IKKI BOSQICH: bonus faqat
   referal haqiqatan ishlay boshlagach beriladi;
-- bir marta — takroriy chaqiruv bonusni ikkinchi marta qo'shmaydi;
-- cheksiz tarifga ega referrerga kun qo'shilmaydi (lekin holat belgilanadi);
-- oylik chegala (cap) ishlaydi;
-- firibgar aniqlansa bonus kun qaytarib olinadi (clawback);
+- BONUS KUNLARI OLIB TASHLANGAN: referal endi faqat statistika uchun,
+  muddatga hech qanday kun qo'shilmaydi;
+- firibgar aniqlansa hisob qaytarib olinadi (clawback);
 - referrer bloklangan paytda tasdiqlansa hisob yo'qolmaydi — blokdan chiqqach
   qayta hisoblanadi;
 - tasdiqlanmagan takliflar ro'yxatida taklif qilingan kishining ismi
@@ -160,14 +159,14 @@ class ReferralTestCase(unittest.IsolatedAsyncioTestCase):
         messages = self.sent_to(REFERRER)
         self.assertEqual(len(messages), 1)
         self.assertIn("faollashdi", messages[0])
-        self.assertIn(f"{REFERRAL_BONUS_DAYS} kun", messages[0])
 
-        # Mukofot hali yo'q.
+        # Mukofot (bonus kun) umuman berilmaydi.
         self.assertFalse(await RF.maybe_grant_referral_bonus(REFERRED))
         user = await db.get_user(REFERRER)
         self.assertEqual(int(user["referral_bonus_days"] or 0), 0)
 
-    async def test_bonus_requires_group_post_and_send(self) -> None:
+    async def test_bonus_is_never_granted(self) -> None:
+        """Bonus kunlari olib tashlangan — hech qachon kun qo'shilmaydi."""
         await self.register()
         await self.activate()
         self.assertFalse(await RF.maybe_grant_referral_bonus(REFERRED))
@@ -179,68 +178,63 @@ class ReferralTestCase(unittest.IsolatedAsyncioTestCase):
 
         record = await db.get_chat_records(REFERRED)
         await db.log_send(REFERRED, False, group_id=int(record[0]["id"]), error="X")
+        self.assertFalse(await RF.maybe_grant_referral_bonus(REFERRED))
+
+        await db.log_send(REFERRED, True, group_id=int(record[0]["id"]))
         self.assertFalse(
             await RF.maybe_grant_referral_bonus(REFERRED),
-            "muvaffaqiyatsiz urinish mukofot keltirmasin",
+            "faol foydalanuvchi ham bonus olmasligi kerak",
         )
-
-        await db.log_send(REFERRED, True, group_id=int(record[0]["id"]))
-        self.assertTrue(await RF.maybe_grant_referral_bonus(REFERRED))
         user = await db.get_user(REFERRER)
-        self.assertEqual(int(user["referral_bonus_days"]), 3)
-        self.assertEqual(user["tariff_expires_at"], iso_after(13))
-
-        # Ikkinchi marta — takroriy mukofot bo'lmasligi kerak.
-        await db.log_send(REFERRED, True, group_id=int(record[0]["id"]))
-        self.assertFalse(await RF.maybe_grant_referral_bonus(REFERRED))
-        user = await db.get_user(REFERRER)
-        self.assertEqual(int(user["referral_bonus_days"]), 3)
-        self.assertEqual(len(self.sent_to(REFERRER)), 2)
+        self.assertEqual(int(user["referral_bonus_days"] or 0), 0)
+        self.assertEqual(user["tariff_expires_at"], iso_after(10))
+        self.assertEqual(len(self.sent_to(REFERRER)), 1)
 
     async def test_worker_hook_grants_bonus(self) -> None:
         await self.register()
         await self.make_active()
-        # Worker chaqiruvi ham bir xil natija beradi (log_send bu yerda qayta).
-        self.assertTrue(await RF.maybe_grant_referral_bonus(REFERRED, 1))
+        # Worker chaqiruvi ham bonus bermaydi (bonus kunlari olib tashlangan).
+        self.assertFalse(await RF.maybe_grant_referral_bonus(REFERRED, 1))
+        user = await db.get_user(REFERRER)
+        self.assertEqual(int(user["referral_bonus_days"] or 0), 0)
 
     async def test_unlimited_tariff_referrer_gets_no_days(self) -> None:
         await db.set_tariff_expires(REFERRER, None)
         await self.register()
         await self.make_active()
-        self.assertTrue(await RF.maybe_grant_referral_bonus(REFERRED))
+        self.assertFalse(await RF.maybe_grant_referral_bonus(REFERRED))
         user = await db.get_user(REFERRER)
         self.assertIsNone(user["tariff_expires_at"] or None)
         self.assertEqual(int(user["referral_bonus_days"] or 0), 0)
-        self.assertIn("cheksiz", self.sent_to(REFERRER)[-1])
 
     async def test_monthly_cap_limits_bonus(self) -> None:
+        """Bonus kunlari berilmagani uchun chegara ham qo'llanilmaydi."""
         with patch.object(RF, "REFERRAL_BONUS_MONTHLY_CAP_DAYS", 4):
             await self.register()
             await self.make_active()
-            self.assertTrue(await RF.maybe_grant_referral_bonus(REFERRED))
+            self.assertFalse(await RF.maybe_grant_referral_bonus(REFERRED))
             first = await db.get_user(REFERRER)
-            self.assertEqual(int(first["referral_bonus_days"]), 3)
+            self.assertEqual(int(first["referral_bonus_days"] or 0), 0)
 
             await self.register(8002)
             await self.make_active(8002)
-            self.assertTrue(await RF.maybe_grant_referral_bonus(8002))
+            self.assertFalse(await RF.maybe_grant_referral_bonus(8002))
             second = await db.get_user(REFERRER)
-            # Chegara 4 kun: 3 ta berilgan, keyingisiga faqat 1 kun qoladi.
-            self.assertEqual(int(second["referral_bonus_days"]), 4)
+            self.assertEqual(int(second["referral_bonus_days"] or 0), 0)
 
     # ── 3. Clawback va tiklash ──
     async def test_revoking_bonus_claws_back_days(self) -> None:
         await self.register()
         await self.make_active()
-        self.assertTrue(await RF.maybe_grant_referral_bonus(REFERRED))
+        self.assertFalse(await RF.maybe_grant_referral_bonus(REFERRED))
 
         result = await RF.revoke_referral_bonus(REFERRED, "soxta akkaunt")
         self.assertIsNotNone(result)
         self.assertEqual(int(result["referrer_uid"]), REFERRER)
-        self.assertEqual(int(result["bonus_days"]), 3)
+        self.assertEqual(int(result["bonus_days"]), 0)
 
         referrer = await db.get_user(REFERRER)
-        self.assertEqual(int(referrer["referral_bonus_days"]), 0)
+        self.assertEqual(int(referrer["referral_bonus_days"] or 0), 0)
         self.assertEqual(referrer["tariff_expires_at"], iso_after(10))
         self.assertIn("bekor qilindi", self.sent_to(REFERRER)[-1])
 
@@ -270,12 +264,12 @@ class ReferralTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(pending, [REFERRED])
         await RF.on_referral_counted(REFERRED)
         self.assertEqual(await db.count_referrals(REFERRER), 1)
-        # Endi bonus olishga ham yo'l ochiladi.
+        # Bonus kunlari berilmaydi, lekin hisob tiklangan bo'lishi kerak.
         await db.add_chat(REFERRED, "@g1")
         await db.add_post(REFERRED, "e'lon", [], None)
         record = await db.get_chat_records(REFERRED)
         await db.log_send(REFERRED, True, group_id=int(record[0]["id"]))
-        self.assertTrue(await RF.maybe_grant_referral_bonus(REFERRED))
+        self.assertFalse(await RF.maybe_grant_referral_bonus(REFERRED))
 
     # ── 4. Maxfiylik va sahifa ──
     async def test_pending_referee_name_is_masked(self) -> None:
@@ -301,7 +295,6 @@ class ReferralTestCase(unittest.IsolatedAsyncioTestCase):
         markup = update.message.reply_text.await_args.kwargs["reply_markup"]
         self.assertIn(f"t.me/avtobot2026?start=ref_{REFERRER}", text)
         self.assertIn("Faol referallar: 1 ta", text)
-        self.assertIn(f"+{REFERRAL_BONUS_DAYS} kun", text)
         buttons = {
             button.text
             for row in markup.inline_keyboard

@@ -312,6 +312,20 @@ async def confirm_start(uid: int) -> tuple[bool, str]:
     if await db.is_tariff_expired(uid):
         return False, T.EXPIRED_TEXT
 
+    # Jamoa admini muddati tugagan bo'lsa — jamoasi ham ishlamaydi.
+    if await db.team_admin_expired(uid):
+        return False, (
+            "⛔️ Jamoangiz adminining muddati tugadi.\n\n"
+            "💡 Administratoringiz super admin bilan bog'lanib, "
+            "muddatni uzaytirishi kerak."
+        )
+    if await db.team_owner_expired(uid):
+        return False, (
+            "⛔️ Jamoangiz adminining muddati tugadi.\n\n"
+            "💡 Administratoringiz super admin bilan bog'lanib, "
+            "muddatni uzaytirishi kerak."
+        )
+
     chats = await db.get_chats(uid)
     posts = await db.get_posts(uid)
 
@@ -423,6 +437,34 @@ async def route_menu_button(update: Update, text: str) -> bool:
     # 👥 Referal
     if text == T.BTN_REFERRAL:
         await R.show_referral(update)
+        return True
+
+    # 👥 Jamoam — jamoa admini uchun panel, oddiy a'zo uchun jamoa kartasi
+    if text == T.BTN_TEAM_MENU:
+        from bot import teams as Tm
+
+        uid = update.effective_user.id
+        user = await db.get_user(uid) or {}
+        if user.get("is_team_admin"):
+            await Tm.show_team_admin_panel(update, uid)
+        elif user.get("team_id"):
+            await Tm.show_team_member_panel(update, uid)
+        else:
+            await Tm.show_team_admin_panel(update, uid)
+        return True
+
+    # 👑 Admin bo'lish — jamoa yaratish
+    if text == T.BTN_TEAM_ADMIN:
+        from bot import teams as Tm
+
+        await Tm.begin_team_admin_register(update, update.effective_user.id)
+        return True
+
+    # 🎯 Jamoani tanlash — jamoasiz foydalanuvchi uchun
+    if text == T.BTN_TEAM_PICK:
+        from bot import teams as Tm
+
+        await Tm.show_team_picker(update, update.effective_user.id)
         return True
 
     # ⬅️ Kiritish oynasidan asosiy menyuga

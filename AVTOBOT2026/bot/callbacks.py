@@ -21,6 +21,7 @@ from bot.login import (
 from bot.menu import confirm_start, confirm_stop
 from config.config import (
     CODE_LENGTH,
+    DURATION_OPTIONS,
     LOGIN_TIMEOUT_S,
     MAX_CODE_LENGTH,
     SUPER_ADMIN,
@@ -178,6 +179,21 @@ async def _handle_callback_locked(update: Update, uid: int) -> None:
 
         if data.startswith("app:"):
             await handle_admin_approve(update, uid, data)
+            return
+        if data.startswith("team:"):
+            from bot import teams as Tm
+
+            # Jamoa a'zosining chiqish amallari — jamoa tanlashdan ajratiladi.
+            if data.startswith(("team:leave", )):
+                await Tm.handle_team_member_callback(update, uid, data)
+                return
+
+            await Tm.handle_team_pick_callback(update, uid, data)
+            return
+        if data.startswith("tadm:"):
+            from bot import teams as Tm
+
+            await Tm.handle_team_admin_callback(update, uid, data)
             return
         if data.startswith("adm:"):
             from admin import admin_panel
@@ -681,7 +697,20 @@ async def handle_admin_approve(update: Update, uid: int, data: str) -> None:
 
     async def apply_target_action() -> None:
         if action == "yes":
-            await admin_actions.action_approve(update, uid, target)
+            # Avval muddatni tanlash — keyin tasdiqlash.
+            from core.duration_policy import options_within_cap
+
+            options = options_within_cap(DURATION_OPTIONS, is_super_admin=True)
+            await q.edit_message_text(
+                "📅 Muddatni tanlang — foydalanuvchiga qancha kun beriladi?",
+                reply_markup=KB.kb_approve_term_options(target, options),
+            )
+        elif action == "term":
+            try:
+                days = int(parts[3])
+            except (ValueError, IndexError):
+                return
+            await admin_actions.action_approve(update, uid, target, days=days)
         elif action == "rejectconfirm":
             token = parts[3] if len(parts) > 3 else ""
             if not action_tokens.consume(uid, f"app:reject:{target}", token):
@@ -689,7 +718,7 @@ async def handle_admin_approve(update: Update, uid: int, data: str) -> None:
                 return
             await admin_actions.action_reject(update, uid, target)
 
-    if action not in {"yes", "rejectconfirm"}:
+    if action not in {"yes", "term", "rejectconfirm"}:
         return
     target_lock = user_update_lock(target)
     if target_lock is user_update_lock(uid):
