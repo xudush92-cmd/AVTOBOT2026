@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import time
+import traceback
 
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -238,8 +239,14 @@ async def _handle_callback_locked(update: Update, uid: int) -> None:
             return
 
     except Exception as exc:
+        # Traceback va callback ma'lumoti logga yoziladi — xato sababsiz
+        # qolmasligi uchun (qaysi tugma bosilgani ham ko'rinadi).
         log(
-            f"callback xatolik {uid}: {type(exc).__name__}",
+            f"callback xatolik {uid}: data={data!r} "
+            f"{type(exc).__name__}: {exc}\n"
+            + "".join(
+                traceback.format_exception(type(exc), exc, exc.__traceback__)
+            ),
             "error",
         )
         with contextlib.suppress(Exception):
