@@ -543,10 +543,11 @@ qayta ko'rib chiqildi.
 | Kirish oynasida tugma bosilsa javob beradi | ✅ | `MENU_BUTTONS` — kiritish oynasi bekor qilinadi, jamoa oqimi boshlanadi (avval telefon raqam sifatida qabul qilinardi) |
 | Eski klaviatura matni qabul qilinadi | ✅ | `🎯 Jamoa tanlash` — eski klaviaturadagi foydalanuvchilar uchun |
 | Jamoa sig'i qat'iy nazorat qilinadi | ✅ | `assign_team_member` va `set_team_pending` — jamoa to'lgan bo'lsa a'zo biriktirilmaydi |
+| Jamoa hayot sikli integratsion testi | ✅ | `tests/test_team_lifecycle.py` — yaratish → a'zo qo'shish → tasdiq → xabar → chiqish |
 
 ### 📊 Testlar
 
-**397 test** (`python -m unittest discover -s tests -t tests`) — hammasi o'tadi.
+**404 test** (`python -m unittest discover -s tests -t tests`) — hammasi o'tadi.
 Ruff — o'zgartirilgan modullarda yangi xato yo'q.
 
 ### 🔍 Guruhlarni topish — qo'lda belgilash (2026-11-14)
