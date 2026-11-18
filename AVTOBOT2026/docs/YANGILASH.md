@@ -14,7 +14,7 @@ qaytish rejasini beradi.
 | Worker yuborish | 🟡 o'rta | Endi albom `send_file([...])` orqali, matnli post `link_preview` bayrog'i bilan ketadi. Kunlik limit/faol soat yoqilsa, yuborishlar o'sha oynaga moslashadi |
 | Media disk | 🟡 o'rta | Albomlar bilan fayllar soni o'sadi. Har user uchun kvota: `MAX_MEDIA_FILES_PER_USER` (standart 200) |
 
-Barcha yangi funksiya testlangan: **406 test** (`python -m unittest discover -s tests -t tests`).
+Barcha yangi funksiya testlangan: **407 test** (`python -m unittest discover -s tests -t tests`).
 
 ### 🆕 Jamoa (team) tizimi
 
@@ -38,6 +38,7 @@ Barcha yangi funksiya testlangan: **406 test** (`python -m unittest discover -s 
 | Jamoa admini tasdiqi | 🟢 past | Jamoani yaratgan admin **darhol tasdiqlangan** bo'ladi — tasdiq kutilmaydi, oddiy user kabi posting qiladi |
 | «👑 Admin bo'lish» tugmasi | 🟢 past | Tugma asosiy menyuning oxirgi qatoriga qo'shildi (jamoasiz user uchun `🎯 Jamoani tanlash` bilan bir qatorda). Tugma **login'dan oldin ham** ishlaydi — ro'yxatdan o'tmagan, tasdiqlanmagan yoki sessiyasiz user ham jamoasini yaratishi mumkin. Kirish oynasida tugma bosilsa, kiritish oynasi bekor qilinadi va jamoa oqimi boshlanadi (avvalgi xatoda u telefon raqam sifatida qabul qilinardi) |
 | Jamoa sig'i | 🟢 past | Jamoa to'lgan bo'lsa yangi a'zo biriktirilmaydi (`assign_team_member` / `set_team_pending` ham tekshiradi) — limit oshishi mumkin emas |
+| Super admin paneli | 🟢 past | Bo'sh jamoa adminlari ro'yxatida ham «➕ Admin qo'shish» tugmasi ko'rinadi — birinchi jamoa adminini qo'shish uchun |
 
 > ℹ️ Jamoa tizimi **ixtiyoriy**: foydalanuvchi jamoa tanlamasa, oddiy user
 > sifatida ishlaydi. Jamoa adminlari faqat o'z jamoalariga ta'sir qiladi.

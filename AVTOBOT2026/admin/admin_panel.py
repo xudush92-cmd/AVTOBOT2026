@@ -629,11 +629,14 @@ async def show_team_admins(update: Update) -> None:
     q = update.callback_query
     admins = await db.get_team_admins()
     if not admins:
+        # Bo'sh ro'yxatda ham «➕ Admin qo'shish» tugmasi ko'rinishi kerak —
+        # aks holda super admin birinchi jamoa adminini qo'shira olmaydi.
         await q.edit_message_text(
             "👑 Hozircha jamoa admini yo'q.\n\n"
             "Foydalanuvchilar «👑 Admin bo'lish» tugmasi orqali o'z jamoasini "
-            "yaratishi mumkin.",
-            reply_markup=KB.kb_admin_back(),
+            "yaratishi mumkin.\n\n"
+            "Yoki «➕ Admin qo'shish» orqali raqam orqali tayyorlang.",
+            reply_markup=KB.kb_team_admins([]),
         )
         return
 
