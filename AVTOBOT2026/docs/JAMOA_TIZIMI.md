@@ -130,6 +130,29 @@ yakunlanadi. Bu **barcha adminlar uchun** bir xil:
 Super adminning "Foydalanuvchi qo'shish" oqimi esa alohida — u tasdiqlash
 emas, to'g'ridan-to'g'ri qo'shish.
 
+### 🚪 Jamoadan chiqish
+
+Oddiy jamoa a'zosi «👥 Jamoam» tugmasi orqali jamoasidan chiqishi mumkin.
+
+Oqim:
+1. `👥 Jamoam` → jamoa kartasi (nomi, muddati)
+2. `🚪 Jamoadan chiqish` → tasdiqlash oynasi (ogohlantirish bilan)
+3. `✅ Ha, chiqaman` → jamoadan chiqadi
+
+Chiqish natijasi:
+
+| Narsa | Natija |
+| ----- | ------ |
+| `team_id` / `owner_admin_uid` | Tozalanadi — foydalanuvchi endi jamoasiz |
+| **Jamoa muddati** | **Tugaydi** (jamoa admini bergan muddat) |
+| Super admin bergan muddat | **Saqlanadi** |
+| Posting | To'xtatiladi (`running = 0`) |
+| Jamoa sig'imi | Bo'shaydi — yangi a'zo qabul qilinadi |
+| Jamoa admini | Xabardor bo'ladi: «👋 A'zo ketdi» |
+
+> **Jamoa egasi (admin) jamoasidan chiqmaydi** — jamoa unga tegishli.
+> Chiqish faqat oddiy a'zolar uchun.
+
 ### 🚪 Guruhdan chiqarilish / guruhga yetib borolmaslik
 
 Agar bot guruhdan chiqarilsa yoki guruh yopiq bo'lsa, avtomatik ravishda

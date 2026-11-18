@@ -1425,6 +1425,33 @@ TEAM_ADMIN_NO_TEAM = (
     "👑 «Admin bo'lish» tugmasi orqali jamoa yaratishingiz mumkin."
 )
 
+# ── Oddiy jamoa a'zosi uchun (jamoadan chiqish) ──
+TEAM_MEMBER_INFO = (
+    "👥 <b>{name}</b>\n\n"
+    "Siz ushbu jamoaga biriktirilgansiz.\n"
+    "📅 Muddat: {expires}\n\n"
+    "ℹ️ Muddatni jamoa administratori beradi. Uni faqat super admin "
+    "o'zgartirishi mumkin.\n\n"
+    "🚪 Jamoadan chiqsangiz — berilgan muddat ham tugaydi."
+)
+
+TEAM_MEMBER_LEAVE_CONFIRM = (
+    "🚪 <b>Jamoadan chiqish</b>\n\n"
+    "Siz <b>{name}</b> jamoasidan chiqmoqchisiz.\n\n"
+    "⚠️ Jamoa administratori bergan muddat ham tugaydi va siz botning "
+    "imkoniyatlaridan foydalanishni to'xtatasiz.\n\n"
+    "Chiqishni tasdiqlaysizmi?"
+)
+
+TEAM_MEMBER_LEFT = (
+    "✅ Siz <b>{name}</b> jamoasidan chiqdingiz.\n\n"
+    "📅 Jamoa muddati tugadi.\n"
+    "ℹ️ Yana foydalanish uchun super admin bilan bog'laning."
+)
+
+TEAM_MEMBER_LEAVE_CANCELLED = "ℹ️ Chiqish bekor qilindi."
+
+
 TEAM_ADMIN_MEMBERS = (
     "👥 JAMOA A'ZOLARI ({total} ta)\n\n"
     "Har bir a'zoga tarif (muddat) berish uchun tanlang:\n\n"

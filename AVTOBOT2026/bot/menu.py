@@ -439,11 +439,18 @@ async def route_menu_button(update: Update, text: str) -> bool:
         await R.show_referral(update)
         return True
 
-    # 👥 Jamoam — jamoa admini uchun
+    # 👥 Jamoam — jamoa admini uchun panel, oddiy a'zo uchun jamoa kartasi
     if text == T.BTN_TEAM_MENU:
         from bot import teams as Tm
 
-        await Tm.show_team_admin_panel(update, update.effective_user.id)
+        uid = update.effective_user.id
+        user = await db.get_user(uid) or {}
+        if user.get("is_team_admin"):
+            await Tm.show_team_admin_panel(update, uid)
+        elif user.get("team_id"):
+            await Tm.show_team_member_panel(update, uid)
+        else:
+            await Tm.show_team_admin_panel(update, uid)
         return True
 
     # 👑 Admin bo'lish — jamoa yaratish

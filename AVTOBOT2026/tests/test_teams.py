@@ -1188,3 +1188,192 @@ class TeamAdminExpiryWorkerTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertFalse(ok, "muddati tugagan jamoada Start ishlamasligi kerak")
         self.assertIn("muddat", message.lower())
+
+
+class TeamLeaveTests(unittest.IsolatedAsyncioTestCase):
+    """Jamoadan chiqish — muddat ham tugaydi."""
+
+    async def asyncSetUp(self) -> None:
+        await db.close_db()
+        self.temp = tempfile.TemporaryDirectory()
+        self.old_db_path = db.DB_PATH
+        db.DB_PATH = Path(self.temp.name) / "test.db"
+        session_crypto._fernet = __import__(
+            "cryptography.fernet", fromlist=["Fernet"]
+        ).Fernet(
+            __import__("cryptography.fernet", fromlist=["Fernet"]).Fernet.generate_key()
+        )
+        await db.init_db()
+
+    async def asyncTearDown(self) -> None:
+        await db.close_db()
+        db.DB_PATH = self.old_db_path
+        session_crypto._fernet = None
+        self.temp.cleanup()
+
+    async def _make_member(self) -> tuple[int, int]:
+        team = await db.create_team("Jamoa", ADMIN_A, max_users=5)
+        await db.set_team_admin(
+            ADMIN_A, int(team["id"]), max_users=5, admin_expires_at=calc_expires(365)
+        )
+        await db.upsert_user(
+            USER_1,
+            name="A'zo",
+            team_id=int(team["id"]),
+            owner_admin_uid=ADMIN_A,
+            is_admin=1,
+            tariff_expires_at=calc_expires(30),
+        )
+        return int(team["id"]), ADMIN_A
+
+    async def test_leave_team_clears_membership(self) -> None:
+        """Chiqishdan keyin team_id va owner_admin_uid tozalanadi."""
+        await self._make_member()
+        result = await db.leave_team(USER_1)
+        self.assertIsNotNone(result)
+        user = await db.get_user(USER_1)
+        self.assertIsNone(user["team_id"])
+        self.assertIsNone(user["owner_admin_uid"])
+
+    async def test_leave_team_clears_expiry(self) -> None:
+        """Jamoa admini bergan muddat chiqish bilan tugaydi."""
+        await self._make_member()
+        await db.leave_team(USER_1)
+        user = await db.get_user(USER_1)
+        self.assertIsNone(user["tariff_expires_at"])
+
+    async def test_leave_team_keeps_super_admin_expiry(self) -> None:
+        """Super admin bergan muddat saqlanadi (jamoa admini emas)."""
+        team = await db.create_team("Jamoa", ADMIN_A, max_users=5)
+        await db.set_team_admin(
+            ADMIN_A, int(team["id"]), max_users=5, admin_expires_at=calc_expires(365)
+        )
+        await db.upsert_user(
+            USER_1,
+            name="Vali",
+            team_id=int(team["id"]),
+            owner_admin_uid=SUPER_ADMIN,
+            tariff_expires_at=calc_expires(30),
+        )
+        await db.leave_team(USER_1)
+        user = await db.get_user(USER_1)
+        self.assertIsNotNone(
+            user["tariff_expires_at"],
+            "super admin bergan muddat jamoadan chiqishda saqlanishi kerak",
+        )
+        self.assertIsNone(user["team_id"])
+
+    async def test_leave_team_admin_cannot_leave(self) -> None:
+        """Jamoa admini o'z jamoasidan chiqmaydi."""
+        team = await db.create_team("Jamoa", ADMIN_A, max_users=5)
+        await db.set_team_admin(
+            ADMIN_A, int(team["id"]), max_users=5, admin_expires_at=calc_expires(365)
+        )
+        result = await db.leave_team(ADMIN_A)
+        self.assertIsNone(result, "jamoa egasi jamoasidan chiqmasligi kerak")
+        user = await db.get_user(ADMIN_A)
+        self.assertEqual(int(user["team_id"]), int(team["id"]))
+
+    async def test_leave_team_plain_user_returns_none(self) -> None:
+        """Jamoada bo'lmagan user uchun None."""
+        await db.upsert_user(USER_1, name="Oddiy")
+        self.assertIsNone(await db.leave_team(USER_1))
+
+    async def test_leave_confirm_flow_stops_worker(self) -> None:
+        """Chiqish tasdiqlanganda posting to'xtaydi."""
+        await self._make_member()
+        await db.set_running(USER_1, True)
+
+        q = SimpleNamespace(
+            data="team:leaveconfirm",
+            answer=AsyncMock(),
+            edit_message_text=AsyncMock(),
+            message=SimpleNamespace(reply_text=AsyncMock()),
+        )
+        update = SimpleNamespace(
+            callback_query=q,
+            effective_user=SimpleNamespace(id=USER_1),
+            message=SimpleNamespace(reply_text=AsyncMock()),
+        )
+        with patch.object(Tm, "application", None):
+            await Tm.handle_team_member_callback(
+                update, USER_1, "team:leaveconfirm"
+            )
+
+        user = await db.get_user(USER_1)
+        self.assertIsNone(user["team_id"])
+        self.assertIsNone(user["tariff_expires_at"])
+        self.assertFalse(user["running"], "posting to'xtatilishi kerak")
+
+    async def test_leave_ask_shows_confirmation(self) -> None:
+        """Chiqishdan oldin tasdiqlash oynasi ko'rsatiladi."""
+        await self._make_member()
+        q = SimpleNamespace(
+            data="team:leaveask",
+            answer=AsyncMock(),
+            edit_message_text=AsyncMock(),
+            message=SimpleNamespace(reply_text=AsyncMock()),
+        )
+        update = SimpleNamespace(
+            callback_query=q,
+            effective_user=SimpleNamespace(id=USER_1),
+            message=SimpleNamespace(reply_text=AsyncMock()),
+        )
+        with patch.object(Tm, "application", None):
+            await Tm.handle_team_member_callback(update, USER_1, "team:leaveask")
+
+        markup = q.edit_message_text.await_args.kwargs.get("reply_markup")
+        callbacks = {
+            b.callback_data for row in markup.inline_keyboard for b in row if b.callback_data
+        }
+        self.assertIn("team:leaveconfirm", callbacks)
+        self.assertIn("team:leavecancel", callbacks)
+        # Hali chiqmagan — muddat saqlanadi.
+        user = await db.get_user(USER_1)
+        self.assertIsNotNone(user["tariff_expires_at"])
+
+    async def test_leave_cancel_keeps_membership(self) -> None:
+        """Bekor qilinsa — jamoada qoladi, muddat saqlanadi."""
+        await self._make_member()
+        q = SimpleNamespace(
+            data="team:leavecancel",
+            answer=AsyncMock(),
+            edit_message_text=AsyncMock(),
+            message=SimpleNamespace(reply_text=AsyncMock()),
+        )
+        update = SimpleNamespace(
+            callback_query=q,
+            effective_user=SimpleNamespace(id=USER_1),
+            message=SimpleNamespace(reply_text=AsyncMock()),
+        )
+        with patch.object(Tm, "application", None):
+            await Tm.handle_team_member_callback(update, USER_1, "team:leavecancel")
+
+        user = await db.get_user(USER_1)
+        self.assertIsNotNone(user["team_id"])
+        self.assertIsNotNone(user["tariff_expires_at"])
+
+    async def test_team_admin_cannot_leave_via_callback(self) -> None:
+        """Jamoa admini callback orqali ham chiqmaydi."""
+        team = await db.create_team("Jamoa", ADMIN_A, max_users=5)
+        await db.set_team_admin(
+            ADMIN_A, int(team["id"]), max_users=5, admin_expires_at=calc_expires(365)
+        )
+        q = SimpleNamespace(
+            data="team:leaveconfirm",
+            answer=AsyncMock(),
+            edit_message_text=AsyncMock(),
+            message=SimpleNamespace(reply_text=AsyncMock()),
+        )
+        update = SimpleNamespace(
+            callback_query=q,
+            effective_user=SimpleNamespace(id=ADMIN_A),
+            message=SimpleNamespace(reply_text=AsyncMock()),
+        )
+        with patch.object(Tm, "application", None):
+            await Tm.handle_team_member_callback(
+                update, ADMIN_A, "team:leaveconfirm"
+            )
+
+        user = await db.get_user(ADMIN_A)
+        self.assertEqual(int(user["team_id"]), int(team["id"]))

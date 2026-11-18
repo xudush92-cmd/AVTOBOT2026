@@ -647,7 +647,11 @@ async def get_menu(uid: int):
     running = worker_manager.is_running(uid) if worker_manager else False
     user = await db.get_user(uid) or {}
     team_admin = bool(user.get("is_team_admin"))
-    return KB.kb_main(running=running, team_admin=team_admin)
+    # Oddiy jamoa a'zosi ham "Jamoam" tugmasini ko'radi — undan chiqishi uchun.
+    team_member = bool(user.get("team_id")) and not team_admin
+    return KB.kb_main(
+        running=running, team_admin=team_admin, team_member=team_member
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────

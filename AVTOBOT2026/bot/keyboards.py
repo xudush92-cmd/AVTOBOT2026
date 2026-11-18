@@ -41,6 +41,7 @@ def kb_main(
     running: bool = False,
     super_admin: bool = False,
     team_admin: bool = False,
+    team_member: bool = False,
 ) -> ReplyKeyboardMarkup:
     """Yassi (ichki menyusiz) foydalanuvchi klaviaturasi.
 
@@ -70,6 +71,9 @@ def kb_main(
     ]
     # Jamoa adminiga — o'z jamoasini boshqarish tugmasi.
     if team_admin:
+        rows.append([KeyboardButton(T.BTN_TEAM_MENU)])
+    # Oddiy jamoa a'zosiga — o'z jamoasi haqida ma'lumot va undan chiqish.
+    elif team_member:
         rows.append([KeyboardButton(T.BTN_TEAM_MENU)])
     return ReplyKeyboardMarkup(rows, resize_keyboard=True)
 
@@ -1467,6 +1471,35 @@ def kb_team_term_options(uid: int, options: list[int]) -> InlineKeyboardMarkup:
         rows.append(row)
     rows.append([InlineKeyboardButton("⬅️ Orqaga", callback_data=f"tadm:member:{uid}")])
     return InlineKeyboardMarkup(rows)
+
+
+def kb_team_member_self_card() -> InlineKeyboardMarkup:
+    """Oddiy jamoa a'zosi kartasi — jamoadan chiqish."""
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    "🚪 Jamoadan chiqish", callback_data="team:leaveask"
+                )
+            ]
+        ]
+    )
+
+
+def kb_team_leave_confirm() -> InlineKeyboardMarkup:
+    """Jamoadan chiqishni tasdiqlash."""
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    "✅ Ha, chiqaman", callback_data="team:leaveconfirm"
+                ),
+                InlineKeyboardButton(
+                    "⬅️ Yo'q", callback_data="team:leavecancel"
+                ),
+            ]
+        ]
+    )
 
 
 def kb_team_admin_register() -> InlineKeyboardMarkup:

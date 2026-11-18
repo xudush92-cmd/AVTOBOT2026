@@ -183,6 +183,11 @@ async def _handle_callback_locked(update: Update, uid: int) -> None:
         if data.startswith("team:"):
             from bot import teams as Tm
 
+            # Jamoa a'zosining chiqish amallari — jamoa tanlashdan ajratiladi.
+            if data.startswith(("team:leave", )):
+                await Tm.handle_team_member_callback(update, uid, data)
+                return
+
             await Tm.handle_team_pick_callback(update, uid, data)
             return
         if data.startswith("tadm:"):

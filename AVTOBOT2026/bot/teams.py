@@ -14,6 +14,7 @@ Super admin jamoa adminlarining muddati va sig'imi (limit)ni boshqaradi.
 
 from __future__ import annotations
 
+import contextlib
 import time
 
 from telegram import Update
@@ -385,6 +386,107 @@ async def show_team_admin_panel(update: Update, admin_uid: int) -> None:
         ),
         reply_markup=KB.kb_team_admin_panel(),
     )
+
+
+async def show_team_member_panel(update: Update, uid: int) -> None:
+    """Oddiy jamoa a'zosi uchun jamoa kartasi va chiqish tugmasi."""
+    user = await db.get_user(uid) or {}
+    team_id = int(user.get("team_id") or 0)
+
+    if not team_id:
+        await update.message.reply_text(
+            T.TEAM_ADMIN_NO_TEAM,
+            reply_markup=KB.kb_main(),
+        )
+        return
+
+    team = await db.get_team(team_id)
+    if not team:
+        # Jamoa bazadan o'chirilgan — foydalanuvchini tozalaymiz.
+        await db.leave_team(uid)
+        await update.message.reply_text(
+            "ℹ️ Jamoangiz endi mavjud emas.\n\n"
+            "👑 «Admin bo'lish» tugmasi orqali yangi jamoa yaratishingiz mumkin.",
+            reply_markup=KB.kb_main(),
+        )
+        return
+
+    await update.message.reply_text(
+        T.TEAM_MEMBER_INFO.format(
+            name=team.get("name") or "Jamoa",
+            expires=_expiry_text(user.get("tariff_expires_at")),
+        ),
+        reply_markup=KB.kb_team_member_self_card(),
+    )
+
+
+async def handle_team_member_callback(update: Update, uid: int, data: str) -> None:
+    """Oddiy jamoa a'zosi callback'lari — jamoadan chiqish."""
+    q = update.callback_query
+    parts = data.split(":")
+    action = parts[1] if len(parts) > 1 else ""
+
+    user = await db.get_user(uid) or {}
+    team_id = int(user.get("team_id") or 0)
+    if not team_id:
+        await q.answer(
+            "Siz jamoada emassingiz", show_alert=True
+        )
+        return
+
+    team = await db.get_team(team_id)
+    team_name = (team or {}).get("name") or "Jamoa"
+
+    if action == "leaveask":
+        await q.edit_message_text(
+            T.TEAM_MEMBER_LEAVE_CONFIRM.format(name=team_name),
+            reply_markup=KB.kb_team_leave_confirm(),
+        )
+        return
+
+    if action == "leavecancel":
+        await q.edit_message_text(
+            T.TEAM_MEMBER_LEAVE_CANCELLED,
+            reply_markup=KB.kb_team_member_self_card(),
+        )
+        return
+
+    if action == "leaveconfirm":
+        # Jamoa admini o'z jamoasidan chiqmaydi.
+        if user.get("is_team_admin"):
+            await q.answer(
+                "Jamoa egasi jamoasidan chiqmaydi", show_alert=True
+            )
+            return
+
+        # Jamoa adminiga xabar — a'zo ketdi.
+        owner_uid = int(user.get("owner_admin_uid") or 0)
+        result = await db.leave_team(uid)
+        if not result:
+            await q.answer(
+                "Jamoadan chiqib bo'lmadi", show_alert=True
+            )
+            return
+
+        # E'lon yuborish to'xtatiladi — muddat ham tugadi.
+        await db.set_running(uid, False)
+
+        if owner_uid:
+            with contextlib.suppress(Exception):
+                await application.bot.send_message(
+                    owner_uid,
+                    f"👋 A'zo ketdi: <b>{user.get('name') or uid}</b>\n\n"
+                    f"📋 Jamoa: {team_name}\n"
+                    "ℹ️ Uning muddati ham tugdi.",
+                    parse_mode="HTML",
+                )
+
+        await q.edit_message_text(
+            T.TEAM_MEMBER_LEFT.format(name=team_name),
+            reply_markup=KB.kb_main(),
+        )
+        log(f"👋 {uid} jamoadan chiqdi: {team_name}")
+        return
 
 
 async def handle_team_admin_callback(update: Update, uid: int, data: str) -> None:

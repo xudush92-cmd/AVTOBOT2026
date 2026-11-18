@@ -2260,6 +2260,67 @@ async def set_team_pending(
     return cur.rowcount > 0
 
 
+async def leave_team(uid: int) -> dict | None:
+    """Foydalanuvchini jamoadan chiqaradi.
+
+    Natija:
+      * ``team_id`` va ``owner_admin_uid`` tozalanadi — foydalanuvchi
+        endi jamoasiz (jamoa o'z muddatiga ishlaydi);
+      * ``tariff_expires_at`` ham tozalanadi — jamoadagi muddat ham tugaydi,
+        chunki muddat jamoa admini tomonidan berilgan edi. Agar foydalanuvchi
+        super admin tomonidan tasdiqlangan bo'lsa, uning muddati saqlanadi;
+      * jamoa admini o'z jamoasidan chiqayolmaydi (``owner_admin_uid`` —
+        jamoa egasi).
+
+    Returns:
+        Chiqish natijasi: ``{"team_id", "owner_admin_uid", "team_name",
+        "expires_cleared"}`` yoki ``None`` (foydalanuvchi jamoada emas).
+    """
+    user = await get_user(uid)
+    if not user:
+        return None
+
+    team_id = int(user.get("team_id") or 0)
+    owner_uid = int(user.get("owner_admin_uid") or 0)
+
+    # Jamoada bo'lmagan foydalanuvchi — chiqish mumkin emas.
+    if not team_id:
+        return None
+
+    # Jamoa egasi (admin) jamoasidan chiqmaydi — jamoa sizga tegishli.
+    if user.get("is_team_admin") or (team_id and owner_uid == int(uid)):
+        return None
+
+    team_name = ""
+    if team_id:
+        team = await get_team(team_id)
+        if team:
+            team_name = str(team.get("name") or "")
+
+    # Muddat: jamoa admini bergan bo'lsa — chiqish bilan tugaydi.
+    # Super admin bergan muddat (jamoasiz tasdiqlash) saqlanadi.
+    expires_cleared = False
+    current_expires = user.get("tariff_expires_at")
+    if current_expires and owner_uid and owner_uid != SUPER_ADMIN:
+        expires_cleared = True
+
+    cur = await _execute_write(
+        "UPDATE users SET team_id = NULL, owner_admin_uid = NULL, "
+        "awaiting_approval = 0, tariff_expires_at = ?, updated_at = ? "
+        "WHERE uid = ?",
+        (None if expires_cleared else current_expires, iso_now(), int(uid)),
+    )
+    if not cur.rowcount:
+        return None
+
+    return {
+        "team_id": team_id,
+        "owner_admin_uid": owner_uid,
+        "team_name": team_name,
+        "expires_cleared": expires_cleared,
+    }
+
+
 async def set_team_admin(
     uid: int,
     team_id: int,
