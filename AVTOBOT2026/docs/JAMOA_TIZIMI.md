@@ -55,7 +55,7 @@ Har bir jamoa admini **faqat o'z a'zolarini** ko'radi va boshqaradi:
 ## 3. Jamoa admini bo'lish
 
 ```
-/start → 🔑 Login → 👑 Admin bo'lish
+/start → 👑 Admin bo'lish
    ↓
 🔢 Jamoangizda qancha foydalanuvchi bo'ladi?  → 5
    ↓
@@ -64,6 +64,13 @@ Har bir jamoa admini **faqat o'z a'zolarini** ko'radi va boshqaradi:
 ✅ Jamoa yaratildi
    🔗 Havola: https://t.me/Bot?start=team_12
 ```
+
+> **«👑 Admin bo'lish» tugmasi login'dan oldin ham ishlaydi.** U asosiy
+> menyuning oxirgi qatorida, jamoasiz foydalanuvchilar uchun ko'rinadi
+> (`🎯 Jamoani tanlash` tugmasi bilan bir qatorda). Jamoa yaratish uchun
+> oldindan login oynasini to'ldirish shart emas — admin avval jamoasini
+> yaratadi, keyin o'ziga xizmat qo'shadi. Kirish oynasi paytida ham bu
+> tugma bosilsa, kiritish oynasi bekor qilinadi va jamoa oqimi boshlanadi.
 
 | Qoida | Qiymat |
 | ----- | ------ |

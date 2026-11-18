@@ -419,7 +419,6 @@ BTN_BLOCKED = "🚫 Bloklangan"
 BTN_TEAM_ADMIN = "👑 Admin bo'lish"
 BTN_TEAM_MENU = "👥 Jamoam"
 BTN_TEAM_PICK = "🎯 Jamoani tanlash"
-BTN_TEAM_PICK = "🎯 Jamoa tanlash"
 
 
 # ─────────────────────────────────────────────────────────────────────────

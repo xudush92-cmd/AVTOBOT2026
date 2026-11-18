@@ -73,6 +73,24 @@ from worker.client_pool import ClientPool
 # ─────────────────────────────────────────────────────────────────────────
 # GLOBAL
 # ─────────────────────────────────────────────────────────────────────────
+# Kirish oynasida ham bosilishi mumkin bo'lgan menyu tugmalari.
+# Ulardan biri bosilsa, kiritish oynasi bekor qilinadi va tugma
+# oddiy menyudagidek bajariladi.
+MENU_BUTTONS = frozenset(
+    {
+        T.BTN_FIND_GROUPS,
+        T.BTN_DEL_GROUP,
+        T.BTN_ADD_POST,
+        T.BTN_DEL_POST,
+        T.BTN_TIMER,
+        T.BTN_REPORT,
+        T.BTN_REFERRAL,
+        T.BTN_TEAM_ADMIN,
+        T.BTN_TEAM_MENU,
+        T.BTN_TEAM_PICK,
+    }
+)
+
 rate_limiter = RateLimiter()
 application: Application | None = None
 client_pool: ClientPool | None = None
@@ -337,6 +355,18 @@ async def _on_message_locked(
 
     # ── LOGIN FSM ──
     if step in ("full_name", "phone", "code", "qr", "password"):
+        # Kirish oynasida menyu tugmasi bosilsa, kiritish oynasi bekor
+        # qilinadi va tugma oddiy menyudagidek bajariladi (masalan
+        # «👑 Admin bo'lish» — jamoa yaratish oqimini boshladi).
+        if text in MENU_BUTTONS:
+            Login.user_states.pop(uid, None)
+            await msg.reply_text("ℹ️ Oldingi kiritish oynasi bekor qilindi.")
+            handled = await Menu.route_menu_button(update, text)
+            if not handled:
+                await msg.reply_text(
+                    T.USE_MENU_BUTTONS, reply_markup=await get_menu(uid)
+                )
+            return
         if time.time() - state.get("ts", 0) > LOGIN_TIMEOUT_S:
             admin_flow = bool(state.get("admin_add_user")) or uid == SUPER_ADMIN
             await Login.cleanup_login(uid)
@@ -496,6 +526,12 @@ async def _on_message_locked(
         if text == T.BTN_LOGIN:
             await start_login_with_limit(update, uid)
             return
+        if text == T.BTN_TEAM_ADMIN:
+            # Jamoa admini bo'lish — login'dan oldin ham mumkin.
+            from bot import teams as Tm
+
+            await Tm.begin_team_admin_register(update, uid)
+            return
         await msg.reply_text(T.WELCOME_SHORT, reply_markup=KB.kb_login())
         return
 
@@ -506,14 +542,26 @@ async def _on_message_locked(
     if not user.get("is_admin"):
         if text == T.BTN_LOGIN:
             await start_login_with_limit(update, uid)
-        else:
-            await msg.reply_text(T.WELCOME_SHORT, reply_markup=KB.kb_login())
+            return
+        if text == T.BTN_TEAM_ADMIN:
+            # Jamoa admini bo'lish — tasdiqlanish talab qilinmaydi.
+            from bot import teams as Tm
+
+            await Tm.begin_team_admin_register(update, uid)
+            return
+        await msg.reply_text(T.WELCOME_SHORT, reply_markup=KB.kb_login())
         return
 
     # ── SESSIYA YO'Q ──
     if not user.get("session"):
         if text == T.BTN_LOGIN:
             await start_login_with_limit(update, uid)
+            return
+        if text == T.BTN_TEAM_ADMIN:
+            # Jamoa admini bo'lish — sessiya talab qilinmaydi.
+            from bot import teams as Tm
+
+            await Tm.begin_team_admin_register(update, uid)
             return
         await msg.reply_text(T.WELCOME_SHORT, reply_markup=KB.kb_login())
         return
@@ -527,15 +575,7 @@ async def _on_message_locked(
         "set_interval_confirm",
         "set_group_interval",
     ):
-        menu_buttons = {
-            T.BTN_FIND_GROUPS,
-            T.BTN_DEL_GROUP,
-            T.BTN_ADD_POST,
-            T.BTN_DEL_POST,
-            T.BTN_TIMER,
-            T.BTN_REPORT,
-            T.BTN_REFERRAL,
-        }
+        menu_buttons = MENU_BUTTONS
         # Start/Stop/Status/Paket yorliqlari holatni o'zida olib yuradi
         # ("▶️ Start (🔴 OFF)") yoki eski klaviaturalarda qolgan bo'lishi mumkin.
         dynamic_prefixes = (

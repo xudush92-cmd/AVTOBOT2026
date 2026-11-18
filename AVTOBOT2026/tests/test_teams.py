@@ -1710,6 +1710,30 @@ class MainKeyboardRoleTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(T.BTN_TEAM_PICK, self._buttons(markup))
         self.assertNotIn(T.BTN_TEAM_MENU, self._buttons(markup))
 
+    async def test_plain_user_sees_admin_button(self) -> None:
+        """Jamoasiz foydalanuvchi «👑 Admin bo'lish» tugmasini ko'radi.
+
+        Foydalanuvchi jamoa yaratishi (jamoa admini bo'lishi) mumkin —
+        bu tugma asosiy menyuda bo'lishi shart.
+        """
+        await db.upsert_user(USER_1, name="Oddiy")
+        markup = await KB.kb_main_for(USER_1)
+        self.assertIn(
+            T.BTN_TEAM_ADMIN,
+            self._buttons(markup),
+            "jamoa admini bo'lish tugmasi asosiy menyuda bo'lishi kerak",
+        )
+
+    async def test_team_member_does_not_see_admin_button(self) -> None:
+        """Oddiy jamoa a'zosiga jamoa yaratish tugmasi kerak emas."""
+        team = await db.create_team("Jamoa", ADMIN_A, max_users=5)
+        await db.upsert_user(
+            USER_1, name="A'zo", team_id=int(team["id"]), owner_admin_uid=ADMIN_A
+        )
+        markup = await KB.kb_main_for(USER_1)
+        self.assertNotIn(T.BTN_TEAM_ADMIN, self._buttons(markup))
+        self.assertNotIn(T.BTN_TEAM_PICK, self._buttons(markup))
+
     async def test_team_admin_does_not_see_team_pick(self) -> None:
         """Jamoa adminiga jamoani tanlash tugmasi kerak emas."""
         team = await db.create_team("Jamoa", ADMIN_A, max_users=5)
@@ -1718,6 +1742,33 @@ class MainKeyboardRoleTests(unittest.IsolatedAsyncioTestCase):
         )
         markup = await KB.kb_main_for(ADMIN_A)
         self.assertNotIn(T.BTN_TEAM_PICK, self._buttons(markup))
+        self.assertNotIn(T.BTN_TEAM_ADMIN, self._buttons(markup))
+
+    async def test_login_keyboard_has_admin_button(self) -> None:
+        """Kirish ekranida ham jamoa admini bo'lish tugmasi bor."""
+        buttons = [b.text for row in KB.kb_login().keyboard for b in row]
+        self.assertIn(T.BTN_TEAM_ADMIN, buttons)
+        self.assertIn(T.BTN_LOGIN, buttons)
+
+    async def test_admin_button_starts_team_creation(self) -> None:
+        """«👑 Admin bo'lish» bosilganda jamoa yaratish oqimi boshlanadi."""
+        from bot.menu import route_menu_button
+
+        await db.upsert_user(USER_1, name="Oddiy")
+        update = SimpleNamespace(
+            effective_user=SimpleNamespace(id=USER_1),
+            message=SimpleNamespace(reply_text=AsyncMock()),
+        )
+        handled = await route_menu_button(update, T.BTN_TEAM_ADMIN)
+        self.assertTrue(handled, "tugma qayta ishlovchi bo'lishi kerak")
+
+        from bot.login import user_states
+
+        self.assertEqual(
+            user_states.get(USER_1, {}).get("step"),
+            "team_admin_size",
+            "jamoa sig'imi so'ralishi kerak",
+        )
 
 
 class TeamHandoverTests(unittest.IsolatedAsyncioTestCase):

@@ -271,8 +271,10 @@ to'xtatish”** tugmasi bilan bekor qilish mumkin.
 - **🎯 Jamoani tanlash** (jamoasiz foydalanuvchi) — ixtiyoriy. Boshqa yangi
   foydalanuvchilar **to'g'ridan-to'g'ri ro'yxatdan o'tadi** — hech qanday
   savol berilmaydi.
-- **👑 Admin bo'lish** — o'z jamoangizni yarating. Super admin telefoningizni
-  kiritsa — siz avtomatik jamoa admini bo'lasiz.
+- **👑 Admin bo'lish** — asosiy menyuning oxirgi qatorida (jamoasiz
+  foydalanuvchilar uchun). O'z jamoangizni yarating. Tugma **login'dan oldin
+  ham** ishlaydi — oldindan login oynasini to'ldirish shart emas. Super admin
+  telefoningizni kiritsa — siz avtomatik jamoa admini bo'lasiz.
 - **⚡ Tez tasdiqlash** (`AUTO_APPROVE_ENABLED=1` bo'lsa) — past riskli arizalar
   admin navbatini kutmasdan tasdiqlanadi; har bir avto-tasdiq adminga xabar
   qilinadi.

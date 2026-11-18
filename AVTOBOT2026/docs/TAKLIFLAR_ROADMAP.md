@@ -538,10 +538,13 @@ qayta ko'rib chiqildi.
 | Do'stlar ro'yxati + bekor qilish | ✅ | `tadm:invites` / `tadm:delinvite` |
 | Muddati tugagan indikatorlari | ✅ | ⌛ — a'zo va jamoa admini ro'yxatlarida |
 | Jamoa admini o'z jamoasini boshqaradi | ✅ | `👥 Jamoam` har bir ekranda saqlanadi |
+| «👑 Admin bo'lish» tugmasi asosiy menyuda | ✅ | `kb_main()` — jamoasiz user uchun `🎯 Jamoani tanlash` bilan bir qatorda |
+| Tugma login'dan oldin ham ishlaydi | ✅ | `main.py` — ro'yxatdan o'tmagan / tasdiqlanmagan / sessiyasiz user uchun |
+| Kirish oynasida tugma bosilsa javob beradi | ✅ | `MENU_BUTTONS` — kiritish oynasi bekor qilinadi, jamoa oqimi boshlanadi (avval telefon raqam sifatida qabul qilinardi) |
 
 ### 📊 Testlar
 
-**385 test** (`python -m unittest discover -s tests -t tests`) — hammasi o'tadi.
+**393 test** (`python -m unittest discover -s tests -t tests`) — hammasi o'tadi.
 Ruff — o'zgartirilgan modullarda yangi xato yo'q.
 
 ### 🔍 Guruhlarni topish — qo'lda belgilash (2026-11-14)

@@ -72,9 +72,15 @@ def kb_main(
     # Jamoa adminiga — o'z jamoasini boshqarish tugmasi.
     if team_admin or team_member:
         rows.append([KeyboardButton(T.BTN_TEAM_MENU)])
-    # Jamoasiz foydalanuvchi — jamoani qo'lda tanlash mumkin.
+    # Jamoasiz foydalanuvchi — jamoani qo'lda tanlash mumkin va o'z jamoasini
+    # yaratishi (jamoa admini bo'lish) mumkin.
     else:
-        rows.append([KeyboardButton(T.BTN_TEAM_PICK)])
+        rows.append(
+            [
+                KeyboardButton(T.BTN_TEAM_PICK),
+                KeyboardButton(T.BTN_TEAM_ADMIN),
+            ]
+        )
     return ReplyKeyboardMarkup(rows, resize_keyboard=True)
 
 
