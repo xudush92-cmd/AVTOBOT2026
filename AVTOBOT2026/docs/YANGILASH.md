@@ -14,7 +14,7 @@ qaytish rejasini beradi.
 | Worker yuborish | 🟡 o'rta | Endi albom `send_file([...])` orqali, matnli post `link_preview` bayrog'i bilan ketadi. Kunlik limit/faol soat yoqilsa, yuborishlar o'sha oynaga moslashadi |
 | Media disk | 🟡 o'rta | Albomlar bilan fayllar soni o'sadi. Har user uchun kvota: `MAX_MEDIA_FILES_PER_USER` (standart 200) |
 
-Barcha yangi funksiya testlangan: **453 test** (`python -m unittest discover -s tests -t tests`).
+Barcha yangi funksiya testlangan: **471 test** (`python -m unittest discover -s tests -t tests`).
 
 ### 🆕 «🔍 Guruhlarni topish» skaneri — tez, izolyatsiyalangan, havolali
 
@@ -46,6 +46,19 @@ foydalanuvchilarga **ta'sir qilmaydi**.
 | Qism | Xavf | Izoh |
 | ---- | ---- | ---- |
 | `core/update_locks.py` | 🟢 past | Lock'lar avval `uid % 256` (striped) uslubida taqsimlanardi. Natijada `uid=1` va `uid=257` **bir xil** lock'ni olardi — bitta foydalanuvchi uzoq amal qilsa, ikkinchisi **kutib qolardi**. Endi lock'lar **aybiga** yaratiladi va `WeakValueDictionary` bilan saqlanadi (faol bo'lmagan lock'lar xotiradan o'chadi) |
+
+### 🆕 💬 Foydalanuvchining o'z guruhlarini boshqarish oynasi
+
+Super admin allaqachon foydalanuvchining guruhiga **alohida interval** qo'yish
+huquqiga ega (`uc:` prefiksi). Endi **foydalanuvchining o'zi ham** o'z guruhiga
+alohida interval qo'yishi mumkin — **bitta sodda oynada**.
+
+| Qism | Xavf | Izoh |
+| ---- | ---- | ---- |
+| Asosiy menyu | 🟢 past | Endi `💬 Guruhlar` va `⏱ Guruh intervali` tugmalari bor. Eski `➖ Guruh o'chirish` tugmasi olib tashlandi (ikki xil oyna chalkashuv keltirardi) — u ham `💬 Guruhlar` oynasiga yo'naltiriladi |
+| Yangi oyna (`bot/my_groups.py`) | 🟢 past | Bitta inline oyna: har guruh yonida `⏱ X daq` (alohida interval) va `🗑 N. guruh` (o'chirish). Yuqorida `🔍 Guruhlarni topish` va `⏱ Umumiy interval` |
+| Super admin o'z guruhlari | 🟢 past | Super admin uchun bu oyna **ishlamaydi** — u allaqachon `uc:` orqali har bir foydalanuvchining guruhini boshqaradi. `mg:` prefiksi super admin'dan **himoyalangan** |
+| Izolyatsiya | 🟢 past | Foydalanuvchi **faqat o'z** guruhlarini ko'radi va o'zgartiradi — `mg:` callback'lari `db.get_chat_record(uid, ...)` orqali tekshiriladi |
 
 ### 🆕 Bot bir vaqtda o'lmasligi (startup barqarorligi)
 

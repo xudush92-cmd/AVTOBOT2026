@@ -336,6 +336,7 @@ class PlanLimitsStatsTestCase(unittest.IsolatedAsyncioTestCase):
         """Yangi yassi menyu tugmalari to'g'ri funksiyaga boradi."""
         from bot import groups as G
         from bot import menu as M
+        from bot import my_groups as MG
         from bot import posts as P
         from bot import referral as R
         from bot import timer as Tm
@@ -346,10 +347,10 @@ class PlanLimitsStatsTestCase(unittest.IsolatedAsyncioTestCase):
         )
         targets = {
             T.BTN_FIND_GROUPS: (G, "discover_groups"),
-            T.BTN_DEL_GROUP: (G, "begin_delete_groups"),
             T.BTN_ADD_POST: (P, "begin_add_post"),
             T.BTN_DEL_POST: (P, "begin_delete_posts"),
             T.BTN_TIMER: (Tm, "begin_set_interval"),
+            T.BTN_GROUP_INTERVAL: (Tm, "begin_set_group_interval"),
             T.BTN_REPORT: (M, "show_report"),
             T.BTN_REFERRAL: (R, "show_referral"),
         }
@@ -365,6 +366,16 @@ class PlanLimitsStatsTestCase(unittest.IsolatedAsyncioTestCase):
                 self.assertTrue(handled)
                 self.assertEqual(calls, [name])
 
+        # 💬 Guruhlar — o'z guruhlari boshqaruv oynasi.
+        with patch.object(MG, "show_my_groups", new=AsyncMock()) as groups_spy:
+            self.assertTrue(await M.route_menu_button(update, T.BTN_GROUPS))
+            groups_spy.assert_awaited_once()
+
+        # ➖ Guruh o'chirish (eski tugma) — ham o'z guruhlari oynasiga boradi.
+        with patch.object(MG, "show_my_groups", new=AsyncMock()) as groups_spy:
+            self.assertTrue(await M.route_menu_button(update, T.BTN_DEL_GROUP))
+            groups_spy.assert_awaited_once()
+
         # Start/Stop endi holatni yorliqda olib yuradi: "▶️ Start (🔴 OFF)".
         with patch.object(M, "handle_start", new=AsyncMock()) as start_spy:
             self.assertTrue(
@@ -378,7 +389,11 @@ class PlanLimitsStatsTestCase(unittest.IsolatedAsyncioTestCase):
             stop_spy.assert_awaited_once()
 
     async def test_removed_buttons_are_not_routed_anymore(self) -> None:
-        """Olib tashlangan tugmalar endi routerda javob bermaydi."""
+        """Olib tashlangan tugmalar endi routerda javob bermaydi.
+
+        ``💬 Guruhlar`` va ``⏱ Guruh intervali`` endi **faqol** ishlatiladi
+        — ular alohida testda tekshiriladi.
+        """
         from bot import menu as M
 
         update = SimpleNamespace(
@@ -386,10 +401,8 @@ class PlanLimitsStatsTestCase(unittest.IsolatedAsyncioTestCase):
             message=SimpleNamespace(reply_text=AsyncMock()),
         )
         for label in (
-            T.BTN_GROUPS,
             T.BTN_POSTS,
             T.BTN_ADD_GROUP,
-            T.BTN_GROUP_INTERVAL,
             T.BTN_CHECK_GROUPS,
             T.BTN_EDIT_POST,
             T.BTN_PREVIEW_POST,

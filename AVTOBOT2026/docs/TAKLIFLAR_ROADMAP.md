@@ -554,10 +554,12 @@ qayta ko'rib chiqildi.
 | Bitta foydalanuvchi boshqalarining ishini sekinlashtirmasligi | ✅ | `isolated_client()` — skaner posting client'idan alohida |
 | Bot qotib qolmasligi / osilib qolmasligi | ✅ | Parallel handler'lar (`concurrent_updates=32`), per-UID lock'lar, `asyncio.sleep` (bloklovchi emas) |
 | Lock collision (turli foydalanuvchilar bir-birini bloklamasligi) | ✅ | Per-UID lock + `WeakValueDictionary` — `uid=1` va `uid=257` endi alohida |
+| Foydalanuvchiga guruh intervalini berish | ✅ | `💬 Guruhlar` oynasi — `⏱` tugmasi orqali alohida interval (PR #27) |
+| Guruh boshqaruvining bitta oynada bo'lishi | ✅ | Ro'yxat + o'chirish + interval — `bot/my_groups.py` |
 
 ### 📊 Testlar
 
-**453 test** (`python -m unittest discover -s tests -t tests`) — hammasi o'tadi.
+**471 test** (`python -m unittest discover -s tests -t tests`) — hammasi o'tadi.
 Ruff — o'zgartirilgan modullarda yangi xato yo'q.
 
 ### 🔍 Guruhlarni topish — qo'lda belgilash (2026-11-14)

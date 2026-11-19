@@ -393,6 +393,8 @@ async def route_menu_button(update: Update, text: str) -> bool:
     from bot import referral as R
     from bot import timer as Tm
 
+    uid = update.effective_user.id
+
     # ▶️ Start — yorliq holatni ham o'zida olib yuradi: "▶️ Start (🔴 OFF)"
     if text.startswith(T.BTN_START):
         await handle_start(update)
@@ -413,9 +415,23 @@ async def route_menu_button(update: Update, text: str) -> bool:
         await G.discover_groups(update)
         return True
 
-    # ➖ Guruh o'chirish (ro'yxat inline tugma bo'lib chiqadi)
+    # 💬 Guruhlar — ro'yxat + o'chirish + alohida interval (bitta oyna)
+    if text == T.BTN_GROUPS:
+        from bot import my_groups as MG
+
+        await MG.show_my_groups(update, uid)
+        return True
+
+    # ⏱ Guruh intervali — guruh tanlang, alohida interval belgilang
+    if text == T.BTN_GROUP_INTERVAL:
+        await Tm.begin_set_group_interval(update)
+        return True
+
+    # ➖ Guruh o'chirish (eski tugma — o'z guruhlari oynasiga yo'naltiramiz)
     if text == T.BTN_DEL_GROUP:
-        await G.begin_delete_groups(update)
+        from bot import my_groups as MG
+
+        await MG.show_my_groups(update, uid)
         return True
 
     # ➕ Post qo'shish
