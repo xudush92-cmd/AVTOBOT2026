@@ -14,7 +14,20 @@ qaytish rejasini beradi.
 | Worker yuborish | 🟡 o'rta | Endi albom `send_file([...])` orqali, matnli post `link_preview` bayrog'i bilan ketadi. Kunlik limit/faol soat yoqilsa, yuborishlar o'sha oynaga moslashadi |
 | Media disk | 🟡 o'rta | Albomlar bilan fayllar soni o'sadi. Har user uchun kvota: `MAX_MEDIA_FILES_PER_USER` (standart 200) |
 
-Barcha yangi funksiya testlangan: **418 test** (`python -m unittest discover -s tests -t tests`).
+Barcha yangi funksiya testlangan: **425 test** (`python -m unittest discover -s tests -t tests`).
+
+### 🆕 Bot bir vaqtda o'lmasligi (startup barqarorligi)
+
+| Qism | Xavf | Izoh |
+| ---- | ---- | ---- |
+| `set_my_commands` | 🟢 past | Endi `set_bot_commands()` orqali chaqiriladi — xato bo'lsa **yutiladi**, bot ishlashda davom etadi. Oldin bitta timeout butun botni o'ldirardi |
+| `app.initialize()` | 🟢 past | `_with_retry()` — 3 urinish, oralig'ida kutish. Telegram vaqtincha javob bermasa, bot **avtomatik** ulanadi |
+| `start_polling()` | 🟢 past | Xuddi shunday retry bilan |
+
+**Nima uchun muhim:** Telegram API vaqtincha javob bermay qolsa (`TimedOut`,
+`NetworkError`, `Bad Gateway`), oldingi kodda bot **butunlay to'xtardi** —
+foydalanuvchilar javob olmagan holda postlarni ko'rishda davom etardi.
+Endi bunday holatda bot **o'z-o'zidan tiklanadi**.
 
 ### 🆕 Telegram API ulanishi (bot "javob bermaydi" muammosi)
 

@@ -1444,6 +1444,59 @@ async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────
+# TELEGRAM STARTUP SO'ROVLARI
+# ─────────────────────────────────────────────────────────────────────────
+async def _with_retry(func, *, attempts: int = 3, delay: float = 5.0):
+    """Telegram so'rovini bir necha marta urinib ko'radi.
+
+    Telegram API vaqtincha javob bermay qolsa (``TimedOut``,
+    ``NetworkError``), so'rovni darhol tashlab ketish botni butunlay
+    o'ldiradi. Shu sabab bir necha urinish va oraliqda kutish.
+
+    Barcha urinishlar muvaffaqiyatsiz bo'lsa, oxirgi xato raised bo'ladi.
+    """
+    last_error: Exception | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            return await func()
+        except Exception as exc:  # noqa: BLE001
+            last_error = exc
+            if attempt >= attempts:
+                break
+            log(
+                f"⚠️ Telegram so'rovi muvaffaqiyatsiz ({type(exc).__name__}: {exc})"
+                f" — {attempt}/{attempts}, {delay:.0f}s dan keyin qayta uriniladi",
+                "error",
+            )
+            await asyncio.sleep(delay)
+            delay = min(delay * 2, 30)
+    raise last_error if last_error else RuntimeError("Telegram so'rovi muvaffaqiyatsiz")
+
+
+async def set_bot_commands(app: Application) -> bool:
+    """Menyu buyruqlarini ro'ylaydi. Xato bo'lsa ham botni to'xtatmaydi.
+
+    Faqat menyu buyruqlari uchun — muvaffaqiyatsiz bo'lishi botning
+    ishlashiga halaqit bermaydi. Shu sabab xato yutiladi va logga yoziladi.
+    """
+    commands = [
+        BotCommand("start", "Botni ochish / menyu"),
+        BotCommand("help", "Qanday ishlaydi — qisqa yo'riqnoma"),
+        BotCommand("status", "Holat va kunlik hisobot"),
+    ]
+    try:
+        await _with_retry(lambda: app.bot.set_my_commands(commands))
+        return True
+    except Exception as exc:  # noqa: BLE001
+        log(
+            f"⚠️ Menyu buyruqlari ro'ylanmadi ({type(exc).__name__}: {exc})"
+            f" — bot ishlashda davom etadi",
+            "error",
+        )
+        return False
+
+
+# ─────────────────────────────────────────────────────────────────────────
 # POLLING SUPERVISOR
 # ─────────────────────────────────────────────────────────────────────────
 def _get_polling_task(updater) -> asyncio.Task | None:
@@ -1614,24 +1667,25 @@ async def _main() -> None:
     app.add_handler(CommandHandler("status", cmd_status))
     app.add_handler(CommandHandler("statistika", cmd_status))
     # PTB 21.6: set_my_commands Application'da emas, Bot obyektida.
-    await app.bot.set_my_commands(
-        [
-            BotCommand("start", "Botni ochish / menyu"),
-            BotCommand("help", "Qanday ishlaydi — qisqa yo'riqnoma"),
-            BotCommand("status", "Holat va kunlik hisobot"),
-        ]
-    )
+    # Bu so'rov faqat menyu buyruqlarini ro'ylaydi — muvaffaqiyatsiz bo'lsa
+    # ham bot ishlashda davom etishi kerak. Aks holda Telegram vaqtincha
+    # javob bermasa, butun bot o'ladi (foydalanuvchilar javob olmaydi).
+    await set_bot_commands(app)
     app.add_error_handler(on_error)
 
     # 8. Botni ishga tushirish
-    await app.initialize()
+    # Telegram'ga ulanish — vaqtincha javob bermasa, bir necha urinish.
+    # Aks holda bitta timeout butun botni o'ldiradi.
+    await _with_retry(app.initialize)
     await app.start()
-    await app.updater.start_polling(
-        drop_pending_updates=True,
-        error_callback=lambda exc: log(
-            f"⚠️ Polling xato: {type(exc).__name__}: {exc}",
-            "error",
-        ),
+    await _with_retry(
+        lambda: app.updater.start_polling(
+            drop_pending_updates=True,
+            error_callback=lambda exc: log(
+                f"⚠️ Polling xato: {type(exc).__name__}: {exc}",
+                "error",
+            ),
+        )
     )
     log("✅ Bot polling boshlandi")
 

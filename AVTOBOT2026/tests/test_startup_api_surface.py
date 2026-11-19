@@ -27,7 +27,7 @@ os.environ.setdefault("API_HASH", "0123456789abcdef0123456789abcdef")
 os.environ.setdefault("BOT_TOKEN", "123456:TEST_TOKEN")
 os.environ.setdefault("ADMIN_ID", "123456789")
 
-from telegram.ext import Application  # noqa: E402
+from telegram.ext import Application
 
 # app.xxx( yoki application.xxx( — lekin app.bot.xxx / application.bot.xxx emas.
 _APP_CALL_RE = re.compile(r"\b(?:app|application)\.([a-z_]+)\s*\(")
@@ -46,14 +46,25 @@ def _collect_application_calls(path: Path) -> set[str]:
 
 class StartupApiSurfaceTests(unittest.TestCase):
     def test_main_uses_bot_for_set_my_commands(self) -> None:
-        """set_my_commands faqat app.bot orqali chaqirilishi shart."""
+        """set_my_commands faqat app.bot orqali chaqirilishi shart.
+
+        Chaqiruv xavfsiz yordamchi (``set_bot_commands``) orqali bajariladi —
+        u Telegram vaqtincha javob bermasa ham botni to'xtatmaydi.
+        """
         source = (APP_DIR / "main.py").read_text(encoding="utf-8")
         self.assertNotIn(
             "await app.set_my_commands(",
             source,
             "Application'da set_my_commands yo'q — app.bot.set_my_commands ishlating",
         )
-        self.assertIn("await app.bot.set_my_commands(", source)
+        self.assertIn(
+            "app.bot.set_my_commands(",
+            source,
+            "set_my_commands app.bot orqali chaqirilishi shart",
+        )
+        # Xavfsiz yordamchi orqali o'ralgan bo'lishi kerak — aks holda
+        # bitta timeout butun botni o'ldiradi.
+        self.assertIn("await set_bot_commands(app)", source)
 
     def test_every_app_call_in_main_exists_on_application(self) -> None:
         """main.py dagi har bir app.* metodi PTB Application'da mavjud bo'lishi kerak."""
