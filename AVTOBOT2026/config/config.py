@@ -224,6 +224,40 @@ RATE_WINDOW_S: int = 60  # oddiy amallar oynasi (60 soniya)
 RATE_LIMIT_LOGIN_WINDOW_S: int = 3600  # login: 3 marta / 1 soat
 
 # ─────────────────────────────────────────────────────────────────────────
+# TELEGRAM API SOZLAMALARI
+# ─────────────────────────────────────────────────────────────────────────
+# Telegram Bot API ulanishlari. Standart qiymatlar mos kelmaydi:
+#   connection_pool_size = 1  → long-polling connection'i butun botni
+#     band qiladi (javoblar "pool timeout" bilan uziladi);
+#   read_timeout = 5s        → getUpdates 10 soniya kutsa, timeout beradi
+#     va polling loop tez-tez to'xtaydi ("Exception happened while polling").
+# Shu sabab ulanishlar kengaytiriladi va timeout'lar oshiriladi.
+TELEGRAM_CONNECTION_POOL_SIZE: int = max(
+    4, _int("TELEGRAM_CONNECTION_POOL_SIZE", 20)
+)
+TELEGRAM_READ_TIMEOUT: float = max(
+    10.0, float(os.getenv("TELEGRAM_READ_TIMEOUT", "30") or 30)
+)
+TELEGRAM_WRITE_TIMEOUT: float = max(
+    10.0, float(os.getenv("TELEGRAM_WRITE_TIMEOUT", "30") or 30)
+)
+TELEGRAM_CONNECT_TIMEOUT: float = max(
+    5.0, float(os.getenv("TELEGRAM_CONNECT_TIMEOUT", "15") or 15)
+)
+TELEGRAM_POOL_TIMEOUT: float = max(
+    5.0, float(os.getenv("TELEGRAM_POOL_TIMEOUT", "30") or 30)
+)
+# getUpdates — serverda 10 soniya kutadi, shuning uchun read timeout
+# undan uzun bo'lishi kerak.
+TELEGRAM_GET_UPDATES_READ_TIMEOUT: float = max(
+    20.0, float(os.getenv("TELEGRAM_GET_UPDATES_READ_TIMEOUT", "40") or 40)
+)
+TELEGRAM_GET_UPDATES_POOL_TIMEOUT: float = max(
+    5.0, float(os.getenv("TELEGRAM_GET_UPDATES_POOL_TIMEOUT", "30") or 30)
+)
+
+
+# ─────────────────────────────────────────────────────────────────────────
 # FAYL YO'LLARI
 # ─────────────────────────────────────────────────────────────────────────
 DATA_DIR: Path = BASE_DIR / "data"

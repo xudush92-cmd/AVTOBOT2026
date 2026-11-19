@@ -49,6 +49,13 @@ from config.config import (
     MAX_CONCURRENT_WORKERS,
     MAX_INTERVAL_MIN,
     SUPER_ADMIN,
+    TELEGRAM_CONNECT_TIMEOUT,
+    TELEGRAM_CONNECTION_POOL_SIZE,
+    TELEGRAM_GET_UPDATES_POOL_TIMEOUT,
+    TELEGRAM_GET_UPDATES_READ_TIMEOUT,
+    TELEGRAM_POOL_TIMEOUT,
+    TELEGRAM_READ_TIMEOUT,
+    TELEGRAM_WRITE_TIMEOUT,
 )
 
 # Core
@@ -1430,7 +1437,92 @@ async def restore_running_workers() -> None:
 # ─────────────────────────────────────────────────────────────────────────
 async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     error = context.error
-    log(f"💥 Handler xato: {type(error).__name__}", "error")
+    log(
+        f"💥 Handler xato: {type(error).__name__}: {error}",
+        "error",
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# POLLING SUPERVISOR
+# ─────────────────────────────────────────────────────────────────────────
+def _get_polling_task(updater) -> asyncio.Task | None:
+    """PTB ichidagi polling task'ini topadi.
+
+    PTB atribut nomi versiyalar orasida o'zgargan bo'lishi mumkin, shu
+    sabab bir necha nom tekshiriladi. Topilmasa ``None`` qaytariladi.
+    """
+    for attr in (
+        "_Updater__polling_task",
+        "_polling_task",
+        "polling_task",
+    ):
+        task = getattr(updater, attr, None)
+        if isinstance(task, asyncio.Task):
+            return task
+    return None
+
+
+async def polling_supervisor(app: Application, stop_event: asyncio.Event) -> None:
+    """Polling'ni kuzatib turadi — task to'xtasa, qayta boshlaydi.
+
+    Telegram API vaqtincha javob bermay qolsa (``NetworkError``,
+    ``TimedOut``, ``Bad Gateway``), PTB ichidagi retry tugab qolishi
+    mumkin. Bundayda bot "javob bermaydi" bo'lib qoladi. Bu supervisor
+    polling task'i tugaganini aniqlab, uni qayta ishga tushiradi.
+
+    ``stop_event`` qo'yilganda loop to'xtaydi.
+    """
+    retry_delay = 5
+    while not stop_event.is_set():
+        try:
+            # `polling_task` — ichki task; tugagach polling to'xtaydi.
+            task = _get_polling_task(app.updater)
+            if task is None:
+                # Polling hali boshlanmagan — biroz kutamiz.
+                await asyncio.wait_for(stop_event.wait(), timeout=2)
+                continue
+
+            done, _ = await asyncio.wait(
+                (task,),
+                timeout=5,
+            )
+            if task in done:
+                # Polling task'i tugadi — sababni aniqlaymiz.
+                exc = None
+                with contextlib.suppress(Exception):
+                    exc = task.exception()
+                if stop_event.is_set():
+                    return
+                log(
+                    f"⚠️ Polling to'xtadi ({type(exc).__name__ if exc else 'noma'})"
+                    f" — {retry_delay}s dan keyin qayta boshlanadi",
+                    "error",
+                )
+                # Eski updater'ni tozalab, yangisini qayta ishga tushiramiz.
+                with contextlib.suppress(Exception):
+                    await app.updater.stop()
+                with contextlib.suppress(Exception):
+                    await app.updater.initialize()
+                with contextlib.suppress(Exception):
+                    await app.updater.start_polling(
+                        drop_pending_updates=False,
+                        error_callback=lambda exc: log(
+                            f"⚠️ Polling xato: {type(exc).__name__}: {exc}",
+                            "error",
+                        ),
+                    )
+                log("✅ Polling qayta boshlandi")
+                retry_delay = 5
+            else:
+                # Polling hali ham yashayapti — xato bo'lsa intervalni
+                # oshiramiz (Telegram'ga bosib qolmaymiz).
+                retry_delay = min(60, max(5, retry_delay))
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            log(f"⚠️ Polling supervisor xato: {type(exc).__name__}: {exc}", "error")
+            await asyncio.sleep(retry_delay)
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -1474,7 +1566,22 @@ async def _main() -> None:
         await health_server.start()
 
     # 7. Telegram bot
-    app = Application.builder().token(BOT_TOKEN).concurrent_updates(32).build()
+    # Ulanish pool'i kengaytiriladi: long-polling connection'i boshqa
+    # so'rovlarni (javob yuborish) bloklamasligi kerak. Aks holda bot
+    # "javob bermaydi" bo'lib qoladi ("pool timeout").
+    app = (
+        Application.builder()
+        .token(BOT_TOKEN)
+        .concurrent_updates(32)
+        .connection_pool_size(TELEGRAM_CONNECTION_POOL_SIZE)
+        .read_timeout(TELEGRAM_READ_TIMEOUT)
+        .write_timeout(TELEGRAM_WRITE_TIMEOUT)
+        .connect_timeout(TELEGRAM_CONNECT_TIMEOUT)
+        .pool_timeout(TELEGRAM_POOL_TIMEOUT)
+        .get_updates_read_timeout(TELEGRAM_GET_UPDATES_READ_TIMEOUT)
+        .get_updates_pool_timeout(TELEGRAM_GET_UPDATES_POOL_TIMEOUT)
+        .build()
+    )
     application = app
 
     # Bog'lanishlarni to'liq o'rnatish
@@ -1519,8 +1626,21 @@ async def _main() -> None:
     # 8. Botni ishga tushirish
     await app.initialize()
     await app.start()
-    await app.updater.start_polling(drop_pending_updates=True)
+    await app.updater.start_polling(
+        drop_pending_updates=True,
+        error_callback=lambda exc: log(
+            f"⚠️ Polling xato: {type(exc).__name__}: {exc}",
+            "error",
+        ),
+    )
     log("✅ Bot polling boshlandi")
+
+    # 8b. Polling supervisor — polling task'i to'xtasa, qayta boshlaydi.
+    polling_stop = asyncio.Event()
+    polling_task = asyncio.create_task(
+        polling_supervisor(app, polling_stop),
+        name="polling-supervisor",
+    )
 
     # 9. Restore
     await restore_running_workers()
@@ -1560,6 +1680,9 @@ async def _main() -> None:
 
         # Avval yangi update kelishini to'xtatamiz; mavjud handlerlar resurslar
         # yopilishidan oldin Application.stop orqali tugashini kutadi.
+        polling_stop.set()
+        with contextlib.suppress(Exception):
+            await asyncio.wait_for(polling_task, timeout=5)
         with contextlib.suppress(Exception):
             await app.updater.stop()
 
