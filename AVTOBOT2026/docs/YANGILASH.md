@@ -14,7 +14,7 @@ qaytish rejasini beradi.
 | Worker yuborish | 🟡 o'rta | Endi albom `send_file([...])` orqali, matnli post `link_preview` bayrog'i bilan ketadi. Kunlik limit/faol soat yoqilsa, yuborishlar o'sha oynaga moslashadi |
 | Media disk | 🟡 o'rta | Albomlar bilan fayllar soni o'sadi. Har user uchun kvota: `MAX_MEDIA_FILES_PER_USER` (standart 200) |
 
-Barcha yangi funksiya testlangan: **476 test** (`python -m unittest discover -s tests -t tests`).
+Barcha yangi funksiya testlangan: **481 test** (`python -m unittest discover -s tests -t tests`).
 
 ### 🆕 «🔍 Guruhlarni topish» skaneri — tez, izolyatsiyalangan, havolali
 
@@ -40,6 +40,17 @@ MAX_ISOLATED_CLIENTS=10          # bir vaqtda alohida client'lar limiti
 **o'z posting'i** ham sekinlashardi (bir client — ketma-ket RPC) va skaner
 **bir necha daqiqa** davom etardi. Endi skaner tez, alohida va boshqa
 foydalanuvchilarga **ta'sir qilmaydi**.
+
+### 🆕 Baza nusxasi (backup) — foydalanuvchilarni bloklamaydi
+
+| Qism | Xavf | Izoh |
+| ---- | ---- | ---- |
+| `core/database.py` → `backup_to()` | 🟢 past | Avval nusxa ko'chirilayotgan paytda global `_write_lock` **ushlab turilardi**. Katta bazada bu barcha foydalanuvchilarning yozuvlarini (login, interval o'zgarishi, guruh qo'shish) bloklab qoldirardi — bitta super admin eksporti boshqa odamlarni kutishga majbur qilardi. Endi lock **butunlay ushlanmaydi** |
+| Alohida manba ulanishi | 🟢 past | `aiosqlite` har bir ulanish uchun bitta worker thread ishlatadi va `backup()` aynan shu thread'da bajarilishi kerak. Asosiy ulanish ustida `backup()` ishlatilsa, parallel yozuv bilan birga **deadlock** yuzaga keladi (yozuv commit'i nusxadan keyingi navbatda turadi, nusxa esa yozuvni kutadi). Endi nusxa uchun **alohida** manba ulanishi ochiladi va yopiladi |
+
+**Nima uchun muhim:** `db:backup` va `db:export` super admin panelida
+qo'lda ishga tushiriladi. Avval katta bazada bu barcha foydalanuvchilarning
+yozuvlarini vaqtincha bloklab qoldirgan bo'lardi.
 
 ### 🆕 Foydalanuvchi lock'lari — collision yo'q
 
