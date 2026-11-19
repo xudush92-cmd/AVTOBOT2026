@@ -61,6 +61,11 @@ HEALTH_PORT: int = _int("HEALTH_PORT", 8080)
 # ─────────────────────────────────────────────────────────────────────────
 MAX_CONCURRENT_WORKERS: int = _int("MAX_CONCURRENT_WORKERS", 50)
 MAX_CLIENT_POOL: int = _int("MAX_CLIENT_POOL", 50)
+# Bir vaqtda ishlaydigan **alohida** (uzun muddatli o'qish) client'lar
+# chegarasi — masalan «🔍 Guruhlarni topish» skaneri. Ular posting
+# client'idan alohida bo'lgani uchun worker'ni bloklamaydi, lekin
+# resurs nazorati uchun chegarasi bor.
+MAX_ISOLATED_CLIENTS: int = max(1, _int("MAX_ISOLATED_CLIENTS", 10))
 
 # ─────────────────────────────────────────────────────────────────────────
 # MAXFIY SESSIYALAR / BACKUP
@@ -254,6 +259,34 @@ TELEGRAM_GET_UPDATES_READ_TIMEOUT: float = max(
 )
 TELEGRAM_GET_UPDATES_POOL_TIMEOUT: float = max(
     5.0, float(os.getenv("TELEGRAM_GET_UPDATES_POOL_TIMEOUT", "30") or 30)
+)
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# GURUHLARNI SKANERLASH TEZLIGI
+# ─────────────────────────────────────────────────────────────────────────
+# «🔍 Guruhlarni topish» skaneri bir necha yuz guruhni tekshirishi mumkin.
+# Har bir guruh uchun alohida RPC (get_permissions) qilinsa — skaner
+# juda uzoq davom etadi va foydalanuvchi "kutib qoladi" deb hisoblaydi.
+#
+# Yechim: huquqlar tekshiruvi **parallel batch**'lar bilan bajariladi.
+#   DISCOVER_BATCH_SIZE — bir vaqtda tekshiriladigan guruhlar soni.
+#     Katta qiymat tezroq, lekin Telegram FloodWait xavfi oshadi.
+#   DISCOVER_BATCH_PAUSE_S — batch'lar orasidagi pauza (soniya).
+#     Bu Telegram'ga "odam tezligi" signalini beradi.
+#   DISCOVER_PERMISSION_TIMEOUT_S — bitta guruh tekshiruvining limiti.
+DISCOVER_BATCH_SIZE: int = max(
+    1, min(20, _int("DISCOVER_BATCH_SIZE", 8))
+)
+DISCOVER_BATCH_PAUSE_S: float = max(
+    0.0, min(10.0, float(os.getenv("DISCOVER_BATCH_PAUSE_S", "0.4") or 0.4))
+)
+DISCOVER_PERMISSION_TIMEOUT_S: float = max(
+    5.0, min(60.0, float(os.getenv("DISCOVER_PERMISSION_TIMEOUT_S", "20") or 20))
+)
+# Progress xabari qancha guruhdan keyin yangilanadi.
+DISCOVER_PROGRESS_EVERY: int = max(
+    1, min(50, _int("DISCOVER_PROGRESS_EVERY", 10))
 )
 
 

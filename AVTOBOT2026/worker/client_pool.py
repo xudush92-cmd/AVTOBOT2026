@@ -43,15 +43,24 @@ class PooledClient:
 
 
 class ClientPool:
-    def __init__(self, api_id: int, api_hash: str, max_clients: int = 50):
+    def __init__(
+        self,
+        api_id: int,
+        api_hash: str,
+        max_clients: int = 50,
+        max_isolated: int = 10,
+    ):
         self.api_id = api_id
         self.api_hash = api_hash
         self.max_clients = max(1, int(max_clients))
+        # Alohida (uzun muddatli o'qish) client'lar chegarasi.
+        self.max_isolated = max(1, int(max_isolated))
         self._pool: dict[int, PooledClient] = {}
         self._lock = asyncio.Lock()
         # Bounded striped locklar: bir UID lifecycle'i serial, xotira esa bounded.
         self._uid_locks = tuple(asyncio.Lock() for _ in range(256))
         self._reservations: set[int] = set()
+        self._isolated_count = 0
         self._stopping = False
 
     def _uid_lock(self, uid: int) -> asyncio.Lock:
@@ -67,6 +76,7 @@ class ClientPool:
             clients = [entry.client for entry in self._pool.values()]
             self._pool.clear()
             self._reservations.clear()
+            self._isolated_count = 0
         await asyncio.gather(
             *(self._disconnect(client) for client in clients),
             return_exceptions=True,
@@ -240,6 +250,86 @@ class ClientPool:
             yield client
         finally:
             await self.release(uid)
+
+    @asynccontextmanager
+    async def isolated_client(self, uid: int, session_str: str):
+        """**Alohida** (pool'dan tashqari) client — uzoq muddatli o'qish uchun.
+
+        Nima uchun kerak: ``acquire`` bitta UID uchun **bir xil** client'ni
+        qaytaradi. Telethon'da bitta client **ketma-ket** RPC yuboradi —
+        shuning uchun uzun muddatli o'qish (masalan, «🔍 Guruhlarni topish»
+        skaneri) davomida **shu foydalanuvchining posting'i** sekinlashadi
+        yoki kutib qoladi.
+
+        Bu usul **alohida** TelegramClient yaratadi (pool hisobiga
+        kirmaydi), shuning uchun:
+          * posting ishi butunlay davom etadi;
+          * skaner tugagach client yopiladi (resurs yo'qolmaydi).
+
+        Chegara: bir vaqtda faqat ``max_isolated`` ta alohida client
+        ishlaydi. chegaradan oshsa — ``PoolBusyError`` (foydalanuvchi
+        kutmaydi, darhol xabar oladi).
+
+        Xatolar: ``SessionInvalidError`` (sessiya yaroqsiz) yoki
+        ``PoolBusyError`` (ulab bo'lmadi / limit to'ldi).
+        """
+        uid = int(uid)
+        if not session_str:
+            raise SessionInvalidError(f"uid={uid} sessiya yo'q")
+
+        # Chegara: alohida client'lar sonini hisoblab turamiz.
+        async with self._lock:
+            if self._isolated_count >= self.max_isolated:
+                raise PoolBusyError(
+                    f"Alohida client limiti to'ldi ({self.max_isolated})"
+                )
+            self._isolated_count += 1
+
+        client: TelegramClient | None = None
+        try:
+            try:
+                parsed_session = StringSession(session_str)
+            except (TypeError, ValueError) as exc:
+                raise SessionInvalidError(
+                    f"uid={uid} sessiya formati yaroqsiz"
+                ) from exc
+            client = TelegramClient(parsed_session, self.api_id, self.api_hash)
+            await asyncio.wait_for(client.connect(), timeout=20)
+            await self._check_me(client, uid)
+            assert client is not None
+            try:
+                yield client
+            finally:
+                await self._disconnect(client)
+        except asyncio.CancelledError:
+            if client:
+                await self._disconnect(client)
+            raise
+        except (AuthKeyUnregisteredError, UserDeactivatedBanError) as exc:
+            if client:
+                await self._disconnect(client)
+            raise SessionInvalidError(f"uid={uid} {type(exc).__name__}") from exc
+        except SessionInvalidError:
+            if client:
+                await self._disconnect(client)
+            raise
+        except PoolBusyError:
+            if client:
+                await self._disconnect(client)
+            raise
+        except Exception as exc:
+            if client:
+                await self._disconnect(client)
+            log(
+                f"❌ Alohida client ulanmadi {uid}: {type(exc).__name__}",
+                "warning",
+            )
+            raise PoolBusyError(f"uid={uid} ulanmadi") from exc
+        finally:
+            # Hisob har qanday natijada ham qaytariladi (muvaffaqiyat,
+            # xato yoki bekor qilingan holat).
+            async with self._lock:
+                self._isolated_count = max(0, self._isolated_count - 1)
 
     async def verify_session(self, uid: int, session_str: str) -> None:
         """Start uchun bitta get_me; sessiyani DB'da o'zgartirmaydi."""

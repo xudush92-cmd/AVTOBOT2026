@@ -676,6 +676,10 @@ DISCOVER_PICK_HEADER = (
     "Oxirida «Tanlanganlarni qo'shish» tugmasini bosing."
 )
 
+DISCOVER_PICK_LINKS = (
+    "\n\n<b>🔗 Guruh havolalari (shu sahifa):</b>\n{links}"
+)
+
 DISCOVER_PICK_EMPTY = (
     "😔 Akkauntingizda yozish huquqiga ega guruh topilmadi.\n\n"
     "Guruhga a'zo bo'lganingiz va xabar yoza olishingizni tekshiring."

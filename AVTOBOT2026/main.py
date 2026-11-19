@@ -48,6 +48,7 @@ from config.config import (
     MAX_CLIENT_POOL,
     MAX_CONCURRENT_WORKERS,
     MAX_INTERVAL_MIN,
+    MAX_ISOLATED_CLIENTS,
     SUPER_ADMIN,
     TELEGRAM_CONNECT_TIMEOUT,
     TELEGRAM_CONNECTION_POOL_SIZE,
@@ -1597,6 +1598,7 @@ async def _main() -> None:
         api_id=API_ID,
         api_hash=API_HASH,
         max_clients=MAX_CLIENT_POOL,
+        max_isolated=MAX_ISOLATED_CLIENTS,
     )
     await client_pool.start()
 
