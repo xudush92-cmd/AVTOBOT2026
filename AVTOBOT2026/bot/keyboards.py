@@ -60,8 +60,8 @@ def kb_main(
         [KeyboardButton(action)],
         [KeyboardButton(T.BTN_REPORT), KeyboardButton(T.BTN_REFERRAL)],
         [
-            KeyboardButton(T.BTN_FIND_GROUPS),
-            KeyboardButton(T.BTN_DEL_GROUP),
+            KeyboardButton(T.BTN_GROUPS),
+            KeyboardButton(T.BTN_GROUP_INTERVAL),
         ],
         [
             KeyboardButton(T.BTN_ADD_POST),
@@ -261,6 +261,111 @@ def kb_stop_confirm(token: str) -> InlineKeyboardMarkup:
 # ─────────────────────────────────────────
 # ODDIY USER GURUH/POST O'CHIRISH
 # ─────────────────────────────────────────
+def kb_my_groups(
+    groups: list[dict],
+    page: int = 0,
+    page_size: int = 10,
+) -> InlineKeyboardMarkup:
+    """Foydalanuvchining o'z guruhlari — bitta boshqaruv oynasi.
+
+    Har bir guruh uchun ikki tugma:
+      * ``⏱ X daq`` / ``⏱ Umumiy`` — **alohida** intervalni o'zgartirish;
+      * ``🗑 N. guruh`` — guruhni o'chirish.
+
+    Yuqorida — guruh qo'shish (avtomatik qidiruv) va umumiy interval.
+    """
+    max_page = max(0, (len(groups) - 1) // page_size)
+    page = min(max(page, 0), max_page)
+    start = page * page_size
+    rows: list[list[InlineKeyboardButton]] = [
+        [
+            InlineKeyboardButton(
+                "🔍 Guruhlarni topish", callback_data="mg:find"
+            ),
+            InlineKeyboardButton(
+                "⏱ Umumiy interval", callback_data="mg:global"
+            ),
+        ]
+    ]
+    for offset, item in enumerate(groups[start : start + page_size], start):
+        group_id = int(item["id"])
+        value = str(item["value"])
+        interval = item.get("interval_min")
+        interval_label = f"{int(interval)} daq" if interval is not None else "Umumiy"
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    f"⏱ {interval_label}",
+                    callback_data=f"mg:gint:{group_id}",
+                ),
+                InlineKeyboardButton(
+                    f"🗑 {offset + 1}. {value[:24]}",
+                    callback_data=f"mg:del:{group_id}",
+                ),
+            ]
+        )
+    if max_page:
+        nav: list[InlineKeyboardButton] = []
+        if page > 0:
+            nav.append(
+                InlineKeyboardButton("⬅️", callback_data=f"mg:page:{page - 1}")
+            )
+        nav.append(
+            InlineKeyboardButton(f"📄 {page + 1}/{max_page + 1}", callback_data="noop")
+        )
+        if page < max_page:
+            nav.append(
+                InlineKeyboardButton("➡️", callback_data=f"mg:page:{page + 1}")
+            )
+        rows.append(nav)
+    rows.append(
+        [InlineKeyboardButton("⬅️ Asosiy menyu", callback_data="mg:back")]
+    )
+    return InlineKeyboardMarkup(rows)
+
+
+def kb_my_group_interval(
+    group_id: int,
+    current_interval: int | None,
+) -> InlineKeyboardMarkup:
+    """Bitta guruhning alohida intervali — foydalanuvchi uchun (``mg:``)."""
+    rows: list[list[InlineKeyboardButton]] = []
+    values = [5, 10, 15, 30, 60, 120]
+    for start in range(0, len(values), 3):
+        row = []
+        for minutes in values[start : start + 3]:
+            mark = "✅ " if current_interval == minutes else ""
+            row.append(
+                InlineKeyboardButton(
+                    f"{mark}{minutes} daq",
+                    callback_data=f"mg:set:{group_id}:{minutes}",
+                )
+            )
+        rows.append(row)
+    rows.extend(
+        [
+            [
+                InlineKeyboardButton(
+                    "✏️ Qo'lda kiritish",
+                    callback_data=f"mg:manual:{group_id}",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    "↩️ Umumiy intervalni ishlatish",
+                    callback_data=f"mg:reset:{group_id}",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    "⬅️ Guruhlar", callback_data="mg:page:0"
+                )
+            ],
+        ]
+    )
+    return InlineKeyboardMarkup(rows)
+
+
 def kb_groups_delete(
     groups: list[dict] | list[str],
     page: int = 0,

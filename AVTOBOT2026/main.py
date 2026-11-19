@@ -88,6 +88,8 @@ MENU_BUTTONS = frozenset(
     {
         T.BTN_FIND_GROUPS,
         T.BTN_DEL_GROUP,
+        T.BTN_GROUPS,
+        T.BTN_GROUP_INTERVAL,
         T.BTN_ADD_POST,
         T.BTN_DEL_POST,
         T.BTN_TIMER,
@@ -582,6 +584,7 @@ async def _on_message_locked(
         "set_interval",
         "set_interval_confirm",
         "set_group_interval",
+        "my_group_interval_manual",
     ):
         menu_buttons = MENU_BUTTONS
         # Start/Stop/Status/Paket yorliqlari holatni o'zida olib yuradi
@@ -670,6 +673,20 @@ async def _on_message_locked(
                     )
                     return
                 await handle_set_group_interval(update, text)
+            return
+
+        if step == "my_group_interval_manual":
+            from bot.my_groups import handle_manual_interval
+
+            async with user_operation_lock(uid):
+                if not await _can_mutate_user_resources(uid):
+                    Login.user_states.pop(uid, None)
+                    await msg.reply_text(
+                        "❌ Hisob yoki sessiya endi faol emas.",
+                        reply_markup=KB.kb_login(),
+                    )
+                    return
+                await handle_manual_interval(update, uid, text)
             return
 
     # ── LOGIN TUGMASI ──

@@ -107,6 +107,33 @@ async def _handle_callback_locked(update: Update, uid: int) -> None:
             "ref:",
             "disc:",
         )
+        # ``mg:`` — foydalanuvchining **o'z** guruhlari. Super admin uchun
+        # bu oyna kerak emas (u ``uc:`` orqali boshqaradi), shuning uchun
+        # alohida tekshiriladi — admin boshqa guruhga tegishi mumkin emas.
+        if data.startswith("mg:"):
+            if uid == SUPER_ADMIN:
+                await q.answer("Super admin uchun bu oyna kerak emas.")
+                return
+            async with user_operation_lock(uid):
+                user = await db.get_user(uid)
+                if (
+                    not user
+                    or not user.get("is_admin")
+                    or user.get("is_blocked")
+                    or user.get("awaiting_approval")
+                    or not user.get("session")
+                ):
+                    action_tokens.clear(uid)
+                    await q.answer(
+                        "❌ Hisob yoki sessiya endi faol emas.",
+                        show_alert=True,
+                    )
+                    return
+                from bot import my_groups as MG
+
+                await MG.handle_my_groups_callback(update, uid, data)
+            return
+
         if uid != SUPER_ADMIN and data.startswith(ordinary_prefixes):
             # Admin lifecycle amali central tekshiruvdan keyin lock kutayotgan
             # paytda targetni o'zgartirishi mumkin. Shu sabab auth target lock

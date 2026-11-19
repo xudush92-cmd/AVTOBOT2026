@@ -72,8 +72,8 @@ class CompactMenuTests(unittest.TestCase):
 
         # Yangi yassi menyuda bo'lishi kerak bo'lgan tugmalar.
         for button in (
-            T.BTN_FIND_GROUPS,
-            T.BTN_DEL_GROUP,
+            T.BTN_GROUPS,
+            T.BTN_GROUP_INTERVAL,
             T.BTN_ADD_POST,
             T.BTN_DEL_POST,
             T.BTN_TIMER,
@@ -84,10 +84,9 @@ class CompactMenuTests(unittest.TestCase):
 
         # Ichki menyular va olib tashlangan tugmalar asosiy ekranda bo'lmasligi kerak.
         for button in (
-            T.BTN_GROUPS,
             T.BTN_POSTS,
             T.BTN_ADD_GROUP,
-            T.BTN_GROUP_INTERVAL,
+            T.BTN_DEL_GROUP,
             T.BTN_CHECK_GROUPS,
             T.BTN_EDIT_POST,
             T.BTN_PREVIEW_POST,
