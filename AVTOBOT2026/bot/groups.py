@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import random
+import random  # noqa: F401 — eski testlar `G.random` ni patch qiladi
 import time
 
 from telegram import Update
@@ -39,6 +39,16 @@ from bot.discover_sessions import (
     DiscoveredGroup,
 )
 from config.config import API_HASH, API_ID
+from config.config import (
+    DISCOVER_BATCH_PAUSE_S as CONFIG_DISCOVER_BATCH_PAUSE_S,
+)
+from config.config import DISCOVER_BATCH_SIZE as CONFIG_DISCOVER_BATCH_SIZE
+from config.config import (
+    DISCOVER_PERMISSION_TIMEOUT_S as CONFIG_DISCOVER_PERMISSION_TIMEOUT_S,
+)
+from config.config import (
+    DISCOVER_PROGRESS_EVERY as CONFIG_DISCOVER_PROGRESS_EVERY,
+)
 from core import database as db
 from core.logger import log
 from core.utils import (
@@ -514,10 +524,16 @@ async def begin_delete_groups(update: Update) -> None:
 # Bitta skanerlashda ko'rib chiqiladigan dialoglarning xavfsiz chegarasi.
 DISCOVER_MAX_DIALOGS = 500
 # Har bir guruhning yozish huquqini tekshirish uchun ketadigan maksimal vaqt.
-DISCOVER_PERMISSION_TIMEOUT_S = 20
+DISCOVER_PERMISSION_TIMEOUT_S = CONFIG_DISCOVER_PERMISSION_TIMEOUT_S
 # Har bitta guruh tekshiruvi orasidagi tasodifiy pauza (odam tezligiga taqlid).
-DISCOVER_PAUSE_MIN_S = 1.0
-DISCOVER_PAUSE_MAX_S = 3.0
+DISCOVER_PAUSE_MIN_S = 0.05
+DISCOVER_PAUSE_MAX_S = 0.25
+# Bir vaqtda (parallel) tekshiriladigan guruhlar soni — skanerni tezlashtiradi.
+DISCOVER_BATCH_SIZE = CONFIG_DISCOVER_BATCH_SIZE
+# Batch'lar orasidagi pauza — Telegram'ga "odam tezligi" signalini beradi.
+DISCOVER_BATCH_PAUSE_S = CONFIG_DISCOVER_BATCH_PAUSE_S
+# Progress xabari qancha guruhdan keyin yangilanadi.
+DISCOVER_PROGRESS_EVERY = CONFIG_DISCOVER_PROGRESS_EVERY
 # Bitta foydalanuvchi skanerni necha soniyada bir marta bosishi mumkin.
 DISCOVER_COOLDOWN_S = 10 * 60
 
@@ -549,6 +565,25 @@ def _is_broadcast_channel(entity) -> bool:
     return isinstance(entity, types.Channel) and bool(
         getattr(entity, "broadcast", False)
     )
+
+
+class _StaticClientContext:
+    """Tayyor client'ni context manager sifatida beradi.
+
+    ``pool.acquire`` yo'li (testlar/eski pool) uchun ishlatiladi —
+    ``isolated_client`` mavjud bo'lsa u afzal ko'riladi.
+    """
+
+    __slots__ = ("client",)
+
+    def __init__(self, client):
+        self.client = client
+
+    async def __aenter__(self):
+        return self.client
+
+    async def __aexit__(self, *_exc_info) -> bool:
+        return False
 
 
 async def discover_groups(update: Update) -> None:
@@ -613,21 +648,34 @@ async def discover_groups(update: Update) -> None:
 
     status_msg = await update.message.reply_text(T.DISCOVER_START)
 
-    try:
-        client = await pool.acquire(uid, session)
-    except SessionInvalidError:
-        with contextlib.suppress(Exception):
-            await status_msg.edit_text(T.DISCOVER_INVALID)
-        return
-    except PoolBusyError:
-        with contextlib.suppress(Exception):
-            await status_msg.edit_text(T.DISCOVER_BUSY)
-        return
-    except Exception as exc:  # noqa: BLE001
-        log(f"discover_groups acquire {uid}: {type(exc).__name__}", "warning")
-        with contextlib.suppress(Exception):
-            await status_msg.edit_text(T.GENERIC_ERROR)
-        return
+    # Skaner uchun **alohida** client olamiz (pool'dagi umumiy client emas).
+    # Sabab: Telethon'da bitta client ketma-ket RPC yuboradi — skaner
+    # davomida shu foydalanuvchining **posting'i** sekinlashardi yoki
+    # kutib qolardi. Alohida client bilan ikkalasi parallel ishlaydi.
+    client_ctx = getattr(pool, "isolated_client", None)
+    if client_ctx is None:
+        # Test yoki eski pool — oddiy acquire'ga qaytamiz.
+        try:
+            client = await pool.acquire(uid, session)
+        except SessionInvalidError:
+            with contextlib.suppress(Exception):
+                await status_msg.edit_text(T.DISCOVER_INVALID)
+            return
+        except PoolBusyError:
+            with contextlib.suppress(Exception):
+                await status_msg.edit_text(T.DISCOVER_BUSY)
+            return
+        except Exception as exc:  # noqa: BLE001
+            log(f"discover_groups acquire {uid}: {type(exc).__name__}", "warning")
+            with contextlib.suppress(Exception):
+                await status_msg.edit_text(T.GENERIC_ERROR)
+            return
+        release_needed = True
+        # ``acquire`` natijasi — uni ham context manager sifatida ishlatamiz.
+        client_ctx = _StaticClientContext(client)
+    else:
+        release_needed = False
+        client_ctx = client_ctx(uid, session)
 
     # Skaner boshlandi — cooldown shu yerdan hisoblanadi (kirishda rad etilgan
     # urinishlar foydalanuvchini bloklab qo'ymasligi uchun).
@@ -640,6 +688,7 @@ async def discover_groups(update: Update) -> None:
     channels_skipped = 0
     errors: list[str] = []
     scanned = 0
+    flood_hit = False
 
     existing_keys = {
         discover_sessions.build_key(value)
@@ -653,96 +702,169 @@ async def discover_groups(update: Update) -> None:
         _flood_wait_until[uid] = time.time() + wait_s
         errors.append(f"FloodWait ({wait_s}s)")
 
-    try:
-        me = await asyncio.wait_for(client.get_me(), timeout=15)
-        async for dialog in client.iter_dialogs():
-            if scanned >= DISCOVER_MAX_DIALOGS:
-                break
-            entity = dialog.entity
-            if not _is_group_entity(entity):
-                continue
-            # Chiqib ketilgan / kirish taqiqlangan dialoglarni o'tkazamiz.
-            if isinstance(
-                entity, (types.ChatForbidden, types.ChannelForbidden)
-            ) or bool(getattr(entity, "left", False)):
-                continue
-            # Siyosat: broadcast kanallar (obuna kanallari) ko'rsatilmaydi —
-            # faqat oddiy guruhlar va megaguruplar.
-            if _is_broadcast_channel(entity):
-                channels_skipped += 1
-                continue
+    async def _check_one(tg_client, me, entity) -> tuple[str | None, str]:
+        """Bitta guruhning yozish huquqini tekshiradi.
 
-            scanned += 1
-            reference = _dialog_reference(entity)
-            key = discover_sessions.build_key(reference)
-            if not key:
-                skipped += 1
-                continue
-            if key in existing_keys:
-                duplicate_count += 1
-                continue
-            if key in seen_keys:
-                continue
-            seen_keys.add(key)
+        Qaytaradi: ``(rejection, reference)``. ``rejection`` — None bo'lsa
+        guruh yozishga mos keladi. Xatolar ``"skip"`` yoki ``"flood"``
+        shaklida qaytariladi.
+        """
+        reference = _dialog_reference(entity)
+        try:
+            permissions = await asyncio.wait_for(
+                tg_client.get_permissions(entity, me),
+                timeout=DISCOVER_PERMISSION_TIMEOUT_S,
+            )
+            rejection = _posting_rejection(entity, permissions)
+        except (
+            UserNotParticipantError,
+            ChannelPrivateError,
+            PeerIdInvalidError,
+        ):
+            return "skip", reference
+        except TimeoutError:
+            return "skip", reference
+        except FloodWaitError as exc:
+            log(f"discover_groups FloodWait {uid}: {exc.seconds}s", "warning")
+            _remember_flood(exc.seconds)
+            return "flood", reference
+        except Exception as exc:  # noqa: BLE001
+            log(
+                f"discover_groups permission {reference}: {type(exc).__name__}",
+                "warning",
+            )
+            return "skip", reference
+        return rejection, reference
+
+    # 1) Dialoglarni yig'ish — bu bosqich faqat lokal ma'lumot o'qiydi
+    #    (tarmoq so'rovi yo'q), shuning uchun tez ishlaydi.
+    candidates: list[tuple[object, object]] = []
+    try:
+        async with client_ctx as client:
+            # Akkauntni aniqlaymiz — huquq tekshiruvi shu ma'lumotga bog'liq.
+            try:
+                me = await asyncio.wait_for(client.get_me(), timeout=15)
+            except Exception as exc:  # noqa: BLE001
+                log(f"discover_groups get_me {uid}: {type(exc).__name__}", "error")
+                errors.append(type(exc).__name__)
+                me = None
 
             try:
-                permissions = await asyncio.wait_for(
-                    client.get_permissions(entity, me),
-                    timeout=DISCOVER_PERMISSION_TIMEOUT_S,
-                )
-                rejection = _posting_rejection(entity, permissions)
-            except (
-                UserNotParticipantError,
-                ChannelPrivateError,
-                PeerIdInvalidError,
-            ):
-                skipped += 1
-            except TimeoutError:
-                skipped += 1
+                async for dialog in client.iter_dialogs():
+                    if scanned >= DISCOVER_MAX_DIALOGS:
+                        break
+                    entity = dialog.entity
+                    if not _is_group_entity(entity):
+                        continue
+                    # Chiqib ketilgan / kirish taqiqlangan dialoglarni o'tkazamiz.
+                    if isinstance(
+                        entity, (types.ChatForbidden, types.ChannelForbidden)
+                    ) or bool(getattr(entity, "left", False)):
+                        continue
+                    # Siyosat: broadcast kanallar (obuna kanallari) ko'rsatilmaydi —
+                    # faqat oddiy guruhlar va megaguruplar.
+                    if _is_broadcast_channel(entity):
+                        channels_skipped += 1
+                        continue
+
+                    scanned += 1
+                    reference = _dialog_reference(entity)
+                    key = discover_sessions.build_key(reference)
+                    if not key:
+                        skipped += 1
+                        continue
+                    if key in existing_keys:
+                        duplicate_count += 1
+                        continue
+                    if key in seen_keys:
+                        continue
+                    seen_keys.add(key)
+                    candidates.append((entity, dialog))
             except FloodWaitError as exc:
-                log(f"discover_groups FloodWait {uid}: {exc.seconds}s", "warning")
-                _remember_flood(exc.seconds)
-                break
-            except Exception as exc:  # noqa: BLE001
                 log(
-                    f"discover_groups permission {reference}: {type(exc).__name__}",
+                    f"discover_groups dialog FloodWait {uid}: {exc.seconds}s",
                     "warning",
                 )
-                skipped += 1
-            else:
-                if rejection:
-                    skipped += 1
-                else:
-                    # ⚠️ Hali saqlanmaydi — foydalanuvchi tanlagandan keyin.
-                    found.append(
-                        DiscoveredGroup(
-                            reference=reference,
-                            title=_dialog_title(entity, dialog),
-                            members=_dialog_members(entity),
-                            kind="megaguruh" if _is_megagroup(entity) else "guruh",
-                            key=key,
+                _remember_flood(exc.seconds)
+            except Exception as exc:  # noqa: BLE001
+                log(f"discover_groups scan {uid}: {type(exc).__name__}", "error")
+                errors.append(type(exc).__name__)
+
+            # 2) Yozish huquqini tekshirish — PARALLEL batch'lar bilan.
+            #    Har bir guruh uchun alohida RPC ketar edi (ketma-ket), bu esa
+            #    skanerni juda uzozlashtirardi. Endi ``DISCOVER_BATCH_SIZE`` ta
+            #    guruh bir vaqtda tekshiriladi.
+            if me is not None and candidates:
+                batch_size = max(1, DISCOVER_BATCH_SIZE)
+                for start in range(0, len(candidates), batch_size):
+                    batch = candidates[start : start + batch_size]
+                    results = await asyncio.gather(
+                        *(
+                            _check_one(client, me, entity)
+                            for entity, _dialog in batch
+                        ),
+                        return_exceptions=True,
+                    )
+                    for (entity, dialog), result in zip(batch, results):
+                        if isinstance(result, BaseException):
+                            log(
+                                f"discover_groups batch {uid}: "
+                                f"{type(result).__name__}",
+                                "warning",
+                            )
+                            skipped += 1
+                            continue
+                        rejection, reference = result
+                        if rejection == "flood":
+                            flood_hit = True
+                            break
+                        if rejection == "skip" or rejection:
+                            skipped += 1
+                            continue
+                        # ✅ Guruh yozishga mos keldi.
+                        found.append(
+                            DiscoveredGroup(
+                                reference=reference,
+                                title=_dialog_title(entity, dialog),
+                                members=_dialog_members(entity),
+                                kind=(
+                                    "megaguruh"
+                                    if _is_megagroup(entity)
+                                    else "guruh"
+                                ),
+                                key=discover_sessions.build_key(reference),
+                            )
                         )
-                    )
-
-            if scanned % 20 == 0:
-                with contextlib.suppress(Exception):
-                    await status_msg.edit_text(
-                        T.discover_progress(scanned, len(found))
-                    )
-
-            # Anti-spam: har bir tekshirilgan guruh orasida odamga o'xshash
-            # tasodifiy pauza. FloodWait bo'lsa darhol chiqib ketamiz.
-            pause = random.uniform(DISCOVER_PAUSE_MIN_S, DISCOVER_PAUSE_MAX_S)
-            await asyncio.sleep(pause)
-    except FloodWaitError as exc:
-        log(f"discover_groups dialog FloodWait {uid}: {exc.seconds}s", "warning")
-        _remember_flood(exc.seconds)
+                    if flood_hit:
+                        break
+                    # Progress — foydalanuvchi kutayotganini bilishi uchun.
+                    done = start + len(batch)
+                    if (
+                        done % DISCOVER_PROGRESS_EVERY < batch_size
+                        or done >= len(candidates)
+                    ):
+                        with contextlib.suppress(Exception):
+                            await status_msg.edit_text(
+                                T.discover_progress(scanned, len(found))
+                            )
+                    # Anti-spam: batch'lar orasida qisqa pauza.
+                    if DISCOVER_BATCH_PAUSE_S > 0:
+                        await asyncio.sleep(DISCOVER_BATCH_PAUSE_S)
+    except SessionInvalidError:
+        with contextlib.suppress(Exception):
+            await status_msg.edit_text(T.DISCOVER_INVALID)
+        return
+    except PoolBusyError:
+        with contextlib.suppress(Exception):
+            await status_msg.edit_text(T.DISCOVER_BUSY)
+        return
     except Exception as exc:  # noqa: BLE001
-        log(f"discover_groups scan {uid}: {type(exc).__name__}", "error")
+        log(f"discover_groups scan {uid}: {type(exc).__name__}", "warning")
         errors.append(type(exc).__name__)
     finally:
         _discover_running.discard(uid)
-        await pool.release(uid)
+        if release_needed:
+            await pool.release(uid)
 
     # Hech narsa qo'shilmedi — endi tanlov sessiyasini boshlaymiz.
     selection = discover_sessions.start_session(uid, found)
@@ -767,11 +889,8 @@ async def discover_groups(update: Update) -> None:
     rendered = False
     with contextlib.suppress(Exception):
         await status_msg.edit_text(
-            T.DISCOVER_PICK_HEADER.format(
-                total=len(selection.groups),
-                page=1,
-                pages=selection.page_count(GROUPS_PAGE_SIZE),
-                selected=len(selection.selected),
+            _discover_header(
+                selection, 0, selection.page_count(GROUPS_PAGE_SIZE)
             ),
             parse_mode="HTML",
             reply_markup=KB.kb_discover_groups(
@@ -793,6 +912,29 @@ async def discover_groups(update: Update) -> None:
     )
 
 
+def _discover_header(selection, page: int, pages: int) -> str:
+    """Ro'yxat xabari matni — sarlavha + shu sahifaning havolalari.
+
+    Havolalar xabar matnida ko'rsatiladi (tugma matni 64 belgi bilan
+    cheklangan, shuning uchun u yerda sig'maydi). Foydalanuvchi shu
+    yerda to'g'ridan-to'g'ri guruhga o'ta oladi.
+    """
+    header = T.DISCOVER_PICK_HEADER.format(
+        total=len(selection.groups),
+        page=page + 1,
+        pages=pages,
+        selected=len(selection.selected),
+    )
+    links = [
+        group.display_detail()
+        for group in selection.page_groups(page, GROUPS_PAGE_SIZE)
+        if group.link()
+    ]
+    if links:
+        header += T.DISCOVER_PICK_LINKS.format(links="\n".join(links))
+    return header
+
+
 async def _render_discover_list(
     update: Update,
     message,
@@ -809,12 +951,7 @@ async def _render_discover_list(
     pages = selection.page_count(GROUPS_PAGE_SIZE)
     page = max(0, min(page, pages - 1))
     groups = selection.page_groups(page, GROUPS_PAGE_SIZE)
-    header = T.DISCOVER_PICK_HEADER.format(
-        total=len(selection.groups),
-        page=page + 1,
-        pages=pages,
-        selected=len(selection.selected),
-    )
+    header = _discover_header(selection, page, pages)
     markup = KB.kb_discover_groups(
         groups,
         selection.selected,

@@ -14,7 +14,38 @@ qaytish rejasini beradi.
 | Worker yuborish | 🟡 o'rta | Endi albom `send_file([...])` orqali, matnli post `link_preview` bayrog'i bilan ketadi. Kunlik limit/faol soat yoqilsa, yuborishlar o'sha oynaga moslashadi |
 | Media disk | 🟡 o'rta | Albomlar bilan fayllar soni o'sadi. Har user uchun kvota: `MAX_MEDIA_FILES_PER_USER` (standart 200) |
 
-Barcha yangi funksiya testlangan: **425 test** (`python -m unittest discover -s tests -t tests`).
+Barcha yangi funksiya testlangan: **453 test** (`python -m unittest discover -s tests -t tests`).
+
+### 🆕 «🔍 Guruhlarni topish» skaneri — tez, izolyatsiyalangan, havolali
+
+| Qism | Xavf | Izoh |
+| ---- | ---- | ---- |
+| Parallel huquq tekshiruvi | 🟢 past | Oldin har bir guruh uchun `get_permissions` **ketma-ket** chaqirilardi (har biriga 1–3 s pauza). Endi `DISCOVER_BATCH_SIZE` (standart **8**) ta guruh **bir vaqtda** tekshiriladi. Skaner bir necha barobar tezlashadi |
+| Alohida client | 🟢 past | Skaner endi **alohida** TelegramClient ishlatadi (posting clientidan alohida). Oldin bitta client bo'lgani uchun skaner davomida **shu foydalanuvchining posting'i** sekinlashardi. Endi ikkalasi **parallel** ishlaydi |
+| Ochiq havolalar | 🟢 past | Topilgan guruhlar ro'yxatida endi **`https://t.me/username`** ko'rinadi (xabar matnida, sahifa bo'yicha). Tugma matni 64 belgi limiti tufayli qisqa qoldirilgan |
+| Qisqartirilgan pauza | 🟡 o'rta | Guruhlar orasidagi pauza `1–3 s` dan **`0.05–0.25 s`** ga tushirildi. Telegram FloodWait xavfi shuning uchun **batch'lar orasida** `DISCOVER_BATCH_PAUSE_S` (standart `0.4 s`) saqlanadi |
+| Alohida client limiti | 🟢 past | Bir vaqtda faqat `MAX_ISOLATED_CLIENTS` (standart **10**) ta alohida client ishlaydi. Limit to'lsa foydalanuvchi **kutilmaydi** — darhol xabar oladi |
+
+**Yangi sozlamalar** (`.env` da, ixtiyoriy):
+
+```env
+DISCOVER_BATCH_SIZE=8            # bir vaqtda tekshiriladigan guruhlar soni (1–20)
+DISCOVER_BATCH_PAUSE_S=0.4       # batch'lar orasidagi pauza (soniya)
+DISCOVER_PERMISSION_TIMEOUT_S=20 # bitta guruh tekshiruvining limiti
+DISCOVER_PROGRESS_EVERY=10       # progress xabari qancha guruhdan keyin
+MAX_ISOLATED_CLIENTS=10          # bir vaqtda alohida client'lar limiti
+```
+
+**Nima uchun muhim:** avval bitta foydalanuvchi skaner bosganda, uning
+**o'z posting'i** ham sekinlashardi (bir client — ketma-ket RPC) va skaner
+**bir necha daqiqa** davom etardi. Endi skaner tez, alohida va boshqa
+foydalanuvchilarga **ta'sir qilmaydi**.
+
+### 🆕 Foydalanuvchi lock'lari — collision yo'q
+
+| Qism | Xavf | Izoh |
+| ---- | ---- | ---- |
+| `core/update_locks.py` | 🟢 past | Lock'lar avval `uid % 256` (striped) uslubida taqsimlanardi. Natijada `uid=1` va `uid=257` **bir xil** lock'ni olardi — bitta foydalanuvchi uzoq amal qilsa, ikkinchisi **kutib qolardi**. Endi lock'lar **aybiga** yaratiladi va `WeakValueDictionary` bilan saqlanadi (faol bo'lmagan lock'lar xotiradan o'chadi) |
 
 ### 🆕 Bot bir vaqtda o'lmasligi (startup barqarorligi)
 

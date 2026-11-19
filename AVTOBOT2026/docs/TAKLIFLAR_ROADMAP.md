@@ -549,10 +549,15 @@ qayta ko'rib chiqildi.
 | Inline tugmalarda `update.message` None xatosi | ✅ | `reply_text_safe()` — inline callback'da ham xabar yuboriladi (PR #23) |
 | Bot "javob bermay qoladi" (Telegram ulanishi) | ✅ | Kengaytirilgan connection pool + timeout'lar + polling supervisor (PR #24) |
 | Bot bitta Telegram xatosida o'lmasligi | ✅ | `set_my_commands` himoyasi + startup retry (PR #25) |
+| Skaner sekin, postingni sekinlashtiradi | ✅ | Parallel batch + alohida client (PR #26) |
+| Skaner natijasida guruh havolalari ko'rinmaydi | ✅ | `https://t.me/username` ro'yxat xabarida |
+| Bitta foydalanuvchi boshqalarining ishini sekinlashtirmasligi | ✅ | `isolated_client()` — skaner posting client'idan alohida |
+| Bot qotib qolmasligi / osilib qolmasligi | ✅ | Parallel handler'lar (`concurrent_updates=32`), per-UID lock'lar, `asyncio.sleep` (bloklovchi emas) |
+| Lock collision (turli foydalanuvchilar bir-birini bloklamasligi) | ✅ | Per-UID lock + `WeakValueDictionary` — `uid=1` va `uid=257` endi alohida |
 
 ### 📊 Testlar
 
-**425 test** (`python -m unittest discover -s tests -t tests`) — hammasi o'tadi.
+**453 test** (`python -m unittest discover -s tests -t tests`) — hammasi o'tadi.
 Ruff — o'zgartirilgan modullarda yangi xato yo'q.
 
 ### 🔍 Guruhlarni topish — qo'lda belgilash (2026-11-14)

@@ -54,14 +54,46 @@ class DiscoveredGroup:
     key: str = ""
     """Dedupe kaliti (``group_reference_key``)."""
 
+    def link(self) -> str:
+        """Ochiq havola (``https://t.me/username``) — username bo'lsa.
+
+        Yopiq guruhlarda username yo'q — ulanish mumkin emas, shuning
+        uchun bo'sh qaytariladi.
+        """
+        reference = (self.reference or "").strip()
+        if reference.startswith("@"):
+            username = reference[1:]
+        elif reference.startswith("https://t.me/"):
+            username = reference[len("https://t.me/") :]
+        else:
+            return ""
+        username = username.split("/", 1)[0].lstrip("@")
+        if not username:
+            return ""
+        return f"https://t.me/{username}"
+
     def display(self) -> str:
-        """Ro'yxatda ko'rsatiladigan matn."""
+        """Ro'yxatda ko'rsatiladigan matn (tugma uchun — qisqa).
+
+        Telegram tugma matni limiti 64 belgi — havola bu yerda
+        ko'rsatilmaydi, u xabar matnida chiqadi (``display_detail``).
+        """
         name = self.title or self.reference
         if len(name) > 40:
             name = name[:39] + "…"
         icon = "📢" if self.kind == "megaguruh" else "👥"
         extra = f" · {self.members} a'zo" if self.members else ""
         return f"{icon} {name}{extra}"
+
+    def display_detail(self) -> str:
+        """Xabar matni uchun — nom va ochiq havola bilan."""
+        name = self.title or self.reference
+        if len(name) > 60:
+            name = name[:59] + "…"
+        link = self.link()
+        if link:
+            return f"• {name} — {link}"
+        return f"• {name}"
 
 
 def build_key(reference: str) -> str:
