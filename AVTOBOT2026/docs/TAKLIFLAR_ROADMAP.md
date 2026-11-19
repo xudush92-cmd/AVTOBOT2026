@@ -547,10 +547,11 @@ qayta ko'rib chiqildi.
 | Referal → jamoaga avtomatik biriktirish | ✅ | `test_referral_user_joins_referrer_team` — referrer jamoa admini bo'lsa |
 | Bo'sh jamoa adminlari oynasida «➕ Admin qo'shish» | ✅ | Super admin birinchi jamoa adminini qo'shira oladi |
 | Inline tugmalarda `update.message` None xatosi | ✅ | `reply_text_safe()` — inline callback'da ham xabar yuboriladi (PR #23) |
+| Bot "javob bermay qoladi" (Telegram ulanishi) | ✅ | Kengaytirilgan connection pool + timeout'lar + polling supervisor (PR #24) |
 
 ### 📊 Testlar
 
-**413 test** (`python -m unittest discover -s tests -t tests`) — hammasi o'tadi.
+**418 test** (`python -m unittest discover -s tests -t tests`) — hammasi o'tadi.
 Ruff — o'zgartirilgan modullarda yangi xato yo'q.
 
 ### 🔍 Guruhlarni topish — qo'lda belgilash (2026-11-14)

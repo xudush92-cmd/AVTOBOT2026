@@ -14,7 +14,36 @@ qaytish rejasini beradi.
 | Worker yuborish | 🟡 o'rta | Endi albom `send_file([...])` orqali, matnli post `link_preview` bayrog'i bilan ketadi. Kunlik limit/faol soat yoqilsa, yuborishlar o'sha oynaga moslashadi |
 | Media disk | 🟡 o'rta | Albomlar bilan fayllar soni o'sadi. Har user uchun kvota: `MAX_MEDIA_FILES_PER_USER` (standart 200) |
 
-Barcha yangi funksiya testlangan: **413 test** (`python -m unittest discover -s tests -t tests`).
+Barcha yangi funksiya testlangan: **418 test** (`python -m unittest discover -s tests -t tests`).
+
+### 🆕 Telegram API ulanishi (bot "javob bermaydi" muammosi)
+
+| Qism | Xavf | Izoh |
+| ---- | ---- | ---- |
+| `connection_pool_size` | 🟢 past | PTB standart qiymati **1** edi. Long-polling (`getUpdates`, serverda 10s kutadi) connection'ni band qilib, javob yuborish so'rovlarini "pool timeout" bilan uzardi. Endi **20** (`.env` dan `TELEGRAM_CONNECTION_POOL_SIZE` bilan o'zgartiriladi) |
+| `read_timeout` / `get_updates_read_timeout` | 🟢 past | Standart `5s` edi — `getUpdates` 10s kutsa timeout berib, polling to'xtardi. Endi `30s` / `40s` |
+| `pool_timeout` | 🟢 past | Standart `1s` edi — javoblar polling paytida uzilib ketardi. Endi `30s` |
+| Polling supervisor | 🟢 past | Polling task'i to'xtasa (Telegram `Bad Gateway`, `TimedOut`), supervisor uni avtomatik qayta boshlaydi. Bot bir marta o'chib qolmaydi |
+
+**Qo'shimcha `.env` sozlamalari** (ixtiyoriy — standart qiymatlar yetarli):
+
+```
+TELEGRAM_CONNECTION_POOL_SIZE=20
+TELEGRAM_READ_TIMEOUT=30
+TELEGRAM_WRITE_TIMEOUT=30
+TELEGRAM_CONNECT_TIMEOUT=15
+TELEGRAM_POOL_TIMEOUT=30
+TELEGRAM_GET_UPDATES_READ_TIMEOUT=40
+TELEGRAM_GET_UPDATES_POOL_TIMEOUT=30
+```
+
+**Tekshirish (serverda):**
+
+```bash
+journalctl -u avtobot3.service --since "10 minutes ago" --no-pager | grep -iE "polling|timed out|networkerror"
+```
+
+`⚠️ Polling to'xtadi ... qayta boshlanadi` xabari chiqsa — supervisor ishlayapti (bu normal, u tiklaydi).
 
 ### 🆕 Jamoa (team) tizimi
 
