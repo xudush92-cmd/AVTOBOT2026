@@ -548,10 +548,11 @@ qayta ko'rib chiqildi.
 | Bo'sh jamoa adminlari oynasida «➕ Admin qo'shish» | ✅ | Super admin birinchi jamoa adminini qo'shira oladi |
 | Inline tugmalarda `update.message` None xatosi | ✅ | `reply_text_safe()` — inline callback'da ham xabar yuboriladi (PR #23) |
 | Bot "javob bermay qoladi" (Telegram ulanishi) | ✅ | Kengaytirilgan connection pool + timeout'lar + polling supervisor (PR #24) |
+| Bot bitta Telegram xatosida o'lmasligi | ✅ | `set_my_commands` himoyasi + startup retry (PR #25) |
 
 ### 📊 Testlar
 
-**418 test** (`python -m unittest discover -s tests -t tests`) — hammasi o'tadi.
+**425 test** (`python -m unittest discover -s tests -t tests`) — hammasi o'tadi.
 Ruff — o'zgartirilgan modullarda yangi xato yo'q.
 
 ### 🔍 Guruhlarni topish — qo'lda belgilash (2026-11-14)
