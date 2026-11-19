@@ -555,11 +555,12 @@ qayta ko'rib chiqildi.
 | Bot qotib qolmasligi / osilib qolmasligi | ✅ | Parallel handler'lar (`concurrent_updates=32`), per-UID lock'lar, `asyncio.sleep` (bloklovchi emas) |
 | Lock collision (turli foydalanuvchilar bir-birini bloklamasligi) | ✅ | Per-UID lock + `WeakValueDictionary` — `uid=1` va `uid=257` endi alohida |
 | Foydalanuvchiga guruh intervalini berish | ✅ | `💬 Guruhlar` oynasi — `⏱` tugmasi orqali alohida interval (PR #27) |
-| Guruh boshqaruvining bitta oynada bo'lishi | ✅ | Ro'yxat + o'chirish + interval — `bot/my_groups.py` |
+| Guruh boshqaruvning bitta oynada bo'lishi | ✅ | Ro'yxat + o'chirish + interval — `bot/my_groups.py` |
+| Kirish/jamoa yaratishda foydalanuvchi kutib qolmasligi | ✅ | Tasdiqlash xabarlari fon task'ida — foydalanuvchi darhol javob oladi (PR #28) |
 
 ### 📊 Testlar
 
-**471 test** (`python -m unittest discover -s tests -t tests`) — hammasi o'tadi.
+**476 test** (`python -m unittest discover -s tests -t tests`) — hammasi o'tadi.
 Ruff — o'zgartirilgan modullarda yangi xato yo'q.
 
 ### 🔍 Guruhlarni topish — qo'lda belgilash (2026-11-14)

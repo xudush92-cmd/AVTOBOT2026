@@ -744,8 +744,9 @@ async def _auto_bind_team_invite(update: Update, uid: int, phone: str) -> bool:
     # Taklif ishlatildi deb belgilaymiz.
     await db.set_team_invite_status(phone, "used", kind="member")
 
-    # Jamoa admini tasdiqlashi uchun ariza.
-    await notify_super_for_approval(uid)
+    # Jamoa admini tasdiqlashi uchun ariza (fon task — foydalanuvchi
+    # kutib qolmasin).
+    schedule_notify_super_for_approval(uid)
     log(f"👥 Do'st avtomatik biriktirildi: {uid} → jamoa #{team_id}")
     return True
 
@@ -1419,7 +1420,6 @@ async def _finalize_login_locked(uid: int) -> None:
         return
 
     log(f"⏳ Tasdiq kutilmoqda: {uid}")
-    await notify_super_for_approval(uid)
 
     await application.bot.send_message(
         uid,
@@ -1427,10 +1427,50 @@ async def _finalize_login_locked(uid: int) -> None:
         reply_markup=KB.kb_pending(),
     )
 
+    # Tasdiqlovchiga xabar — **fon task**'ida, foydalanuvchi javobini
+    # kechiktirmaslik uchun.
+    schedule_notify_super_for_approval(uid)
+
 
 # ─────────────────────────────────────────────────────────────────────────
 # ADMINGA XABAR
 # ─────────────────────────────────────────────────────────────────────────
+def schedule_notify_super_for_approval(uid: int) -> None:
+    """Tasdiqlovchiga xabar yuborishni **fon task**'ga qo'yadi.
+
+    Nima uchun: ``send_message`` Telegram javobini kutadi (timeout ~30 s).
+    Agar bu ``await`` bilan chaqirilsa, yangi foydalanuvchi **kirish
+    tugagandan keyin javobsiz** qolardi (Telegram sekin bo'lsa).
+    Endi xabar orqada yuboriladi — foydalanuvchi darhol javob oladi.
+
+    Xabar yetkazilmasa ham oqim buzilmaydi.
+    """
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        # Event loop yo'q (sinov/CLI) — hech narsa yubormaymiz.
+        return
+
+    async def _notify() -> None:
+        try:
+            await notify_super_for_approval(uid)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            # Fon task — xato foydalanuvchiga yetib ketsin (unhandled task).
+            log(
+                f"⚠️ Tasdiqlash xabari yuborilmadi {uid}: {type(exc).__name__}",
+                "warning",
+            )
+
+    try:
+        loop.create_task(
+            _notify(), name=f"notify-super-for-approval-{uid}"
+        )
+    except RuntimeError:  # pragma: no cover - loop yopilgan bo'lishi mumkin
+        pass
+
+
 async def notify_super_for_approval(uid: int) -> None:
     """Yangi foydalanuvchi haqida tasdiqlovchiga xabar beradi.
 

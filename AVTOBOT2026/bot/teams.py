@@ -14,6 +14,7 @@ Super admin jamoa adminlarining muddati va sig'imi (limit)ni boshqaradi.
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import time
 
@@ -446,9 +447,9 @@ async def handle_team_admin_name(update: Update, uid: int, text: str) -> None:
     user_states.pop(uid, None)
     log(f"👑 Yangi jamoa admini: {uid} — {name} (max {size})")
 
-    # Super admin'ni xabardor qilamiz — muddat va sig'imni nazorat qilishi uchun.
-    await notify_super_team_admin(uid, name, size)
-
+    # Foydalanuvchiga **avval** javob beramiz — super admin'ga xabar
+    # fon task'ida yuboriladi. Aks holda Telegram sekin bo'lsa, foydalanuvchi
+    # javobni kutib qolardi (timeout gacha).
     await update.message.reply_text(
         T.TEAM_ADMIN_REGISTERED.format(
             name=name,
@@ -458,6 +459,46 @@ async def handle_team_admin_name(update: Update, uid: int, text: str) -> None:
         ),
         reply_markup=await KB.kb_main_for(uid),
     )
+
+    # Super admin'ni xabardor qilamiz — muddat va sig'imni nazorat qilishi uchun.
+    schedule_notify_super_team_admin(uid, name, size)
+
+
+def schedule_notify_super_team_admin(uid: int, name: str, size: int) -> None:
+    """Super admin'ga xabar yuborishni **fon task**'ga qo'yadi.
+
+    Nima uchun: ``send_message`` Telegram javobini kutadi (timeout ~30 s).
+    Agar bu ``await`` bilan chaqirilsa, foydalanuvchi o'z jamoasini
+    yaratganidan keyin **javobsiz** qolardi. Endi foydalanuvchi avval
+    tasdiqlanadi, xabar esa orqada yuboriladi.
+
+    Xabar yetkazilmasa ham oqim buzilmaydi — ``notify_super_team_admin``
+    o'z ichida barcha xatolarni yutadi.
+    """
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        # Event loop yo'q (sinov/CLI) — to'g'ri yuborishga majbur qilamiz
+        # lekin hech qanday xato ko'rsatmaymiz.
+        return
+
+    async def _notify() -> None:
+        try:
+            await notify_super_team_admin(uid, name, size)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            # Fon task — xato foydalanuvchiga yetib ketsin (unhandled task).
+            log(
+                f"⚠️ Jamoa admini xabari yuborilmadi {uid}: "
+                f"{type(exc).__name__}",
+                "warning",
+            )
+
+    try:
+        loop.create_task(_notify(), name=f"notify-super-team-admin-{uid}")
+    except RuntimeError:  # pragma: no cover - loop yopilgan bo'lishi mumkin
+        pass
 
 
 async def notify_super_team_admin(uid: int, name: str, size: int) -> None:

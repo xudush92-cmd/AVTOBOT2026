@@ -221,14 +221,16 @@ class RegistrationPhoneStepTests(unittest.IsolatedAsyncioTestCase):
             patch.object(
                 login.db, "set_awaiting_approval", new=AsyncMock()
             ) as awaiting,
-            patch.object(login, "notify_super_for_approval", new=AsyncMock()) as notify,
+            patch.object(
+                login, "schedule_notify_super_for_approval", new=MagicMock()
+            ) as notify,
             patch.object(login, "request_code", new=AsyncMock()) as request_code,
         ):
             await login.handle_phone(update, "+998901234567")
 
         request_code.assert_awaited_once_with(uid, "+998901234567")
         awaiting.assert_not_awaited()
-        notify.assert_not_awaited()
+        notify.assert_not_called()
         self.assertEqual(
             update.message.reply_text.await_args.args[0],
             T.REGISTRATION_CODE_REQUEST.format(phone="+998901234567"),
@@ -312,7 +314,9 @@ class PendingSessionSaveTests(unittest.IsolatedAsyncioTestCase):
             patch.object(
                 login.db, "set_awaiting_approval", new=AsyncMock()
             ) as awaiting,
-            patch.object(login, "notify_super_for_approval", new=AsyncMock()) as notify,
+            patch.object(
+                login, "schedule_notify_super_for_approval", new=MagicMock()
+            ) as notify,
             patch.object(
                 login, "revoke_telegram_session", new=AsyncMock(return_value=True)
             ) as revoke,
@@ -325,7 +329,7 @@ class PendingSessionSaveTests(unittest.IsolatedAsyncioTestCase):
         set_session.assert_not_awaited()
         awaiting.assert_not_awaited()
         revoke.assert_not_awaited()
-        notify.assert_awaited_once_with(uid)
+        notify.assert_called_once_with(uid)
         self.assertIsNone(login.get_step(uid))
         self.assertNotIn(uid, login.login_ctx)
 
@@ -360,12 +364,14 @@ class PendingSessionSaveTests(unittest.IsolatedAsyncioTestCase):
             patch.object(
                 login, "revoke_telegram_session", new=AsyncMock(return_value=True)
             ) as revoke,
-            patch.object(login, "notify_super_for_approval", new=AsyncMock()) as notify,
+            patch.object(
+                login, "schedule_notify_super_for_approval", new=MagicMock()
+            ) as notify,
         ):
             await login._finalize_login_locked(uid)
 
         revoke.assert_awaited_once_with("pending-string-session", uid)
-        notify.assert_not_awaited()
+        notify.assert_not_called()
 
 
 # ─────────────────────────────────────────────────────────────────────────
