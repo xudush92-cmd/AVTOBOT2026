@@ -386,14 +386,30 @@ async def _execute_write(query: str, params: tuple | list = ()) -> aiosqlite.Cur
 async def backup_to(
     destination: str | Path, *, sanitize_sessions: bool = False
 ) -> None:
-    """WAL bilan ham izchil SQLite online backup yaratadi."""
+    """WAL bilan ham izchil SQLite online backup yaratadi.
+
+    Ikkita muhim nuqta:
+
+    1. Nusxa uchun **alohida** (manba) ulanish ishlatiladi. ``aiosqlite``
+       har bir ulanish uchun bitta worker thread ishlatadi va ``backup()``
+       aynan shu thread'da bajarilishi kerak. Agar ``backup()`` asosiy
+       ulanish ustida ishlatilsa, parallel yozuvlar bilan birga ishlaganda
+       **deadlock** yuzaga keladi: yozuv commit'i nusxadan keyingi navbatda
+       turadi, nusxa esa yozuvni kutadi.
+    2. ``_write_lock`` bu yerda ushlanmaydi. SQLite'ning online backup API'si
+       o'z ichida konsistent snapshot olish uchun WAL bilan ishlaydi va
+       parallel yozuvlarni to'xtamaydi. Lock ushlab turilsa, katta bazada
+       nusxa ko'chirilayotgan paytda BARCHA foydalanuvchilarning yozuvlari
+       (login, interval, guruh qo'shish) bloklanib qolardi.
+    """
     destination = Path(destination)
     destination.parent.mkdir(parents=True, exist_ok=True)
     existed = destination.exists()
     target = await aiosqlite.connect(str(destination))
+    source: aiosqlite.Connection | None = None
     try:
-        async with _write_lock:
-            await _conn().backup(target)
+        source = await aiosqlite.connect(str(DB_PATH))
+        await source.backup(target)
         if sanitize_sessions:
             await target.execute("PRAGMA journal_mode=DELETE")
             await target.execute("UPDATE users SET session = '', pending_session = ''")
@@ -402,6 +418,8 @@ async def backup_to(
             await target.execute("VACUUM")
     except BaseException:
         await target.close()
+        if source is not None:
+            await source.close()
         if not existed:
             destination.unlink(missing_ok=True)
             for suffix in ("-wal", "-shm", "-journal"):
@@ -409,6 +427,8 @@ async def backup_to(
         raise
     else:
         await target.close()
+        if source is not None:
+            await source.close()
     if sanitize_sessions:
         for suffix in ("-wal", "-shm", "-journal"):
             Path(f"{destination}{suffix}").unlink(missing_ok=True)
