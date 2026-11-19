@@ -14,7 +14,7 @@ qaytish rejasini beradi.
 | Worker yuborish | 🟡 o'rta | Endi albom `send_file([...])` orqali, matnli post `link_preview` bayrog'i bilan ketadi. Kunlik limit/faol soat yoqilsa, yuborishlar o'sha oynaga moslashadi |
 | Media disk | 🟡 o'rta | Albomlar bilan fayllar soni o'sadi. Har user uchun kvota: `MAX_MEDIA_FILES_PER_USER` (standart 200) |
 
-Barcha yangi funksiya testlangan: **471 test** (`python -m unittest discover -s tests -t tests`).
+Barcha yangi funksiya testlangan: **476 test** (`python -m unittest discover -s tests -t tests`).
 
 ### 🆕 «🔍 Guruhlarni topish» skaneri — tez, izolyatsiyalangan, havolali
 
@@ -59,6 +59,18 @@ alohida interval qo'yishi mumkin — **bitta sodda oynada**.
 | Yangi oyna (`bot/my_groups.py`) | 🟢 past | Bitta inline oyna: har guruh yonida `⏱ X daq` (alohida interval) va `🗑 N. guruh` (o'chirish). Yuqorida `🔍 Guruhlarni topish` va `⏱ Umumiy interval` |
 | Super admin o'z guruhlari | 🟢 past | Super admin uchun bu oyna **ishlamaydi** — u allaqachon `uc:` orqali har bir foydalanuvchining guruhini boshqaradi. `mg:` prefiksi super admin'dan **himoyalangan** |
 | Izolyatsiya | 🟢 past | Foydalanuvchi **faqat o'z** guruhlarini ko'radi va o'zgartiradi — `mg:` callback'lari `db.get_chat_record(uid, ...)` orqali tekshiriladi |
+
+### 🆕 Tasdiqlash xabarlari — foydalanuvchini kechiktirmasligi
+
+| Qism | Xavf | Izoh |
+| ---- | ---- | ---- |
+| `bot/login.py` | 🟢 past | Yangi foydalanuvchi login tugagach, tasdiqlovchiga xabar `await` bilan yuborilardi. Telegram sekin bo'lsa (timeout ~30 s) foydalanuvchi **javobsiz** qolardi. Endi xabar **fon task**'ida yuboriladi |
+| `bot/teams.py` | 🟢 past | Yangi jamoa admini o'z jamoasini yaratgach, super admin'ga xabar yuborilardi — xuddi shu muammo. Endi foydalanuvchi **avval** tasdiqlanadi, xabar **keyin** yuboriladi |
+| Fon task xatolari | 🟢 past | Task ichidagi xatolar yutiladi va logga yoziladi (unhandled task yo'q) |
+
+**Nima uchun muhim:** bu ikki joy — foydalanuvchining **eng ko'p kutadigan** joylari
+(kirish va jamoa yaratish). Telegram javob bermay qolsa, foydalanuvchi bot
+"ishlamayapti" deb oylardi. Endi foydalanuvchi **darhol** javob oladi.
 
 ### 🆕 Bot bir vaqtda o'lmasligi (startup barqarorligi)
 

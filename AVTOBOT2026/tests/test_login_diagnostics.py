@@ -13,7 +13,7 @@ import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 APP_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(APP_DIR))
@@ -384,7 +384,9 @@ class RegistrationFlowTests(unittest.IsolatedAsyncioTestCase):
             patch.object(
                 login.db, "set_awaiting_approval", new=AsyncMock()
             ) as awaiting,
-            patch.object(login, "notify_super_for_approval", new=AsyncMock()) as notify,
+            patch.object(
+                login, "schedule_notify_super_for_approval", new=MagicMock()
+            ) as notify,
             patch.object(login, "request_code", new=AsyncMock()) as request_code,
         ):
             await login.handle_phone(update, "+998901234567")
@@ -392,7 +394,7 @@ class RegistrationFlowTests(unittest.IsolatedAsyncioTestCase):
         # Yangi oqim: kod admin tasdig'idan oldin darhol so'raladi.
         request_code.assert_awaited_once_with(uid, "+998901234567")
         awaiting.assert_not_awaited()
-        notify.assert_not_awaited()
+        notify.assert_not_called()
         self.assertEqual(
             update.message.reply_text.await_args.args[0],
             T.REGISTRATION_CODE_REQUEST.format(phone="+998901234567"),
@@ -412,14 +414,16 @@ class RegistrationFlowTests(unittest.IsolatedAsyncioTestCase):
             patch.object(
                 login.db, "set_awaiting_approval", new=AsyncMock()
             ) as awaiting,
-            patch.object(login, "notify_super_for_approval", new=AsyncMock()) as notify,
+            patch.object(
+                login, "schedule_notify_super_for_approval", new=MagicMock()
+            ) as notify,
             patch.object(login, "request_code", new=AsyncMock()) as request_code,
         ):
             await login.handle_phone(update, "+998901234567")
 
         request_code.assert_awaited_once_with(uid, "+998901234567")
         awaiting.assert_not_awaited()
-        notify.assert_not_awaited()
+        notify.assert_not_called()
 
 
 if __name__ == "__main__":
