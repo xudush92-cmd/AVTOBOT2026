@@ -1484,8 +1484,8 @@ TEAM_ADMIN_MENU = (
 )
 
 TEAM_ADMIN_NO_TEAM = (
-    "😔 Sizning jamoangiz yo'q.\n\n"
-    "👑 «Admin bo'lish» tugmasi orqali jamoa yaratishingiz mumkin."
+    "😔 Sizning jamoangiz hali yaratilmagan.\n\n"
+    "Jamoangizni o'zingiz shakllantiring — nomini va sig'imini kiriting."
 )
 
 # ── Oddiy jamoa a'zosi uchun (jamoadan chiqish) ──

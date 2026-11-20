@@ -634,9 +634,10 @@ async def show_team_admins(update: Update) -> None:
         # aks holda super admin birinchi jamoa adminini qo'shira olmaydi.
         await q.edit_message_text(
             "👑 Hozircha jamoa admini yo'q.\n\n"
-            "Foydalanuvchilar «👑 Admin bo'lish» tugmasi orqali o'z jamoasini "
-            "yaratishi mumkin.\n\n"
-            "Yoki «➕ Admin qo'shish» orqali raqam orqali tayyorlang.",
+            "Jamoa adminini **faqat siz** tayyorlaysiz — «➕ Admin "
+            "qo'shish» tugmasi orqali telefon raqamini kiriting.\n\n"
+            "Admin ro'yxatdan o'tgach, o'z jamoasining nomi va sig'imi bilan "
+            "jamoani o'zi shakllantiradi.",
             reply_markup=KB.kb_team_admins([]),
         )
         return
@@ -685,14 +686,22 @@ async def show_team_admin_card(update: Update, target: int) -> None:
         return
 
     teams = await db.get_teams(target)
-    team_name = teams[0].get("name") if teams else "—"
+    team_name = teams[0].get("name") if teams else None
     limit = int(admin.get("admin_max_users") or 0)
     limit_text = f"{limit} ta" if limit else "cheksiz"
+
+    # Jamoasi hali yaratilmagan admin — jamoani o'zi shakllantiradi.
+    team_line = (
+        f"📋 Jamoa: {team_name}"
+        if team_name
+        else "📋 Jamoa: ⏳ hali yaratilmagan — admin «👥 Jamoam» "
+        "orqali nomini va sig'imini kiritadi"
+    )
 
     text = (
         f"👑 {admin.get('name') or 'Noma`lum'}\n\n"
         f"🆔 {target}\n"
-        f"📋 Jamoa: {team_name}\n"
+        f"{team_line}\n"
         f"📅 Muddat: {format_expires(admin.get('admin_expires_at'))}\n"
         f"👥 Sig'im: {limit_text}\n\n"
         "Kerakli amalni tanlang:"

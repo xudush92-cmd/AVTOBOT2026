@@ -113,8 +113,13 @@ class TeamLifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.temp.cleanup()
 
     async def test_full_jamoa_lifecycle(self) -> None:
-        """Admin jamoa yaratadi → a'zo qo'shiladi → tasdiqlanadi → chiqadi."""
-        # ── 1. Ro'yxatdan o'tmagan user jamoa yaratadi ──────────────────
+        """Admin jamoa yaratadi → a'zo qo'shiladi → tasdiqlanadi → chiqadi.
+
+        Jamoa adminini super admin panelidan tayyorlaydi; admin ro'yxatdan
+        o'tgach o'z jamoasini o'zi yaratadi.
+        """
+        # ── 1. Super admin tomonidan tayyorlangan jamoa admini jamoa yaratadi
+        await db.upsert_user(ADMIN_UID, name="Admin", is_team_admin=1)
         up = FakeUpdate(ADMIN_UID)
         await Tm.begin_team_admin_register(up, ADMIN_UID)
         self.assertEqual(

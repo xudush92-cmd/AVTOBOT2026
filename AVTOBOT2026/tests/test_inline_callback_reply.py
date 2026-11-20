@@ -126,7 +126,11 @@ class InlineCallbackRegressionTests(unittest.IsolatedAsyncioTestCase):
         user_states.pop(991460501, None)
 
     async def test_team_admin_panel_works_from_inline(self) -> None:
-        """Jamoa admini paneli inline tugmadan ochilganda xato bermasligi."""
+        """Jamoa admini paneli inline tugmadan ochilganda xato bermasligi.
+
+        Jamoasi hali yaratilmagan jamoa admini uchun jamoa yaratish
+        oqimi boshlanadi — xato bermasligi kerak.
+        """
         from bot import teams
 
         update = make_inline_update()

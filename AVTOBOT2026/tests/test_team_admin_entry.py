@@ -49,12 +49,11 @@ class TeamAdminEntryTests(unittest.IsolatedAsyncioTestCase):
             message=SimpleNamespace(text=text, reply_text=AsyncMock()),
         )
 
-    async def test_admin_button_works_for_new_user_without_login(self) -> None:
-        """Ro'yxatdan o'tmagan user «👑 Admin bo'lish» bosishi mumkin.
+    async def test_admin_button_is_rejected_for_new_user(self) -> None:
+        """Ro'yxatdan o'tmagan user «👑 Admin bo'lish» bosolmaydi.
 
-        Aks holda foydalanuvchi jamoasini yaratish uchun avval login oynasiga
-        qaytib, ism/telefon kiritishga majbur bo'lardi — bu esa
-        «Admin bo'lish» tugmasining ma'nosini buzadi.
+        Jamoa adminini **faqat super admin** yaratadi (telefon orqali
+        tayyorlaydi). Oddiy foydalanuvchiga rad javobi beriladi.
         """
         import main as app_main
 
@@ -66,20 +65,17 @@ class TeamAdminEntryTests(unittest.IsolatedAsyncioTestCase):
         await app_main.on_message(update, SimpleNamespace())
 
         update.message.reply_text.assert_awaited()
-        first_call = update.message.reply_text.await_args
-        self.assertIsNotNone(first_call)
 
-        # Jamoa yaratish oqimi boshlangan bo'lishi kerak.
+        # Jamoa yaratish oqimi boslanMAMALIGI kerak.
         from bot.login import user_states
 
-        self.assertEqual(
-            user_states.get(USER_ID, {}).get("step"),
-            "team_admin_size",
-            "login'siz user uchun jamoa yaratish oqimi boshlanishi kerak",
+        self.assertIsNone(
+            user_states.get(USER_ID),
+            "oddiy user uchun jamoa yaratish oqimi boshlanmasligi kerak",
         )
 
-    async def test_admin_button_works_for_unapproved_user(self) -> None:
-        """Tasdiqlanmagan (login oynasida turgan) user ham bosishi mumkin."""
+    async def test_admin_button_is_rejected_for_unapproved_user(self) -> None:
+        """Tasdiqlanmagan user ham jamoa admini bo'la olmaydi."""
         import main as app_main
 
         await db.upsert_user(
@@ -91,18 +87,17 @@ class TeamAdminEntryTests(unittest.IsolatedAsyncioTestCase):
 
         from bot.login import user_states
 
-        self.assertEqual(
-            user_states.get(USER_ID, {}).get("step"),
-            "team_admin_size",
-            "tasdiqlanmagan user uchun jamoa yaratish oqimi boshlanishi kerak",
+        self.assertIsNone(
+            user_states.get(USER_ID),
+            "tasdiqlanmagan user uchun jamoa yaratish oqimi boshlanmasligi kerak",
         )
 
-    async def test_admin_button_works_for_approved_user_without_session(self) -> None:
-        """Tasdiqlangan, lekin sessiyasi yo'q user ham bosishi mumkin."""
+    async def test_admin_button_starts_team_flow_for_team_admin(self) -> None:
+        """Super admin tomonidan tayyorlangan jamoa admini jamoani yaratadi."""
         import main as app_main
 
         await db.upsert_user(
-            USER_ID, name="Tasdiqlangan", is_admin=1, session=None
+            USER_ID, name="Jamoa admini", is_admin=1, is_team_admin=1
         )
 
         update = self._update(T.BTN_TEAM_ADMIN)
@@ -113,7 +108,7 @@ class TeamAdminEntryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             user_states.get(USER_ID, {}).get("step"),
             "team_admin_size",
-            "sessiyasiz user uchun jamoa yaratish oqimi boshlanishi kerak",
+            "jamoa admini uchun jamoa yaratish oqimi boshlanishi kerak",
         )
 
 
@@ -137,8 +132,9 @@ class TeamAdminButtonRoutingTests(unittest.IsolatedAsyncioTestCase):
     async def test_admin_button_is_in_menu_buttons_set(self) -> None:
         """`BTN_TEAM_ADMIN` kirish oynasi ro'yxatida bo'lishi kerak.
 
-        Aks holda kirish oynasida «👑 Admin bo'lish» bosilsa, bot javob
-        bermaydi (kiritish oynasi bekor qilinadi lekin jamoa yaratilmaydi).
+        Eski klaviaturadagi foydalanuvchilar uchun matn o'zgarmaydi —
+        tugma bosilganda jamoa admini uchun jamoa yaratish oqimi
+        boshlanadi, oddiy user uchun esa rad javobi beriladi.
         """
         import main as app_main
         from bot import login as Login
@@ -161,10 +157,9 @@ class TeamAdminButtonRoutingTests(unittest.IsolatedAsyncioTestCase):
 
         from bot.login import user_states
 
-        self.assertEqual(
-            user_states.get(USER_ID, {}).get("step"),
-            "team_admin_size",
-            "kirish oynasida «Admin bo'lish» bosilsa, jamoa oqimi boshlanishi kerak",
+        self.assertIsNone(
+            user_states.get(USER_ID),
+            "oddiy user uchun jamoa oqimi boshlanmasligi kerak",
         )
         self.assertEqual(
             T.BTN_TEAM_ADMIN,

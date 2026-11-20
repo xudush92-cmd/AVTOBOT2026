@@ -14,7 +14,7 @@ qaytish rejasini beradi.
 | Worker yuborish | 🟡 o'rta | Endi albom `send_file([...])` orqali, matnli post `link_preview` bayrog'i bilan ketadi. Kunlik limit/faol soat yoqilsa, yuborishlar o'sha oynaga moslashadi |
 | Media disk | 🟡 o'rta | Albomlar bilan fayllar soni o'sadi. Har user uchun kvota: `MAX_MEDIA_FILES_PER_USER` (standart 200) |
 
-Barcha yangi funksiya testlangan: **497 test** (`python -m unittest discover -s tests -t tests`).
+Barcha yangi funksiya testlangan: **509 test** (`python -m unittest discover -s tests -t tests`).
 
 ### 🆕 «🔍 Guruhlarni topish» skaneri — tez, izolyatsiyalangan, havolali
 
@@ -160,12 +160,25 @@ journalctl -u avtobot3.service --since "10 minutes ago" --no-pager | grep -iE "p
 | Bloklash ta'siri | 🟢 past | Jamoa admini bloklansa — **butun jamoa** to'xtaydi, a'zolar xabar oladi |
 | Muddat indikatorlari | 🟢 past | ⌛ — muddati tugagan (a'zo va jamoa admini ro'yxatlarida) |
 | Jamoa admini tasdiqi | 🟢 past | Jamoani yaratgan admin **darhol tasdiqlangan** bo'ladi — tasdiq kutilmaydi, oddiy user kabi posting qiladi |
-| «👑 Admin bo'lish» tugmasi | 🟢 past | Tugma asosiy menyuning oxirgi qatoriga qo'shildi (jamoasiz user uchun `🎯 Jamoani tanlash` bilan bir qatorda). Tugma **login'dan oldin ham** ishlaydi — ro'yxatdan o'tmagan, tasdiqlanmagan yoki sessiyasiz user ham jamoasini yaratishi mumkin. Kirish oynasida tugma bosilsa, kiritish oynasi bekor qilinadi va jamoa oqimi boshlanadi (avvalgi xatoda u telefon raqam sifatida qabul qilinardi) |
+| «👑 Admin bo'lish» tugmasi | 🟡 o'rta | Tugma asosiy menyudan **butunlay olib tashlandi**. Jamoa adminini **faqat super admin** yaratadi (`🖥 Super Admin` → `👑 Jamoa adminlari` → `➕ Admin qo'shish`, telefon raqam orqali). Eski tugma matni eski klaviaturalarda bosilsa — jamoa admini uchun jamoa yaratish oqimi boshlanadi, oddiy user uchun esa rad javobi beriladi |
 | Jamoa sig'i | 🟢 past | Jamoa to'lgan bo'lsa yangi a'zo biriktirilmaydi (`assign_team_member` / `set_team_pending` ham tekshiradi) — limit oshishi mumkin emas |
 | Super admin paneli | 🟢 past | Bo'sh jamoa adminlari ro'yxatida ham «➕ Admin qo'shish» tugmasi ko'rinadi — birinchi jamoa adminini qo'shish uchun |
 
-> ℹ️ Jamoa tizimi **ixtiyoriy**: foydalanuvchi jamoa tanlamasa, oddiy user
-> sifatida ishlaydi. Jamoa adminlari faqat o'z jamoalariga ta'sir qiladi.
+> ℹ️ **Jamoalar yopiq.** Oddiy foydalanuvchi jamoalarni ko'ra olmaydi va
+> o'zi jamoaga qo'shila olmaydi — jamoaga faqat jamoa administratori
+> qo'shadi (telefon taklifi yoki jamoa havolasi orqali). Jamoa adminlari
+> faqat o'z jamoalariga ta'sir qiladi.
+
+### 🆕 Jamoa tizimi soddalashtirildi — jamoalar yopiq
+
+| Qism | Xavf | Izoh |
+| ---- | ---- | ---- |
+| `🎯 Jamoani tanlash` | 🟡 o'rta | Tugma **butunlay olib tashlandi** va jamoalar **yopiq** bo'ldi. Oddiy foydalanuvchi jamoalarni ko'ra olmaydi. `show_team_picker` va `handle_team_pick_callback` faqat **super admin** uchun ishlaydi — oddiy user callback yuborsa, rad javobi beriladi |
+| Jamoa adminini yaratish | 🟢 past | Faqat **super admin** panelidan (`➕ Admin qo'shish`, telefon raqam). Admin ro'yxatdan o'tgach **birinchi marta** `👥 Jamoam` bosganda jamoaning nomi va sig'imi so'raladi — jamoani o'zi shakllantiradi |
+| Oddiy user → jamoa admini | 🟢 past | `begin_team_admin_register` endi rolini tekshiradi: jamoa admini bo'lmagan user uchun rad javobi beriladi |
+| Super admin paneli | 🟢 past | Jamoa admini kartasida jamoasi yo'q bo'lsa «⏳ hali yaratilmagan — admin «👥 Jamoam» orqali nomini va sig'imini kiritadi» deb ko'rsatiladi. Bo'sh ro'yxat matni ham yangilandi |
+| Tasdiqlash | 🟢 past | O'zgarmadi: jamoasiz user → **super admin**, jamoa a'zosi → **jamoa admini** (maksimal 60 kun) |
+| Inline xavfsizligi | 🟢 past | Jamoa oqimlarida `update.message.reply_text` → `reply_text_safe` ga o'tkazildi — inline tugma bosilganda `AttributeError` chiqmasligi uchun |
 
 ### ⚠️ Foydalanuvchi uchun muhim o'zgarish
 

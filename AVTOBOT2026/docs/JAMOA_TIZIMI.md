@@ -54,23 +54,28 @@ Har bir jamoa admini **faqat o'z a'zolarini** ko'radi va boshqaradi:
 
 ## 3. Jamoa admini bo'lish
 
+**Jamoa adminini faqat super admin yaratadi** — telefon raqam orqali
+tayyorlaydi. Oddiy foydalanuvchi o'zi jamoa admini bo'la olmaydi
+(`👑 Admin bo'lish` tugmasi menyudan olib tashlangan).
+
 ```
-/start → 👑 Admin bo'lish
-   ↓
-🔢 Jamoangizda qancha foydalanuvchi bo'ladi?  → 5
-   ↓
-📋 Jamoa nomini kiriting:  → "Avtoelon Toshkent"
-   ↓
-✅ Jamoa yaratildi
-   🔗 Havola: https://t.me/Bot?start=team_12
+🖥 Super Admin → 👑 Jamoa adminlari → ➕ Admin qo'shish
+                                        ↓
+                                    +998901112233
+                                        ↓
+                              "✅ Admin tayyorlandi"
 ```
 
-> **«👑 Admin bo'lish» tugmasi login'dan oldin ham ishlaydi.** U asosiy
-> menyuning oxirgi qatorida, jamoasiz foydalanuvchilar uchun ko'rinadi
-> (`🎯 Jamoani tanlash` tugmasi bilan bir qatorda). Jamoa yaratish uchun
-> oldindan login oynasini to'ldirish shart emas — admin avval jamoasini
-> yaratadi, keyin o'ziga xizmat qo'shadi. Kirish oynasi paytida ham bu
-> tugma bosilsa, kiritish oynasi bekor qilinadi va jamoa oqimi boshlanadi.
+Admin shu raqam bilan ro'yxatdan o'tsa — **darhol jamoa admini** bo'ladi
+(tasdiq kutilmaydi). Keyin birinchi marta `👥 Jamoam` tugmasini bosganda
+**o'z jamoasini o'zi shakllantiradi**:
+
+```
+👥 Jamoam → 🔢 Jamoangizda qancha foydalanuvchi bo'ladi?  → 5
+          → 📋 Jamoa nomini kiriting:  → "Avtoelon Toshkent"
+          → ✅ Jamoa yaratildi
+             🔗 Havola: https://t.me/Bot?start=team_12
+```
 
 | Qoida | Qiymat |
 | ----- | ------ |
@@ -78,8 +83,8 @@ Har bir jamoa admini **faqat o'z a'zolarini** ko'radi va boshqaradi:
 | Jamoa adminining muddati | `TEAM_ADMIN_DEFAULT_DAYS` (standart 30 kun) |
 | Jamoa adminining sig'imi | admin o'zi kiritadi, super admin keyin +/- qila oladi |
 
-**Jamoa admini darhol tasdiqlangan bo'ladi** — u jamoani o'ziga yaratgan
-bo'lgani uchun «tasdiq kutilmoqda» holatiga tushmaydi. U:
+**Jamoa admini darhol tasdiqlangan bo'ladi** — u super admin tomonidan
+tayyorlangan bo'lgani uchun «tasdiq kutilmoqda» holatiga tushmaydi. U:
 
 - ✅ o'z jamoasini darhol boshqaradi (`👥 Jamoam`),
 - ✅ oddiy foydalanuvchi kabi **posting qila oladi** (guruh, postlar),
@@ -93,21 +98,23 @@ muddati ham** yangilanadi (aks holda muddat uzaytirilgandan keyin ham
 
 ## 4. Foydalanuvchi ro'yxatdan o'tishi
 
-**Oddiy (referalsiz, taklif yo'q) foydalanuvchi — to'g'ridan-to'g'ri:**
+**Oddiy (jamoasiz, taklif yo'q) foydalanuvchi:**
 
 ```
 /start
    ↓
 📱 Ism → Telefon → Telegram kodi
    ↓
-✅ Ro'yxatdan o'tdi — darhol bot faollashdi
+⏳ Tasdiq kutilmoqda — super admin'ga xabar boradi
+   ↓
+✅ Super admin tasdiqladi → bot faollashdi
 ```
 
-> Hech qanday qo'shimcha savol berilmaydi. «🎯 Jamoani tanlash» — faqat
-> **ixtiyoriy** tugma; foydalanuvchi uni bosmasa ham oddiy user bo'lib
-> to'liq ishlaydi.
+> Jamoasiz foydalanuvchi **faqat super admin** tomonidan tasdiqlanadi.
+> U jamoaga o'zi qo'shila olmaydi — jamoa qo'shish faqat jamoa
+> administratorining vazifasi.
 
-**Jamoa havolasi / taklif orqali kelgan foydalanuvchi:**
+**Jamoa havolasi / telefon taklifi orqali kelgan foydalanuvchi:**
 
 ```
 /start (havola bilan)  →  📱 Ism → Telefon → Telegram kodi
@@ -119,10 +126,10 @@ muddati ham** yangilanadi (aks holda muddat uzaytirilgandan keyin ham
 
 **Qoidalar:**
 - Jamoali foydalanuvchi **faqat jamoa admini** tasdiqlaydi (super admin emas)
-- Jamoa tanlash **ixtiyoriy** — tanlanmagan foydalanuvchi ham to'liq ishlaydi
-- Limit to'lgan jamoani tanlab bo'lmaydi ("Jamoa to'ldi")
+- Jamoa tanlash **yo'q** — jamoalar yopiq, foydalanuvchi jamoani
+  ko'ra ham olmaydi va o'zi tanlay ham olmaydi
+- Limit to'lgan jamoaga a'zo qo'shilmaydi ("Jamoa to'ldi")
 - Jamoa adminining muddati tugagan bo'lsa — jamoa qabul qilmaydi
-- Referal yoki jamoa havolasi orqali kelgan user jamoasi avtomatik tanlanadi
 - **Super admin tomonidan taklif qilingan raqam** ro'yxatdan o'tsa — darhol
   jamoa admini bo'ladi (tasdiq kutilmaydi)
 
@@ -231,8 +238,8 @@ U shu raqam bilan ro'yxatdan o'tsa — avtomatik jamoa admini bo'ladi.
 | Raqam **yangi** (ro'yxatdan o'tmagan) | Taklif saqlanadi — u ro'yxatdan o'tsa **avtomatik jamoa admini** bo'ladi |
 | Raqam **allaqachon ro'yxatdan o'tgan** | U **juda hozir jamoa admini** qilib tayinlanadi (super adminning tanlovi bo'yicha) |
 
-> Taklif qilingan admin o'z jamoasini keyin o'zi yaratadi
-> («👑 Admin bo'lish» tugmasi orqali).
+> Taklif qilingan admin o'z jamoasini keyin o'zi yaratadi — birinchi marta
+> «👥 Jamoam» tugmasini bosganda jamoaning nomi va sig'imi so'raladi.
 
 ### 📥 Ro'yxatdan o'tish oqimi
 
@@ -242,10 +249,10 @@ U shu raqam bilan ro'yxatdan o'tsa — avtomatik jamoa admini bo'ladi.
 | **Admin havolasi** (`/start adm_<uid>`) | Adminning jamoasi avtomatik tanlanadi |
 | **Referal havola** (`/start ref_<uid>`) | Referrer jamoasiga avtomatik biriktiriladi |
 | **Admin qo'shgan telefon** | Adminning jamoasiga avtomatik biriktiriladi (ariza yuboriladi) |
-| **Hech narsa** (boshqa yangilar) | **To'g'ridan-to'g'ri ro'yxatdan o'tadi** — hech qanday savol yo'q |
+| **Hech narsa** (boshqa yangilar) | Ro'yxatdan o'tadi va **super admin** tasdiqlaydi |
 
-Jamoani qo'lda tanlash **ixtiyoriy**: jamoasiz foydalanuvchi menyusida
-**🎯 Jamoani tanlash** tugmasi bor.
+Jamoani qo'lda tanlash **yo'q**: jamoalar yopiq. Jamoasiz foydalanuvchi
+menusida jamoa tugmalari ko'rinmaydi va jamoani ko'ra olmaydi.
 
 ### 🚪 Jamoadan chiqish
 

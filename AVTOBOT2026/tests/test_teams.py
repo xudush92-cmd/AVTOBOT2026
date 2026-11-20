@@ -275,14 +275,20 @@ class TeamUiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(MAX_ALBUM_FILES, 4)
 
     async def test_admin_registration_flow(self) -> None:
-        """Admin bo'lish oqimi: raqam → nom → jamoa yaratiladi."""
+        """Jamoa admini o'z jamoasini yaratadi: sig'im → nom → jamoa.
+
+        Jamoa adminini faqat super admin yaratadi (telefon orqali
+        tayyorlaydi). Admin ro'yxatdan o'tgach, birinchi marta
+        «👥 Jamoam» bosganda jamoani o'zi shakllantiradi.
+        """
+        await db.upsert_user(ADMIN_A, name="Admin A", is_team_admin=1)
+
         update = SimpleNamespace(
             effective_user=SimpleNamespace(id=ADMIN_A, username="admina"),
             message=SimpleNamespace(reply_text=AsyncMock()),
         )
 
         await Tm.begin_team_admin_register(update, ADMIN_A)
-        state = Tm.user_states.get(ADMIN_A) if hasattr(Tm, "user_states") else None
         # FSM login modulida saqlanadi:
         from bot.login import user_states
 
@@ -300,7 +306,30 @@ class TeamUiTests(unittest.IsolatedAsyncioTestCase):
         admin = await db.get_user(ADMIN_A)
         self.assertTrue(admin["is_team_admin"])
 
+    async def test_non_admin_cannot_register_team(self) -> None:
+        """Oddiy foydalanuvchi jamoa admini bo'la olmaydi.
+
+        Jamoa adminini faqat super admin panelidan qo'shish mumkin.
+        """
+        from bot.login import user_states
+
+        # ``user_states`` global — boshqa testdan qolgan state bo'lishi
+        # mumkin. O'z holatimizni tozalab boshlaymiz.
+        user_states.pop(USER_1, None)
+
+        await db.upsert_user(USER_1, name="Oddiy")
+        update = SimpleNamespace(
+            effective_user=SimpleNamespace(id=USER_1, username="oddiy"),
+            message=SimpleNamespace(reply_text=AsyncMock()),
+        )
+        await Tm.begin_team_admin_register(update, USER_1)
+
+        self.assertIsNone(user_states.get(USER_1))
+        reply = update.message.reply_text.await_args.args[0]
+        self.assertIn("super admin", reply.lower())
+
     async def test_admin_registration_rejects_small_size(self) -> None:
+        await db.upsert_user(ADMIN_B, name="Admin B", is_team_admin=1)
         update = SimpleNamespace(
             effective_user=SimpleNamespace(id=ADMIN_B, username="adminb"),
             message=SimpleNamespace(reply_text=AsyncMock()),
@@ -446,7 +475,12 @@ class TeamExpiryTests(unittest.IsolatedAsyncioTestCase):
 
 
 class TeamChoiceTests(unittest.IsolatedAsyncioTestCase):
-    """Foydalanuvchi jamoa bilan yoki jamoasiz ishlashni tanlaydi."""
+    """Jamoalar yopiq — jamoaga faqat jamoa admini qo'shadi.
+
+    Oddiy foydalanuvchi jamoani tanlay olmaydi: jamoaga qo'shilish
+    telefon taklifi (``➕ Do'st qo'shish``) yoki jamoa havolasi
+    (``/start team_<id>``) orqali amalga oshadi.
+    """
 
     async def asyncSetUp(self) -> None:
         await db.close_db()
@@ -466,47 +500,23 @@ class TeamChoiceTests(unittest.IsolatedAsyncioTestCase):
         session_crypto._fernet = None
         self.temp.cleanup()
 
-    async def test_skip_button_exists_in_picker(self) -> None:
-        """Jamoa tanlash oynasida jamoasiz davom etish tugmasi bor."""
+    async def test_picker_is_closed_for_ordinary_user(self) -> None:
+        """Oddiy foydalanuvchi jamoalarni ko'ra olmaydi."""
         await db.create_team("Jamoa One", ADMIN_A, max_users=5)
-        teams = await db.get_all_teams()
-        kb = KB.kb_team_pick(teams)
-        callbacks = {
-            b.callback_data for row in kb.inline_keyboard for b in row if b.callback_data
-        }
-        self.assertIn("team:skip", callbacks)
-
-    async def test_pick_title_explains_both_choices(self) -> None:
-        """Matnda ikkala variant ham tushuntiriladi."""
-        self.assertIn("guruh bilan ishlash", T.TEAM_PICK_TITLE.lower())
-        self.assertIn("jamoasiz", T.TEAM_PICK_TITLE.lower())
-
-    async def test_skip_does_not_assign_team(self) -> None:
-        """Jamoasiz davom etilganda user jamoasiz qoladi."""
-        await db.create_team("Jamoa One", ADMIN_A, max_users=5)
-        teams = await db.get_all_teams()
-        q = SimpleNamespace(
-            data="team:skip",
-            answer=AsyncMock(),
-            edit_message_text=AsyncMock(),
-            message=SimpleNamespace(reply_text=AsyncMock()),
-        )
+        message = SimpleNamespace(reply_text=AsyncMock())
         update = SimpleNamespace(
-            callback_query=q,
-            effective_user=SimpleNamespace(id=USER_1, full_name="Vali", username="vali"),
-            message=SimpleNamespace(reply_text=AsyncMock()),
+            effective_user=SimpleNamespace(id=USER_1),
+            message=message,
         )
-        with patch.object(Tm, "application", None):
-            await Tm.handle_team_pick_callback(update, USER_1, "team:skip")
+        await Tm.show_team_picker(update, USER_1)
 
-        user = await db.get_user(USER_1)
-        self.assertIsNone(
-            user.get("team_id") if user else None,
-            "jamoasiz davom etilganda jamoa biriktirilmasligi kerak",
-        )
+        reply = message.reply_text.await_args.args[0]
+        self.assertIn("yopiq", reply.lower())
+        # Jamoalarning nomi ko'rinmasligi kerak.
+        self.assertNotIn("Jamoa One", reply)
 
-    async def test_pick_assigns_team(self) -> None:
-        """Jamoa tanlanganda user jamoaga biriktiriladi."""
+    async def test_picker_is_closed_for_callback(self) -> None:
+        """Oddiy foydalanuvchi ``team:pick`` bilan jamoaga qo'shila olmaydi."""
         team = await db.create_team("Jamoa One", ADMIN_A, max_users=5)
         q = SimpleNamespace(
             data=f"team:pick:{int(team['id'])}",
@@ -525,8 +535,31 @@ class TeamChoiceTests(unittest.IsolatedAsyncioTestCase):
             )
 
         user = await db.get_user(USER_1)
-        self.assertEqual(int(user["team_id"]), int(team["id"]))
-        self.assertEqual(int(user["owner_admin_uid"]), ADMIN_A)
+        self.assertIsNone(
+            user.get("team_id") if user else None,
+            "jamoalar yopiq — oddiy user jamoaga qo'shila olmaydi",
+        )
+        q.answer.assert_awaited()
+
+    async def test_picker_opens_for_super_admin(self) -> None:
+        """Super admin jamoalarni ko'radi va boshqaradi."""
+        from config.config import SUPER_ADMIN
+
+        await db.create_team("Jamoa One", ADMIN_A, max_users=5)
+        message = SimpleNamespace(reply_text=AsyncMock())
+        update = SimpleNamespace(
+            effective_user=SimpleNamespace(id=SUPER_ADMIN),
+            message=message,
+        )
+        await Tm.show_team_picker(update, SUPER_ADMIN)
+
+        reply = message.reply_text.await_args.args[0]
+        self.assertIn("Jamoa One", reply)
+
+    async def test_pick_title_explains_both_choices(self) -> None:
+        """Matnda ikkala variant ham tushuntiriladi."""
+        self.assertIn("guruh bilan ishlash", T.TEAM_PICK_TITLE.lower())
+        self.assertIn("jamoasiz", T.TEAM_PICK_TITLE.lower())
 
 
 class NumberingConsistencyTests(unittest.IsolatedAsyncioTestCase):
@@ -1876,14 +1909,14 @@ class MainKeyboardRoleTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(handled, "eski tugma matni ham ishlashi kerak")
 
     async def test_admin_button_starts_team_creation(self) -> None:
-        """«👑 Admin bo'lish» bosilganda jamoa yaratish oqimi boshlanadi.
+        """«👑 Admin bo'lish» jamoa admini uchun jamoa yaratish oqimini boshlaydi.
 
         Tugma menyudan olib tashlangan (jamoa adminini faqat super admin
         yaratadi), lekin eski klaviaturadagi matn ham ishlashda davom etadi.
         """
         from bot.menu import route_menu_button
 
-        await db.upsert_user(USER_1, name="Oddiy")
+        await db.upsert_user(USER_1, name="Jamoa admini", is_team_admin=1)
         update = SimpleNamespace(
             effective_user=SimpleNamespace(id=USER_1),
             message=SimpleNamespace(reply_text=AsyncMock()),
