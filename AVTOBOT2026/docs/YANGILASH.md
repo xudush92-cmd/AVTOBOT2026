@@ -14,7 +14,17 @@ qaytish rejasini beradi.
 | Worker yuborish | 🟡 o'rta | Endi albom `send_file([...])` orqali, matnli post `link_preview` bayrog'i bilan ketadi. Kunlik limit/faol soat yoqilsa, yuborishlar o'sha oynaga moslashadi |
 | Media disk | 🟡 o'rta | Albomlar bilan fayllar soni o'sadi. Har user uchun kvota: `MAX_MEDIA_FILES_PER_USER` (standart 200) |
 
-Barcha yangi funksiya testlangan: **530 test** (`python -m unittest discover -s tests -t tests`).
+Barcha yangi funksiya testlangan: **535 test** (`python -m unittest discover -s tests -t tests`).
+
+### 🆕 Polling supervisor tuzatildi — bot javob bermay qolmasin
+
+| Qism | Xavf | Izoh |
+| ---- | ---- | ---- |
+| `contextlib.suppress` bilan yashirilgan xatolar | 🟢 past | Supervisor polling'ni qayta ishga tushirganda `stop()`, `initialize()`, `start_polling()` xatolari **yashirilardi**. `stop()` xatosi yashirilganda PTB ichki `_running` bayrogi `True` bo'lib qolardi va `start_polling()` "This Updater is already running!" bilan urilardi — supervisor esa har siklda "✅ Polling qayta boshlandi" deb yozib, **polling haqiqatan ishlamasdi** |
+| Xato matni logda yo'q | 🟢 past | Logda faqat `RuntimeError` **klassi** ko'rinardi, matni yo'q. Endi `({type}: {exc})` ko'rinadi — sababni darhol aniqlash mumkin |
+| `_running` qoldig'i | 🟢 past | `stop()` xatosidan keyin `_running` qoldig'i `True` bo'lsa, u tozalanadi |
+
+**Yangi yordamchi:** `main.py::_restart_polling()` — to'rt qadam (`stop` → `_running` tozalash → `initialize` → `start_polling`) alohida tekshiriladi, xatolar **yashirilmaydi** va logga yoziladi.
 
 ### 🆕 Eski ichki menyular tozalandi (minimal UI — yakuniy)
 

@@ -1535,6 +1535,73 @@ def _get_polling_task(updater) -> asyncio.Task | None:
     return None
 
 
+async def _restart_polling(app: Application) -> None:
+    """Polling'ni to'xtatib, to'g'ri qayta ishga tushiradi.
+
+    PTB 21.6 da ``Updater.start_polling()`` quyidagi shartlarda
+    ``RuntimeError`` beradi:
+
+    * ``This Updater is already running!`` — ``_running`` hali ``True``;
+    * ``This Updater was not initialized via `Updater.initialize`!``.
+
+    Shuning uchun to'rtta qadam ketma-ket bajariladi va har biri
+    alohida tekshiriladi:
+
+    1. ``stop()`` — polling task'ni to'xtatadi, ``_running = False``.
+    2. ``initialize()`` — bot qayta tayyorlanadi.
+    3. ``start_polling()`` — yangi polling task.
+
+    Oldingi kodda har bir qadam ``contextlib.suppress(Exception)`` bilan
+    yashirilardi. Bu **xato** edi: ``stop()`` xatosi yashiringanda
+    ``_running`` ``True`` bo'lib qolardi va ``start_polling()`` ham
+    xato berardi — supervisor esa har siklda "Polling qayta boshlandi"
+    deb yozib, botni **javob bermaydigan** holatda qoldirardi.
+
+    Xato bo'lsa, holat to'g'rilanadi va xato qaytariladi — supervisor
+    uni yashirmasligi kerak.
+    """
+    updater = app.updater
+
+    # 1. To'xtatish. `stop()` "This Updater is not running!" xatosini
+    #    berishi mumkin (polling allaqachon to'xtagan bo'lsa) — bu
+    #    normal holat, davom etamiz. Lekin `stop()` **har doim**
+    #    chaqiriladi — PTB ichida eski polling task'ni tozalash uchun
+    #    kerak.
+    try:
+        await updater.stop()
+    except Exception as exc:  # noqa: BLE001
+        log(f"⚠️ Polling to'xtatishda xato: {type(exc).__name__}: {exc}", "error")
+
+    # 2. `_running` qoldiqi True bo'lsa, `start_polling` "already running"
+    #    xatosini beradi. PTB ichki atributni to'g'ridan-to'g'ri
+    #    tozalaymiz (PTB API'sida boshqa yo'l yo'q).
+    if getattr(updater, "running", False):
+        with contextlib.suppress(Exception):
+            updater._running = False  # noqa: SLF001
+
+    # 3. Tayyorlash.
+    try:
+        await updater.initialize()
+    except Exception as exc:  # noqa: BLE001
+        log(f"⚠️ Polling initialize xato: {type(exc).__name__}: {exc}", "error")
+
+    # 4. Qayta ishga tushirish — xatoni YASHIRMAYMAN, lekin logga yozamiz.
+    try:
+        await updater.start_polling(
+            drop_pending_updates=False,
+            error_callback=lambda exc: log(
+                f"⚠️ Polling xato: {type(exc).__name__}: {exc}",
+                "error",
+            ),
+        )
+    except Exception as exc:  # noqa: BLE001
+        log(
+            f"💥 Polling qayta ishga tushmadi: {type(exc).__name__}: {exc}",
+            "error",
+        )
+        raise
+
+
 async def polling_supervisor(app: Application, stop_event: asyncio.Event) -> None:
     """Polling'ni kuzatib turadi — task to'xtasa, qayta boshlaydi.
 
@@ -1566,24 +1633,28 @@ async def polling_supervisor(app: Application, stop_event: asyncio.Event) -> Non
                     exc = task.exception()
                 if stop_event.is_set():
                     return
-                log(
-                    f"⚠️ Polling to'xtadi ({type(exc).__name__ if exc else 'noma'})"
-                    f" — {retry_delay}s dan keyin qayta boshlanadi",
-                    "error",
-                )
-                # Eski updater'ni tozalab, yangisini qayta ishga tushiramiz.
-                with contextlib.suppress(Exception):
-                    await app.updater.stop()
-                with contextlib.suppress(Exception):
-                    await app.updater.initialize()
-                with contextlib.suppress(Exception):
-                    await app.updater.start_polling(
-                        drop_pending_updates=False,
-                        error_callback=lambda exc: log(
-                            f"⚠️ Polling xato: {type(exc).__name__}: {exc}",
-                            "error",
-                        ),
+                # Xato matnini ham ko'rsatamiz — faqat klassi yetarli emas.
+                # Aks holda "noma" holatida sababni topib bo'lmaydi.
+                if exc is not None:
+                    log(
+                        f"⚠️ Polling to'xtadi ({type(exc).__name__}: {exc})"
+                        f" — {retry_delay}s dan keyin qayta boshlanadi",
+                        "error",
                     )
+                else:
+                    log(
+                        f"⚠️ Polling to'xtadi (xatosiz) — {retry_delay}s dan keyin "
+                        "qayta boshlanadi",
+                        "error",
+                    )
+                # Eski updater'ni tozalab, yangisini qayta ishga tushiramiz.
+                #
+                # Muhim: har bir qadamning xatosi YASHIRILMASIN. Oldinda
+                # `contextlib.suppress` ishlatilardi — shunda `stop()` ning
+                # "This Updater is not running!" xatosi yashirinib, keyingi
+                # `start_polling()` "This Updater is already running!" bilan
+                # uriladi va bot javob bermay qoladi (infinite loop).
+                await _restart_polling(app)
                 log("✅ Polling qayta boshlandi")
                 retry_delay = 5
             else:

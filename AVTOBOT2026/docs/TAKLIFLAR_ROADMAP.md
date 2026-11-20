@@ -560,7 +560,7 @@ qayta ko'rib chiqildi.
 
 ### 📊 Testlar
 
-**530 test** (`python -m unittest discover -s tests -t tests`) — hammasi o'tadi.
+**535 test** (`python -m unittest discover -s tests -t tests`) — hammasi o'tadi.
 Ruff — o'zgartirilgan modullarda yangi xato yo'q.
 
 ### 🔍 Guruhlarni topish — qo'lda belgilash (2026-11-14)
