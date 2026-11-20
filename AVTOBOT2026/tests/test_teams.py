@@ -33,6 +33,33 @@ from bot import callbacks as Cb  # noqa: E402
 from bot import teams as Tm  # noqa: E402
 from bot import texts as T  # noqa: E402
 from core.utils import calc_expires  # noqa: E402
+
+
+def assert_expires_in_days(testcase, actual, days, msg=""):
+    """Muddat ``days`` kunlik ekanini tekshiradi — **vaqt chegarasiga bog'liq emas**.
+
+    ``calc_expires()`` vaqtni darhol hisoblaydi, shuning uchun kod ham
+    darhol hisoblaganda ikkita ``now()`` chaqiruvi orasida bir necha soniya
+    o'tishi mumkin (sekin serverda 1+ soniya). Aniq sanani solishtirish
+    shu sababdan "flaky" test yaratadi — biz faqat intervalni tekshiramiz.
+    """
+    from datetime import datetime, timezone
+
+    testcase.assertIsNotNone(actual, msg or "muddat belgilanmagan")
+    expires = datetime.strptime(actual, "%Y-%m-%d %H:%M:%S").replace(
+        tzinfo=timezone.utc
+    )
+    delta = expires - datetime.now(timezone.utc)
+    testcase.assertLessEqual(
+        delta.total_seconds(),
+        days * 86400 + 5,
+        msg or f"muddat {days} kundan ko'p bo'lmasligi kerak",
+    )
+    testcase.assertGreater(
+        delta.total_seconds(),
+        (days - 1) * 86400,
+        msg or f"muddat taxminan {days} kun bo'lishi kerak",
+    )
 from config.config import (  # noqa: E402
     MAX_ALBUM_FILES,
     SUPER_ADMIN,
@@ -815,7 +842,7 @@ class TeamApprovalSeparationTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(member["tariff_expires_at"])
 
         # Muddat tanlangan (7 kun) — standart 30 kun emas.
-        self.assertEqual(member["tariff_expires_at"], calc_expires(7))
+        assert_expires_in_days(self, member["tariff_expires_at"], 7)
 
     async def test_notify_goes_to_team_admin(self) -> None:
         """Ariza xabari jamoa adminiga boradi, super admin ga emas."""
@@ -932,7 +959,7 @@ class ApprovalDurationTests(unittest.IsolatedAsyncioTestCase):
 
         user = await db.get_user(USER_1)
         self.assertTrue(user["is_admin"])
-        self.assertEqual(user["tariff_expires_at"], calc_expires(7))
+        assert_expires_in_days(self, user["tariff_expires_at"], 7)
 
     async def test_approve_defaults_to_configured_duration(self) -> None:
         """Muddat berilmasa standart qiymat ishlatiladi."""
@@ -956,8 +983,8 @@ class ApprovalDurationTests(unittest.IsolatedAsyncioTestCase):
             await admin_actions.action_approve(update, SUPER_ADMIN, USER_1)
 
         user = await db.get_user(USER_1)
-        self.assertEqual(
-            user["tariff_expires_at"], calc_expires(DEFAULT_DURATION_DAYS)
+        assert_expires_in_days(
+            self, user["tariff_expires_at"], DEFAULT_DURATION_DAYS
         )
 
     async def test_super_admin_cannot_approve_team_user(self) -> None:
@@ -1081,18 +1108,24 @@ class DurationCapTests(unittest.IsolatedAsyncioTestCase):
         member = await db.get_user(USER_1)
         self.assertTrue(member["is_admin"])
         # Muddat 60 kundan ko'p bo'lmasligi kerak. Aniq sanani emas,
-        # intervalni tekshiramiz — `calc_expires` vaqt chegarasiga bog'liq
-        # (ikkita `now()` chaqiruvi orasida 1 soniya o'tishi mumkin).
-        from datetime import datetime
+        # **muddat intervalini** tekshiramiz — bu vaqt chegarasiga bog'liq
+        # emas (server vaqti TZ'si farq qilishi mumkin, `calc_expires` esa
+        # UTC'dan foydalanadi).
+        from datetime import datetime, timezone
 
         expires = datetime.strptime(
             member["tariff_expires_at"], "%Y-%m-%d %H:%M:%S"
-        )
-        days = (expires - datetime.utcnow()).days
-        self.assertIn(
-            days,
-            (59, 60),
+        ).replace(tzinfo=timezone.utc)
+        delta = expires - datetime.now(timezone.utc)
+        self.assertLessEqual(
+            delta.total_seconds(),
+            60 * 86400 + 5,
             "jamoa admini 60 kundan ko'p muddat bermasligi kerak",
+        )
+        self.assertGreater(
+            delta.total_seconds(),
+            59 * 86400,
+            "muddat taxminan 60 kun bo'lishi kerak",
         )
 
     async def test_team_admin_setterm_rejects_over_cap(self) -> None:
@@ -1160,7 +1193,7 @@ class DurationCapTests(unittest.IsolatedAsyncioTestCase):
             )
 
         member = await db.get_user(USER_1)
-        self.assertEqual(member["tariff_expires_at"], calc_expires(30))
+        assert_expires_in_days(self, member["tariff_expires_at"], 30)
 
     async def test_team_approve_menu_hides_over_cap_options(self) -> None:
         """Muddat oynasida chegara oshgan variantlar ko'rsatilmaydi."""
@@ -1246,7 +1279,7 @@ class DurationCapTests(unittest.IsolatedAsyncioTestCase):
             await admin_actions.action_approve(update, SUPER_ADMIN, USER_1, days=365)
 
         user = await db.get_user(USER_1)
-        self.assertEqual(user["tariff_expires_at"], calc_expires(365))
+        assert_expires_in_days(self, user["tariff_expires_at"], 365)
 
 
 class TeamAdminExpiryWorkerTests(unittest.IsolatedAsyncioTestCase):

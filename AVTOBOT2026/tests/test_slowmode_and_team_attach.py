@@ -27,7 +27,6 @@ os.environ.setdefault("API_HASH", "0123456789abcdef0123456789abcdef")
 os.environ.setdefault("BOT_TOKEN", "123456:TEST_TOKEN")
 os.environ.setdefault("ADMIN_ID", "123456789")
 
-import aiosqlite  # noqa: E402
 from telethon.errors import FloodWaitError, SlowModeWaitError  # noqa: E402
 
 from core import database as db  # noqa: E402
