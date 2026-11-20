@@ -38,9 +38,6 @@ from core.utils import is_valid_interval
 # Sahifada nechta guruh ko'rsatiladi.
 PAGE_SIZE = 10
 
-# «Qo'lda kiritish» uchun state step nomi.
-STEP_MANUAL_INTERVAL = "my_group_interval_manual"
-
 
 def _is_super_admin(uid: int) -> bool:
     """Super admin — o'z guruhlarini boshqarish oynasini ishlatmaydi."""
@@ -85,33 +82,39 @@ async def _back_markup(uid: int):
     return await KB.kb_main_for(uid)
 
 
-async def show_my_groups(
+async def render_groups_inline(
     update: Update,
     uid: int,
-    page: int = 0,
+    edit: bool = False,
     note: str = "",
+    page: int = 0,
 ) -> None:
-    """Foydalanuvchining guruhlarini inline ro'yxat ko'rinishida ko'rsatadi."""
-    if _is_super_admin(uid):
-        # Super admin uchun bu oyna kerak emas — admin paneli ishlaydi.
-        await update.message.reply_text(
-            "🖥 Super admin uchun guruhlar foydalanuvchi kartasidan boshqariladi.",
-        )
-        return
+    """``💬 Guruhlar`` inline oynasini ko'rsatadi (xabar yoki tahrirlash).
 
+    Eski ``kb_groups_menu()`` o'rniga ishlatiladi — foydalanuvchiga
+    eski tugmalar (qo'shish/tekshirish/guruh intervali) ko'rinmaydi,
+    faqat yangi bitta boshqaruv oynasi: havolalar + ``🗑 N. guruh``.
+    """
     groups = await db.get_chat_records(uid)
+
     if not groups:
         text = (
-            "💬 GURUHLAR\n\n"
+            "💬 <b>GURUHLAR</b>\n\n"
             "Sizda hali guruh yo'q.\n\n"
             "«🔍 Guruhlarni topish» tugmasi orqali Telegram'dagi "
             "guruhlaringizni avtomatik toping va qo'shing."
         )
         if note:
             text = f"{note}\n\n{text}"
+        markup = KB.kb_my_groups([], 0)
+        if edit and update.callback_query is not None:
+            with contextlib.suppress(Exception):
+                await update.callback_query.edit_message_text(
+                    text, parse_mode="HTML", reply_markup=markup
+                )
+                return
         await update.message.reply_text(
-            text,
-            reply_markup=KB.kb_my_groups([], 0),
+            text, parse_mode="HTML", reply_markup=markup
         )
         return
 
@@ -140,11 +143,36 @@ async def show_my_groups(
     )
     if note:
         text = f"{note}\n\n{text}"
+    markup = KB.kb_my_groups(groups, page)
+    if edit and update.callback_query is not None:
+        with contextlib.suppress(Exception):
+            await update.callback_query.edit_message_text(
+                text, parse_mode="HTML", reply_markup=markup
+            )
+            return
     await update.message.reply_text(
-        text,
-        parse_mode="HTML",
-        reply_markup=KB.kb_my_groups(groups, page),
+        text, parse_mode="HTML", reply_markup=markup
     )
+
+# «Qo'lda kiritish» uchun state step nomi.
+STEP_MANUAL_INTERVAL = "my_group_interval_manual"
+
+
+async def show_my_groups(
+    update: Update,
+    uid: int,
+    page: int = 0,
+    note: str = "",
+) -> None:
+    """Foydalanuvchining guruhlarini inline ro'yxat ko'rinishida ko'rsatadi."""
+    if _is_super_admin(uid):
+        # Super admin uchun bu oyna kerak emas — admin paneli ishlaydi.
+        await update.message.reply_text(
+            "\U0001f5a5 Super admin uchun guruhlar foydalanuvchi kartasidan boshqariladi.",
+        )
+        return
+
+    await render_groups_inline(update, uid, edit=False, note=note, page=page)
 
 
 async def show_group_interval(

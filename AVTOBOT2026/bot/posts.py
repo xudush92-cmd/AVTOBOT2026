@@ -127,7 +127,7 @@ async def show_posts(update: Update) -> None:
 
     if not posts:
         await update.message.reply_text(
-            header + "\n" + T.POSTS_EMPTY, reply_markup=KB.kb_posts_menu()
+            header + "\n" + T.POSTS_EMPTY, reply_markup=await KB.kb_main_for(uid)
         )
         return
 
@@ -142,7 +142,7 @@ async def show_posts(update: Update) -> None:
     if len(text) > 3800:
         text = "\n".join(lines[:60]) + f"\n... va yana {len(lines) - 60} ta"
 
-    await update.message.reply_text(text, reply_markup=KB.kb_posts_menu())
+    await update.message.reply_text(text, reply_markup=await KB.kb_main_for(uid))
 
 
 def _posts_header(count: int, limits: dict) -> str:
@@ -204,7 +204,9 @@ async def begin_edit_post(update: Update, post_id: int) -> None:
     uid = update.effective_user.id
     post = await db.get_post(post_id, uid)
     if not post:
-        await update.message.reply_text(T.POST_NOT_FOUND, reply_markup=KB.kb_posts_menu())
+        await update.message.reply_text(
+            T.POST_NOT_FOUND, reply_markup=await KB.kb_main_for(uid)
+        )
         return
     state = _ensure_state(uid)
     state.pop("album", None)
@@ -634,7 +636,9 @@ async def begin_edit_picker(update: Update) -> None:
     uid = update.effective_user.id
     posts = await db.get_posts(uid)
     if not posts:
-        await update.message.reply_text(T.POSTS_EMPTY, reply_markup=KB.kb_posts_menu())
+        await update.message.reply_text(
+            T.POSTS_EMPTY, reply_markup=await KB.kb_main_for(uid)
+        )
         return
     await update.message.reply_text(
         T.ASK_EDIT_POST, reply_markup=KB.kb_posts_edit(posts)
@@ -647,12 +651,12 @@ async def begin_test_picker(update: Update) -> None:
     posts = await db.get_posts(uid)
     if not posts:
         await update.message.reply_text(
-            T.POSTS_EMPTY, reply_markup=KB.kb_posts_menu()
+            T.POSTS_EMPTY, reply_markup=await KB.kb_main_for(uid)
         )
         return
     if not await db.get_chats(uid):
         await update.message.reply_text(
-            T.GROUPS_EMPTY_HINT, reply_markup=KB.kb_groups_menu()
+            T.GROUPS_EMPTY_HINT, reply_markup=await KB.kb_main_for(uid)
         )
         return
     await update.message.reply_text(
@@ -665,7 +669,9 @@ async def begin_preview_picker(update: Update) -> None:
     uid = update.effective_user.id
     posts = await db.get_posts(uid)
     if not posts:
-        await update.message.reply_text(T.POSTS_EMPTY, reply_markup=KB.kb_posts_menu())
+        await update.message.reply_text(
+            T.POSTS_EMPTY, reply_markup=await KB.kb_main_for(uid)
+        )
         return
     await update.message.reply_text(
         T.ASK_PREVIEW_POST, reply_markup=KB.kb_posts_preview(posts)

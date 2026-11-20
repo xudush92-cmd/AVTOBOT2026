@@ -77,7 +77,7 @@ async def kb_main_for(uid: int, running: bool = False) -> ReplyKeyboardMarkup:
     """Foydalanuvchi rolini aniqlab asosiy klaviaturani qaytaradi.
 
     Jamoa admini va jamoa a'zosi uchun ``👥 Jamoam`` tugmasi har bir
-    ekranda (``📈 Hisobot``, ``📦 Paket``, ``▶️ Start`` va h.k.) saqlanadi.
+    ekranda (``💬 Guruhlar``, ``⏱ Interval``, ``▶️ Start`` va h.k.) saqlanadi.
     """
     from core import database as db
 
@@ -86,32 +86,6 @@ async def kb_main_for(uid: int, running: bool = False) -> ReplyKeyboardMarkup:
         running=running,
         team_admin=bool(user.get("is_team_admin")),
         team_member=bool(user.get("team_id")) and not user.get("is_team_admin"),
-    )
-
-
-def kb_groups_menu() -> ReplyKeyboardMarkup:
-    """ESKI: foydalanuvchi UI'dan olib tashlangan (faqat admin/legacy oqimlar uchun)."""
-    return ReplyKeyboardMarkup(
-        [
-            [KeyboardButton(T.BTN_ADD_GROUP), KeyboardButton(T.BTN_DEL_GROUP)],
-            [KeyboardButton(T.BTN_GROUP_INTERVAL)],
-            [KeyboardButton(T.BTN_CHECK_GROUPS)],
-            [KeyboardButton(T.BTN_BACK)],
-        ],
-        resize_keyboard=True,
-    )
-
-
-def kb_posts_menu() -> ReplyKeyboardMarkup:
-    """ESKI: foydalanuvchi UI'dan olib tashlangan (faqat legacy oqimlar uchun)."""
-    return ReplyKeyboardMarkup(
-        [
-            [KeyboardButton(T.BTN_ADD_POST), KeyboardButton(T.BTN_DEL_POST)],
-            [KeyboardButton(T.BTN_EDIT_POST), KeyboardButton(T.BTN_PREVIEW_POST)],
-            [KeyboardButton(T.BTN_TEST_SEND)],
-            [KeyboardButton(T.BTN_BACK)],
-        ],
-        resize_keyboard=True,
     )
 
 

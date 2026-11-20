@@ -109,10 +109,9 @@ async def begin_set_group_interval(update: Update) -> None:
     uid = update.effective_user.id
     groups = await db.get_chat_records(uid)
     if not groups:
-        await update.message.reply_text(
-            T.GROUP_INTERVALS_EMPTY,
-            reply_markup=KB.kb_groups_menu(),
-        )
+        from bot import my_groups as MG
+
+        await MG.render_groups_inline(update, uid)
         return
 
     global_interval = await db.get_interval(uid)
@@ -171,11 +170,10 @@ async def handle_group_interval_callback(update: Update, uid: int, data: str) ->
         user_states.pop(uid, None)
 
     if action == "back":
+        from bot import my_groups as MG
+
         await q.edit_message_text("⏱ Guruh intervali sozlamalari yopildi.")
-        await q.message.reply_text(
-            "💬 Guruhlar menyusi",
-            reply_markup=KB.kb_groups_menu(),
-        )
+        await MG.render_groups_inline(update, uid)
         return
 
     if action == "list":
@@ -271,7 +269,7 @@ async def handle_set_group_interval(update: Update, text: str) -> None:
         user_states.pop(uid, None)
         await update.message.reply_text(
             "❌ Guruh sozlamasi eskirdi. Qaytadan urinib ko'ring.",
-            reply_markup=KB.kb_groups_menu(),
+            reply_markup=await KB.kb_main_for(uid),
         )
         return
 
@@ -289,7 +287,7 @@ async def handle_set_group_interval(update: Update, text: str) -> None:
     if not saved:
         await update.message.reply_text(
             "❌ Guruh topilmadi yoki sozlama saqlanmadi.",
-            reply_markup=KB.kb_groups_menu(),
+            reply_markup=await KB.kb_main_for(uid),
         )
         return
 
@@ -297,5 +295,5 @@ async def handle_set_group_interval(update: Update, text: str) -> None:
     await update.message.reply_text(
         f"✅ Guruh intervali {minutes} daqiqaga o'rnatildi.\n"
         "Umumiy interval boshqa guruhlarga o'zgarishsiz ta'sir qiladi.",
-        reply_markup=KB.kb_groups_menu(),
+        reply_markup=await KB.kb_main_for(uid),
     )
