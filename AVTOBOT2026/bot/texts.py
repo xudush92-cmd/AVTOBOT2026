@@ -406,6 +406,7 @@ BTN_TEST_SEND = "🧪 Sinov yuborish"
 BTN_ADD_POST = "➕ Post qo'shish"
 BTN_DEL_POST = "🗑 Post o'chirish"
 BTN_TIMER = "⏱ Posting oralig'i"
+BTN_INTERVAL = "⏱ Interval"
 BTN_REFERRAL = "👥 Referal"
 BTN_REPORT = "📈 Hisobot"
 BTN_PLAN = "📦 Paket va limitlar"
@@ -1483,8 +1484,8 @@ TEAM_ADMIN_MENU = (
 )
 
 TEAM_ADMIN_NO_TEAM = (
-    "😔 Sizning jamoangiz yo'q.\n\n"
-    "👑 «Admin bo'lish» tugmasi orqali jamoa yaratishingiz mumkin."
+    "😔 Sizning jamoangiz hali yaratilmagan.\n\n"
+    "Jamoangizni o'zingiz shakllantiring — nomini va sig'imini kiriting."
 )
 
 # ── Oddiy jamoa a'zosi uchun (jamoadan chiqish) ──

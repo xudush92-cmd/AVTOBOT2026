@@ -1,10 +1,9 @@
 """💬 Foydalanuvchining o'z guruhlarini boshqarish oynasi.
 
 Qamlov:
-- asosiy menyuda ``💬 Guruhlar`` va ``⏱ Guruh intervali`` tugmalari bor;
-- ``💬 Guruhlar`` oynasi ro'yxat + o'chirish + alohida intervalni
-  ko'rsatadi;
-- ``⏱`` tugmasi alohida interval oynasini ochadi;
+- asosiy menyuda ``💬 Guruhlar`` va ``⏱ Interval`` tugmalari bor;
+- ``💬 Guruhlar`` oynasi ro'yxat + **guruh havolalari** + o'chirish;
+- ``⏱ Interval`` oynasi umumiy yoki bitta guruh uchun tanlash;
 - alohida interval o'rnatiladi va umumiyga qaytariladi;
 - qo'lda kiritish ishlaydi;
 - super admin bu oynani ishlatmaydi (u ``uc:`` orqali boshqaradi);
@@ -105,9 +104,12 @@ class MyGroupsScreenTests(unittest.IsolatedAsyncioTestCase):
         """Asosiy menyuda ikkala tugma ham bo'lishi kerak."""
         texts = _reply_texts(KB.kb_main())
         self.assertIn(T.BTN_GROUPS, texts)
-        self.assertIn(T.BTN_GROUP_INTERVAL, texts)
-        # Eski tugma olib tashlandi (ikki xil oyna bo'lmasligi uchun).
+        self.assertIn(T.BTN_INTERVAL, texts)
+        # Eski tugmalar olib tashlandi (ikki xil oyna bo'lmasligi uchun).
         self.assertNotIn(T.BTN_DEL_GROUP, texts)
+        self.assertNotIn(T.BTN_GROUP_INTERVAL, texts)
+        self.assertNotIn(T.BTN_TIMER, texts)
+        self.assertNotIn(T.BTN_REPORT, texts)
 
     async def test_groups_button_routes_to_my_groups_screen(self) -> None:
         """💬 Guruhlar tugmasi o'z guruhlar oynasini ochadi."""
@@ -117,12 +119,18 @@ class MyGroupsScreenTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(handled)
         spy.assert_awaited_once()
 
-    async def test_group_interval_button_routes_to_interval_picker(self) -> None:
-        """⏱ Guruh intervali tugmasi interval tanlash oynasini ochadi."""
-        from bot import timer as Tm
-
+    async def test_interval_button_routes_to_interval_choice(self) -> None:
+        """⏱ Interval tugmasi umumiy/individual tanlash oynasini ochadi."""
         update, _status = self._update()
-        with patch.object(Tm, "begin_set_group_interval", new=AsyncMock()) as spy:
+        with patch.object(M, "show_interval_choice", new=AsyncMock()) as spy:
+            handled = await M.route_menu_button(update, T.BTN_INTERVAL)
+        self.assertTrue(handled)
+        spy.assert_awaited_once()
+
+    async def test_group_interval_button_routes_to_interval_choice(self) -> None:
+        """Eski ⏱ Guruh intervali tugmasi ham interval oynasiga yo'naltiradi."""
+        update, _status = self._update()
+        with patch.object(M, "show_interval_choice", new=AsyncMock()) as spy:
             handled = await M.route_menu_button(update, T.BTN_GROUP_INTERVAL)
         self.assertTrue(handled)
         spy.assert_awaited_once()
@@ -137,22 +145,34 @@ class MyGroupsScreenTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("GURUHLAR", text)
         self.assertIn("🔍 Guruhlarni topish", text)
 
-    async def test_groups_list_shows_interval_per_group(self) -> None:
-        """Har guruh yonida interval ko'rsatiladi."""
-        await db.add_chat(UID, "@g1")
-        await db.add_chat(UID, "@g2")
-        await db.set_chat_interval(UID, 1, 45)
+    async def test_groups_list_shows_public_links(self) -> None:
+        """Oyna matnida guruh havolalari raqam bilan ko'rsatiladi."""
+        await db.add_chat(UID, "@taxi_tashkent")
+        await db.add_chat(UID, "@avtoelon_uz")
 
         update, _status = self._update()
         await MG.show_my_groups(update, UID)
 
-        markup = update.message.reply_text.await_args.kwargs["reply_markup"]
-        labels = [btn.text for btn in _buttons(markup)]
-        self.assertTrue(any("45 daq" in label for label in labels))
-        self.assertTrue(any("Umumiy" in label for label in labels))
+        text = update.message.reply_text.await_args.args[0]
+        self.assertIn("🔗 Guruh havolalari", text)
+        # Telegram HTML: "_" italic belgisi — escape qilingan bo'lishi kerak.
+        self.assertIn(r"1. https://t.me/taxi\_tashkent", text)
+        self.assertIn(r"2. https://t.me/avtoelon\_uz", text)
 
-    async def test_groups_list_has_find_and_global_buttons(self) -> None:
-        """Qidiruv va umumiy interval tugmalari bor."""
+    async def test_groups_list_skips_link_for_closed_group(self) -> None:
+        """Yopiq guruhda ochiq havola yo'q — u ro'yxatda chiqmaydi."""
+        await db.add_chat(UID, "@taxi_tashkent")
+        await db.add_chat(UID, "-1001234567890")
+
+        update, _status = self._update()
+        await MG.show_my_groups(update, UID)
+
+        text = update.message.reply_text.await_args.args[0]
+        self.assertIn(r"1. https://t.me/taxi\_tashkent", text)
+        self.assertNotIn("-1001234567890", text)
+
+    async def test_groups_list_has_find_button_only(self) -> None:
+        """Ro'yxatda qidiruv tugmasi bor; interval tugmasi yo'q."""
         await db.add_chat(UID, "@g1")
         update, _status = self._update()
         await MG.show_my_groups(update, UID)
@@ -160,18 +180,21 @@ class MyGroupsScreenTests(unittest.IsolatedAsyncioTestCase):
         markup = update.message.reply_text.await_args.kwargs["reply_markup"]
         datas = [btn.callback_data for btn in _buttons(markup)]
         self.assertIn("mg:find", datas)
-        self.assertIn("mg:global", datas)
+        self.assertNotIn("mg:global", datas)
+        self.assertFalse(any(d.startswith("mg:gint:") for d in datas))
 
-    async def test_groups_list_has_delete_and_interval_per_group(self) -> None:
-        """Har guruh uchun o'chirish va interval tugmalari bor."""
+    async def test_groups_list_has_delete_button_per_group(self) -> None:
+        """Har guruh uchun faqat o'chirish tugmasi bor (nomi bilan)."""
         await db.add_chat(UID, "@g1")
         update, _status = self._update()
         await MG.show_my_groups(update, UID)
 
         markup = update.message.reply_text.await_args.kwargs["reply_markup"]
-        datas = [btn.callback_data for btn in _buttons(markup)]
+        buttons = _buttons(markup)
+        datas = [btn.callback_data for btn in buttons]
+        labels = [btn.text for btn in buttons]
         self.assertTrue(any(d.startswith("mg:del:") for d in datas))
-        self.assertTrue(any(d.startswith("mg:gint:") for d in datas))
+        self.assertTrue(any(label.startswith("🗑") and "@g1" in label for label in labels))
 
     # ── Alohida interval ──────────────────────────────────────────────
 

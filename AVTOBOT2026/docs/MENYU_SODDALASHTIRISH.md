@@ -1,4 +1,4 @@
-# 🧭 Foydalanuvchi menyusini soddalashtirish (2026-10)
+# 🧭 Foydalanuvchi menyusini soddalashtirish (2026-11)
 
 Foydalanuvchi tugmalari ko'pligidan chalg'imasligi uchun menyu **yassi**
 (ichki menyusiz) ko'rinishga keltirildi. Barcha asosiy amallar bitta ekranda.
@@ -6,12 +6,11 @@ Foydalanuvchi tugmalari ko'pligidan chalg'imasligi uchun menyu **yassi**
 ## Yangi asosiy menyu
 
 ```text
-[                ▶️ Start (🔴 OFF) / ⛔ Stop (🟢 ON)   ]
-[ 📈 Hisobot                        ] [ 👥 Referal     ]
-[ 🔍 Guruhlarni topish              ] [ ➖ Guruh o'chirish ]
-[ ➕ Post qo'shish                  ] [ 🗑 Post o'chirish  ]
-[ ⏱ Posting oralig'i                                   ]
-[ 👥 Jamoam  /  🎯 Jamoani tanlash  /  👑 Admin bo'lish    ]  ← qo'shimcha qator
+[ ▶️ Start ] [ ⛔ Stop ]
+[ 🔍 Guruhlarni topish ] [ 💬 Guruhlar ]
+[ ➕ Post qo'shish ] [ 🗑 Post o'chirish ]
+[ ⏱ Interval ] [ 👥 Referal ]
+[ 👥 Jamoam ]        ← faqat jamoa a'zosi/adminida
 ```
 
 **Oxirgi qator roli bo'yicha o'zgaradi:**
@@ -21,36 +20,76 @@ Foydalanuvchi tugmalari ko'pligidan chalg'imasligi uchun menyu **yassi**
 | 🛡 Super admin | Faqat `🖥 Admin paneli` |
 | 👑 Jamoa admini | `👥 Jamoam` — o'z jamoasini boshqaradi |
 | 👤 Jamoa a'zosi | `👥 Jamoam` — jamoa kartasi + **🚪 Jamoadan chiqish** |
-| 🧑 Oddiy (jamoasiz) | `🎯 Jamoani tanlash` (ixtiyoriy) + `👑 Admin bo'lish` |
+| 🧑 Oddiy (jamoasiz) | Jamoa tugmalari **yo'q** |
 
-- **Holat (ON/OFF) alohida Status tugmasisiz** — Start/Stop tugmasining o'zida:
-  to'xtagan bo'lsa `▶️ Start (🔴 OFF)`, ishlayotgan bo'lsa `⛔ Stop (🟢 ON)`.
-- **Hisobot va Paket bitta tugmada** — 📈 Hisobot ekrani yuborish statistikasi,
-  guruh salomatligi, keyingi navbat **hamda** paket/limitlar (guruh/post limiti,
-  kunlik limit, ish vaqti, tarif muddati) ni bitta ekranda ko'rsatadi.
+- **Start va Stop — doimiy ikki tugma.** Holat (ON/OFF) ularning
+  yorlig'ida emas: tugma bosilganda alohida xabar bilan aytiladi.
+- **`📈 Hisobot`, `📊 Status` va `📦 Paket` butunlay olib tashlandi.**
+  `/status` buyrug'i ham olib tashlandi (buyruqlar ro'yxatidan).
+- **Ikki xil interval bitta tugmada** — `⏱ Interval` ochilganda
+  `🌐 Barcha guruhlar uchun` yoki `⏱ Bitta guruh uchun` tanlanadi.
+
+## ⏱ Interval oynasi
+
+```text
+⏱ INTERVAL
+
+Umumiy interval: 60 daqiqa
+
+Qaysini o'zgartirmoqchisiz?
+
+[ 🌐 Barcha guruhlar uchun ]
+[ ⏱ Bitta guruh uchun ]
+```
+
+- `🌐 Barcha guruhlar uchun` — umumiy interval (barcha guruh bir vaqtda).
+- `⏱ Bitta guruh uchun` — bitta tanlangan guruh uchun alohida interval;
+  `↩️ Umumiy intervalni ishlatish` orqali orqaga qaytariladi.
+
+## 💬 Guruhlar oynasi
+
+```text
+💬 GURUHLAR
+
+Guruhlar soni: 12 ta
+
+🔗 Guruh havolalari:
+
+1. https://t.me/taxi_tashkent
+2. https://t.me/avtoelon_uz
+
+[ 🗑 1. @taxi_tashkent ]
+[ 🗑 2. @avtoelon_uz ]
+```
+
+- Yuqorida — **guruh havolalari** (raqam bilan, ochiq link).
+  Yopiq guruhlarda (`-100...`) Telegram ochiq havola bermaydi —
+  u holda havola ro'yxatda chiqmaydi.
+- Pastda — har bir guruh uchun **faqat** o'chirish tugmasi (`🗑 N. guruh`).
+- Interval tugmalari bu oynada **yo'q** — ular `⏱ Interval` oynasida.
 
 ## Asosiy o'zgarishlar
 
 | Eski holat | Yangi holat |
 | ---------- | ----------- |
 | ➕ Guruh qo'shish (qo'lda havola yuborish) | **🔍 Guruhlarni topish** — bot ulangan akkauntning barcha dialoglarini ko'rib, yozish huquqi bor guruhlarni topadi va **ro'yxat qilib ko'rsatadi**; foydalanuvchi ✅ belgilaydi, faqat belgilanganlar qo'shiladi |
-| 💬 Guruhlar ichki menyusi | Olib tashlandi — ➖ Guruh o'chirish to'g'ridan-to'g'ri ro'yxatni inline tugma qilib ko'rsatadi |
-| ⏱ Guruh intervali (har guruhga alohida) | Foydalanuvchidan olib tashlandi — faqat **admin** o'z panelidan (`uc:gint`) sozlaydi |
+| 💬 Guruhlar ichki menyusi | Olib tashlandi — 💬 Guruhlar oynasi ro'yxat + havolalar + o'chirish |
+| ⏱ Guruh intervali (har guruhga alohida) | **⏱ Interval** oynasida — `🌐 Barcha guruhlar` / `⏱ Bitta guruh uchun` |
+| ⏱ Posting oralig'i | **⏱ Interval** oynasining `🌐 Barcha guruhlar uchun` qismiga ko'chdi |
 | 🔎 Guruhni tekshirish | Olib tashlandi — topish paytida yozish huquqi avtomatik tekshiriladi |
 | 📝 Postlar ichki menyusi | Olib tashlandi — ➕ Post qo'shish / 🗑 Post o'chirish asosiy ekranda |
 | ✏️ Tahrirlash / 👁 Ko'rinish / 🧪 Sinov | Foydalanuvchi tugmalaridan olib tashlandi (dvigatel kodi saqlanadi) |
 | ⚙️ Hisob (sessiyani uzish) | Olib tashlandi — sessiya muammosida qayta Login yoki admin |
-| ⏱ Posting oralig'i | Tugma qoldi; bosilganda darhol daqiqa kiritish so'raladi (5, 30, …), ichki menyu yo'q |
-| 📊 Status (alohida tugma) | Olib tashlandi — ON/OFF holati Start/Stop tugmasining yorlig'iga ko'chirildi; `/status` buyrug'i ishlaydi |
-| 📦 Paket va limitlar (alohida tugma) | Olib tashlandi — 📈 Hisobot ekrani ichiga qo'shildi |
+| 📊 Status (alohida tugma) | Olib tashlandi — holat Start/Stop bosilganda xabar bilan beriladi |
+| 📈 Hisobot | **Butunlay olib tashlandi** — foydalanuvchilar foydalanmaydi |
+| 📦 Paket va limitlar | **Butunlay olib tashlandi** (`ref:plan` ham olib tashlandi) |
+| ▶️ Start (🔴 OFF) / ⛔ Stop (🟢 ON) | **▶️ Start** va **⛔ Stop** — doimiy alohida tugmalar |
 
-Saqlanib qolgan tugmalar: ▶️ Start/⛔ Stop (holat yorlig'i bilan), 📈 Hisobot
-(statistika + paket/limitlar), 👥 Referal, 🔍 Guruhlarni topish,
-➖ Guruh o'chirish, ➕ Post qo'shish, 🗑 Post o'chirish, ⏱ Posting oralig'i.
+Saqlanib qolgan tugmalar: ▶️ Start, ⛔ Stop, 🔍 Guruhlarni topish,
+💬 Guruhlar, ➕ Post qo'shish, 🗑 Post o'chirish, ⏱ Interval, 👥 Referal.
 
-**Jamoa bilan bog'liq qo'shimcha tugmalar:** `👥 Jamoam` (jamoa admini va
-a'zolar uchun), `🎯 Jamoani tanlash` (jamoasiz foydalanuvchi uchun),
-`👑 Admin bo'lish` (jamoa yaratish). To'liq tavsif:
+**Jamoa bilan bog'liq tugma:** `👥 Jamoam` — faqat jamoa a'zosi va jamoa
+adminida. Jamoasiz foydalanuvchida jamoa tugmalari **yo'q**. To'liq tavsif:
 `docs/JAMOA_TIZIMI.md`.
 
 **Jamoa admini paneli (`👥 Jamoam`):**
@@ -128,8 +167,11 @@ Skaner faqat **o'qish so'rovlari** (`GetDialogs`, `GetParticipant`) ishlatadi �
 xabar yubormaydi, guruhga kirmaydi/chiqmaydi. Shunga qaramay Telegramni
 inson harakatiga o'xshatish uchun to'rt qavatli himoya bor:
 
-1. **Tasodifiy pauza** — har bir tekshirilgan guruh orasida 1–3 soniya kutish
-   (`DISCOVER_PAUSE_MIN_S/MAX_S`); 100 ta guruh taxminan 2–4 daqiqa oladi.
+1. **Parallel tekshiruv + pauza** — guruhlar **8 tadan** guruhli
+   partiyalarda (`DISCOVER_BATCH_SIZE`) parallel tekshiriladi, partiyalar
+   orasida `DISCOVER_BATCH_PAUSE_S` (0.4 s) kutuladi. Har bir guruh
+   uchun alohida 1–3 soniya kutish **yo'q** — shuning uchun skaner
+   sezilarli tez (16 guruh ≈ 0.9 s).
 2. **Cooldown** — bitta foydalanuvchi skanerni 10 daqiqada bir marta bosha
    oladi (`DISCOVER_COOLDOWN_S`); erta bosilsa aniq kutish vaqti ko'rsatiladi.
 3. **FloodWait blokirovkasi** — Telegram cheklov bersa, ko'rsatilgan vaqtgacha
@@ -146,5 +188,5 @@ va admin panelini cheklamaydigan yengil yondashuv.
   xabarlarida qoladi, lekin yangi menyuda ko'rinmaydi va yangi foydalanuvchi
   ularga duch kelmaydi.
 - Admin paneli va uning guruh/post boshqaruvi **o'zgarishsiz** qoldi.
-- Testlar: `python -m unittest discover -s tests -t tests` — **481 test**,
+- Testlar: `python -m unittest discover -s tests -t tests` — **509 test**,
   barchasi yashil.

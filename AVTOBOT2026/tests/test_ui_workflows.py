@@ -58,11 +58,11 @@ class CompactMenuTests(unittest.TestCase):
         stopped = reply_texts(kb_main(running=False))
         running = reply_texts(kb_main(running=True))
 
-        # Holat (ON/OFF) Start/Stop tugmasining o'zida — alohida Status tugmasi yo'q.
-        self.assertEqual(stopped[0], f"{T.BTN_START} (🔴 OFF)")
-        self.assertEqual(running[0], f"{T.BTN_STOP} (🟢 ON)")
-        self.assertTrue(stopped[0].startswith(T.BTN_START))
-        self.assertTrue(running[0].startswith(T.BTN_STOP))
+        # Start va Stop — doimiy ikki tugma. Holat yorlig'i yo'q:
+        # holat Start/Stop bosilganda alohida xabar bilan beriladi.
+        self.assertIn(T.BTN_START, stopped)
+        self.assertIn(T.BTN_STOP, stopped)
+        self.assertEqual(stopped, running)
         for label in (*stopped, *running):
             self.assertFalse(label.startswith(T.BTN_STATUS))
 
@@ -72,12 +72,13 @@ class CompactMenuTests(unittest.TestCase):
 
         # Yangi yassi menyuda bo'lishi kerak bo'lgan tugmalar.
         for button in (
+            T.BTN_START,
+            T.BTN_STOP,
+            T.BTN_FIND_GROUPS,
             T.BTN_GROUPS,
-            T.BTN_GROUP_INTERVAL,
             T.BTN_ADD_POST,
             T.BTN_DEL_POST,
-            T.BTN_TIMER,
-            T.BTN_REPORT,
+            T.BTN_INTERVAL,
             T.BTN_REFERRAL,
         ):
             self.assertIn(button, top_level)
@@ -93,10 +94,14 @@ class CompactMenuTests(unittest.TestCase):
             T.BTN_TEST_SEND,
             T.BTN_ACCOUNT,
             T.BTN_ADMIN,
+            T.BTN_REPORT,
+            T.BTN_PLAN,
+            T.BTN_GROUP_INTERVAL,
+            T.BTN_TIMER,
         ):
             self.assertNotIn(button, top_level)
 
-        # Status va Paket alohida tugma emas — ular Start/Stop va Hisobot ichida.
+        # Status va Paket alohida tugma emas.
         for label in top_level:
             self.assertFalse(label.startswith(T.BTN_STATUS))
             self.assertFalse(label.startswith(T.BTN_PLAN))

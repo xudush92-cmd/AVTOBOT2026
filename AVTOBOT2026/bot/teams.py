@@ -96,12 +96,29 @@ async def _team_admin_active(admin_uid: int) -> bool:
 # RO'YXATDAN O'TISH — JAMOA TANLASH
 # ─────────────────────────────────────────────────────────────────────────
 async def show_team_picker(update: Update, uid: int, page: int = 0) -> None:
-    """Jamoa tanlash oynasini ko'rsatadi."""
+    """Jamoa tanlash oynasi — **faqat super admin** uchun.
+
+    Jamoalar **yopiq**: oddiy foydalanuvchi jamoalarni ko'ra olmaydi va
+    o'zi jamoaga qo'shilmaydi. Jamoaga faqat jamoa admini qo'shadi —
+    telefon raqam (``➕ Do'st qo'shish``) yoki jamoa havolasi orqali.
+    """
+    from config.config import SUPER_ADMIN
+
+    if int(uid) != int(SUPER_ADMIN):
+        await reply_text_safe(
+            update,
+            "🔒 Jamoalar yopiq.\n\n"
+            "Jamoaga qo'shilish uchun jamoa administratori sizga "
+            "telefon raqam yoki jamoa havolasini yuborishi kerak.",
+            reply_markup=await KB.kb_main_for(uid),
+        )
+        return
+
     teams = await db.get_all_teams()
     if not teams:
         await update.message.reply_text(
             T.TEAM_PICK_EMPTY,
-            reply_markup=KB.kb_login(),
+            reply_markup=KB.kb_admin_back(),
         )
         return
 
@@ -113,8 +130,22 @@ async def show_team_picker(update: Update, uid: int, page: int = 0) -> None:
 
 
 async def handle_team_pick_callback(update: Update, uid: int, data: str) -> None:
-    """Jamoa tanlash callback'lari."""
+    """Jamoa tanlash callback'lari.
+
+    Jamoalar **yopiq** — bu oyna faqat super admin uchun. Oddiy
+    foydalanuvchi jamoaga faqat jamoa adminining havolasi yoki telefon
+    taklifi orqali qo'shiladi.
+    """
     q = update.callback_query
+
+    if int(uid) != int(SUPER_ADMIN):
+        await q.answer(
+            "🔒 Jamoalar yopiq — jamoaga faqat jamoa administratori "
+            "qo'shadi.",
+            show_alert=True,
+        )
+        return
+
     parts = data.split(":")
     action = parts[1] if len(parts) > 1 else ""
 
@@ -339,20 +370,31 @@ async def show_team_invites(
 
 
 async def begin_team_admin_register(update: Update, uid: int) -> None:
-    """Admin bo'lish oqimini boshlaydi (foydalanuvchi raqam kiritadi)."""
+    """Jamoa admini o'z jamoasini yaratish oqimini boshlaydi.
+
+    Jamoa adminini **faqat super admin** yaratadi (telefon orqali
+    tayyorlaydi). Admin ro'yxatdan o'tgach, jamoaning **nomi** va
+    **sig'imi**ni shu yerda kiritadi — jamoani o'zi shakllantiradi.
+    """
     from bot.login import user_states
 
     user = await db.get_user(uid) or {}
-    if await _is_team_admin(user):
-        await update.message.reply_text(
-            "✅ Siz allaqachon jamoa adminisiz.",
+    if not await _is_team_admin(user):
+        # Jamoa admini bo'lish faqat super admin tomonidan beriladi.
+        await reply_text_safe(
+            update,
+            "ℹ️ Jamoa admini bo'lish huquqi faqat super admin tomonidan "
+            "beriladi.\n\n"
+            "Siz oddiy foydalanuvchisiz — «💬 Guruhlar» va «➕ Post "
+            "qo'shish» orqali ishlashingiz mumkin.",
             reply_markup=await KB.kb_main_for(uid),
         )
         return
 
     existing = await admin_teams(uid)
     if existing:
-        await update.message.reply_text(
+        await reply_text_safe(
+            update,
             f"✅ Sizning jamoangiz mavjud: {existing[0].get('name')}\n\n"
             "«👥 Jamoam» orqali boshqaring.",
             reply_markup=await KB.kb_main_for(uid),
@@ -360,7 +402,8 @@ async def begin_team_admin_register(update: Update, uid: int) -> None:
         return
 
     user_states[uid] = {"step": "team_admin_size", "ts": time.time()}
-    await update.message.reply_text(
+    await reply_text_safe(
+        update,
         T.TEAM_ADMIN_ASK_SIZE.format(min_users=TEAM_MIN_MEMBERS),
         reply_markup=KB.kb_input_cancel(),
     )
@@ -372,7 +415,8 @@ async def handle_team_admin_size(update: Update, uid: int, text: str) -> None:
 
     raw = (text or "").strip()
     if not raw.isdigit():
-        await update.message.reply_text(
+        await reply_text_safe(
+            update,
             T.TEAM_ADMIN_SIZE_INVALID.format(min_users=TEAM_MIN_MEMBERS),
             reply_markup=KB.kb_input_cancel(),
         )
@@ -380,7 +424,8 @@ async def handle_team_admin_size(update: Update, uid: int, text: str) -> None:
 
     size = int(raw)
     if size < TEAM_MIN_MEMBERS:
-        await update.message.reply_text(
+        await reply_text_safe(
+            update,
             T.TEAM_ADMIN_SIZE_INVALID.format(min_users=TEAM_MIN_MEMBERS),
             reply_markup=KB.kb_input_cancel(),
         )
@@ -403,7 +448,8 @@ async def handle_team_admin_name(update: Update, uid: int, text: str) -> None:
 
     name = " ".join((text or "").split())
     if not (2 <= len(name) <= 40):
-        await update.message.reply_text(
+        await reply_text_safe(
+            update,
             T.TEAM_ADMIN_NAME_INVALID,
             reply_markup=KB.kb_input_cancel(),
         )
@@ -414,7 +460,8 @@ async def handle_team_admin_name(update: Update, uid: int, text: str) -> None:
 
     existing = await db.get_team_by_name(uid, name)
     if existing:
-        await update.message.reply_text(
+        await reply_text_safe(
+            update,
             T.TEAM_ADMIN_NAME_TAKEN,
             reply_markup=KB.kb_input_cancel(),
         )
@@ -423,7 +470,8 @@ async def handle_team_admin_name(update: Update, uid: int, text: str) -> None:
     expires = _admin_expiry(TEAM_ADMIN_DEFAULT_DAYS)
     team = await db.create_team(name, uid, max_users=size, expires_at=expires)
     if not team:
-        await update.message.reply_text(
+        await reply_text_safe(
+            update,
             "❌ Jamoani yaratib bo'lmadi. Qaytadan urinib ko'ring.",
             reply_markup=KB.kb_input_cancel(),
         )
@@ -541,14 +589,16 @@ def _admin_expiry(days: int) -> str:
 # JAMOA ADMINI PANELI
 # ─────────────────────────────────────────────────────────────────────────
 async def show_team_admin_panel(update: Update, admin_uid: int) -> None:
-    """Jamoa admini panelining asosiy oynasi."""
+    """Jamoa admini panelining asosiy oynasi.
+
+    Jamoa admini super admin tomonidan tayyorlanadi. Agar jamoasi hali
+    yaratilmagan bo'lsa (super admin uni telefon orqali tayyorlagan),
+    admin birinchi marta bu oynani ochganda jamoaning **nomi** va
+    **sig'imi**ni kiritadi — jamoani o'zi shakllantiradi.
+    """
     team = await primary_team(admin_uid)
     if not team:
-        await reply_text_safe(
-            update,
-            T.TEAM_ADMIN_NO_TEAM,
-            reply_markup=await KB.kb_main_for(admin_uid),
-        )
+        await begin_team_admin_register(update, admin_uid)
         return
 
     members = await db.count_team_members(int(team["id"]))

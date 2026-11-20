@@ -82,7 +82,9 @@ class SetBotCommandsTests(unittest.IsolatedAsyncioTestCase):
         app = FakeApp()
         ok = await set_bot_commands(app)
         self.assertTrue(ok)
-        self.assertEqual(len(app.bot.commands), 3)
+        # «status» olib tashlandi — faqat start va help qoladi.
+        self.assertEqual(len(app.bot.commands), 2)
+        self.assertNotIn("status", [c.command for c in app.bot.commands])
 
     async def test_failure_returns_false_and_does_not_raise(self) -> None:
         """Asosiy regressiya: set_my_commands xatosi botni o'ldirmasligi kerak."""

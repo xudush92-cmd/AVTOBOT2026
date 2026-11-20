@@ -107,6 +107,32 @@ async def _handle_callback_locked(update: Update, uid: int) -> None:
             "ref:",
             "disc:",
         )
+        # ``int:`` — ⏱ Interval oynasi (umumiy yoki bitta guruh uchun).
+        # Oddiy foydalanuvchilarga tegishli; super admin ``uc:`` orqali
+        # boshqaradi.
+        if data.startswith("int:"):
+            if uid == SUPER_ADMIN:
+                await q.answer("Super admin uchun bu oyna kerak emas.")
+                return
+            async with user_operation_lock(uid):
+                user = await db.get_user(uid)
+                if (
+                    not user
+                    or not user.get("is_admin")
+                    or user.get("is_blocked")
+                    or user.get("awaiting_approval")
+                    or not user.get("session")
+                ):
+                    await q.answer(
+                        "❌ Hisob yoki sessiya endi faol emas.",
+                        show_alert=True,
+                    )
+                    return
+                from bot import my_groups as MG
+
+                await MG.handle_interval_choice_callback(update, uid, data)
+            return
+
         # ``mg:`` — foydalanuvchining **o'z** guruhlari. Super admin uchun
         # bu oyna kerak emas (u ``uc:`` orqali boshqaradi), shuning uchun
         # alohida tekshiriladi — admin boshqa guruhga tegishi mumkin emas.
@@ -191,10 +217,6 @@ async def _handle_callback_locked(update: Update, uid: int) -> None:
                     await handle_test_send_confirm(update, uid, data)
                 elif data.startswith("lp:"):
                     await _handle_link_preview_locked(update, uid, data)
-                elif data.startswith("ref:plan"):
-                    from bot.menu import show_plan
-
-                    await show_plan(update)
                 elif data.startswith("ref:share"):
                     from bot.referral import share_referral_message
 

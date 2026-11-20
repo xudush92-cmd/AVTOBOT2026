@@ -402,11 +402,17 @@ class SuperAdminAddTests(InviteBaseTest):
 class TeamPickOptionalTests(InviteBaseTest):
     """Jamoani tanlash — ixtiyoriy, menyudan ochiladi."""
 
-    async def test_plain_user_menu_has_pick_button(self) -> None:
-        """Jamoasiz user menyusida 'Jamoani tanlash' tugmasi bor."""
+    async def test_plain_user_menu_has_no_team_buttons(self) -> None:
+        """Jamoasiz user menyusida jamoa tugmalari yo'q.
+
+        Jamoalar yopiq: jamoaga faqat jamoa admini (telefon yoki havolа
+        orqali) qo'shadi — foydalanuvchi o'zi tanlamaydi.
+        """
         kb = KB.kb_main(running=False)
         labels = {b.text for row in kb.keyboard for b in row}
-        self.assertIn(T.BTN_TEAM_PICK, labels)
+        self.assertNotIn(T.BTN_TEAM_PICK, labels)
+        self.assertNotIn(T.BTN_TEAM_ADMIN, labels)
+        self.assertNotIn(T.BTN_TEAM_MENU, labels)
 
     async def test_team_member_menu_has_team_menu(self) -> None:
         """Jamoa a'zosi menyusida 'Jamoam' tugmasi bor."""

@@ -11,7 +11,6 @@ Tugmalar:
 
 from __future__ import annotations
 
-import time
 
 from telegram import Update
 
@@ -20,7 +19,7 @@ from bot import keyboards as KB
 from bot import texts as T
 from core import database as db
 from core.logger import log
-from core.utils import format_expires, start_of_local_day_ts
+from core.utils import start_of_local_day_ts
 from worker.client_pool import PoolBusyError, SessionInvalidError
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -88,117 +87,30 @@ def _humanize(seconds: int) -> str:
     return f"{seconds // 86400} kundan so'ng"
 
 
-async def show_status(update: Update) -> None:
-    """📊 Status tugmasi bosilganda."""
-    uid = update.effective_user.id
-    snapshot = await _status_snapshot(uid)
-    limits = snapshot["limits"]
-    stats = snapshot["stats"]
-
-    text = T.status_text(
-        running=snapshot["running"],
-        expired=snapshot["expired"],
-        groups=len(snapshot["chats"]),
-        posts=len(snapshot["posts"]),
-        interval=snapshot["interval"],
-        expires=format_expires(snapshot["expires"]),
-        today_ok=int(stats.get("sent_ok") or 0),
-        today_failed=int(stats.get("sent_failed") or 0),
-        next_eta=snapshot["next_eta"],
-        last_error=stats.get("last_error") or "",
-        max_groups=int(limits.get("max_groups") or 0),
-        max_posts=int(limits.get("max_posts") or 0),
-        daily_left=snapshot["daily_left"],
-        active_hours=snapshot["active_hours"],
-        plan_label=limits.get("label") or "",
-    )
-    if not snapshot["posts"] or not snapshot["chats"]:
-        text += "\n\n" + T.status_next_step(
-            groups=len(snapshot["chats"]), posts=len(snapshot["posts"])
-        )
-
-    await update.message.reply_text(
-        text, reply_markup=await KB.kb_main_for(uid, running=snapshot["running"])
-    )
 
 
-async def show_report(update: Update) -> None:
-    """📈 Hisobot — statistika, guruh salomatligi VA paket/limitlar bitta ekranda."""
-    uid = update.effective_user.id
-    snapshot = await _status_snapshot(uid)
-    stats = snapshot["stats"]
-    limits = snapshot["limits"]
-    since_day = start_of_local_day_ts()
-    week_since = time.time() - 7 * 86400
+# ─────────────────────────────────────────────────────────────────────────
+# ⏱ INTERVAL
+# ─────────────────────────────────────────────────────────────────────────
+async def show_interval_choice(update: Update, uid: int | None = None) -> None:
+    """⏱ Interval oynasi — umumiy yoki bitta guruh uchun.
 
-    health: list[dict] = []
-    week: dict = {}
-    gstats: dict = {}
-    expired_users: list[dict] = []
-    try:
-        health = await db.group_health(uid)
-        week = await db.send_stats(uid, week_since)
-        gstats = await db.global_send_stats(since_day)
-        expired_users = [
-            await db.get_user(u) or {"uid": u}
-            for u in (await db.get_expired_users())[:10]
-        ]
-    except Exception as exc:  # noqa: BLE001 - hisobot menyuni buzmasin
-        log(f"Hisobot o'qishda xato: {exc}", "warning")
-
-    # Hali bir marta ham sinab ko'rilmagan guruhlar "xato" hisoblanmaydi.
-    failed_groups = sum(1 for row in health if row.get("last_ok") == 0)
-    report = T.report_text(
-        today_ok=int(stats.get("sent_ok") or 0),
-        today_failed=int(stats.get("sent_failed") or 0),
-        week_ok=int(week.get("sent_ok") or 0),
-        groups_total=len(snapshot["chats"]),
-        groups_failed=failed_groups,
-        next_eta=snapshot["next_eta"] or "—",
-        last_error=str(stats.get("last_error") or ""),
-        daily_left=snapshot["daily_left"],
-        active_hours=snapshot["active_hours"],
-        running=snapshot["running"],
-        expired_users=expired_users,
-        global_today=gstats,
-    )
-
-    # Paket va limitlar shu ekranning davomida ko'rsatiladi (alohida tugma yo'q).
-    daily_limit = int(limits.get("daily_limit") or 0)
-    used_today = int(stats.get("sent_ok") or 0)
-    daily_left = (
-        f"{used_today}/{daily_limit} ta ishlatilgan" if daily_limit else "cheksiz"
-    )
-    plan = T.plan_text(
-        limits=limits,
-        interval=snapshot["interval"],
-        expires=format_expires(snapshot["expires"]),
-        daily_left=daily_left,
-    )
-    text = f"{report}\n\n──────────────────\n\n{plan}"
-    await update.message.reply_text(
-        text, reply_markup=await KB.kb_main_for(uid, running=snapshot["running"])
-    )
-
-
-async def show_plan(update: Update) -> None:
-    """📦 Paket va limitlar ekrani."""
-    uid = update.effective_user.id
-    snapshot = await _status_snapshot(uid)
-    limits = snapshot["limits"]
-    daily_limit = int(limits.get("daily_limit") or 0)
-    used_today = int(snapshot["stats"].get("sent_ok") or 0)
-    daily_left = (
-        f"{used_today}/{daily_limit} ta ishlatilgan" if daily_limit else "cheksiz"
-    )
-    text = T.plan_text(
-        limits=limits,
-        interval=snapshot["interval"],
-        expires=format_expires(snapshot["expires"]),
-        daily_left=daily_left,
+    Ikki xil interval bor va ikkalasi ham shu oynadan tanlanadi:
+      * umumiy — barcha guruhlar uchun bir vaqtda;
+      * alohida — bitta tanlangan guruh uchun.
+    """
+    if uid is None:
+        uid = update.effective_user.id
+    global_interval = await db.get_interval(uid)
+    text = (
+        "⏱ <b>INTERVAL</b>\n\n"
+        f"Umumiy interval: {global_interval} daqiqa\n\n"
+        "Qaysini o'zgartirmoqchisiz?"
     )
     await update.message.reply_text(
-        text, reply_markup=await KB.kb_main_for(uid, running=snapshot["running"])
+        text,
+        parse_mode="HTML",
+        reply_markup=KB.kb_interval_choice(),
     )
 
 
@@ -395,19 +307,14 @@ async def route_menu_button(update: Update, text: str) -> bool:
 
     uid = update.effective_user.id
 
-    # ▶️ Start — yorliq holatni ham o'zida olib yuradi: "▶️ Start (🔴 OFF)"
+    # ▶️ Start
     if text.startswith(T.BTN_START):
         await handle_start(update)
         return True
 
-    # ⛔ Stop — yorliq: "⛔ Stop (🟢 ON)"
+    # ⛔ Stop
     if text.startswith(T.BTN_STOP):
         await handle_stop(update)
-        return True
-
-    # 📊 Status (eski klaviaturalarda qolgan bo'lishi mumkin — yo'naltirish ishlaydi)
-    if text.startswith(T.BTN_STATUS):
-        await show_status(update)
         return True
 
     # 🔍 Guruhlarni avtomatik topish
@@ -415,16 +322,21 @@ async def route_menu_button(update: Update, text: str) -> bool:
         await G.discover_groups(update)
         return True
 
-    # 💬 Guruhlar — ro'yxat + o'chirish + alohida interval (bitta oyna)
+    # 💬 Guruhlar — ro'yxat + o'chirish (bitta oyna)
     if text == T.BTN_GROUPS:
         from bot import my_groups as MG
 
         await MG.show_my_groups(update, uid)
         return True
 
-    # ⏱ Guruh intervali — guruh tanlang, alohida interval belgilang
+    # ⏱ Interval — umumiy yoki bitta guruh uchun
+    if text == T.BTN_INTERVAL:
+        await show_interval_choice(update)
+        return True
+
+    # ⏱ Guruh intervali — eski tugma (interval oynasiga yo'naltiramiz)
     if text == T.BTN_GROUP_INTERVAL:
-        await Tm.begin_set_group_interval(update)
+        await show_interval_choice(update)
         return True
 
     # ➖ Guruh o'chirish (eski tugma — o'z guruhlari oynasiga yo'naltiramiz)
@@ -444,19 +356,9 @@ async def route_menu_button(update: Update, text: str) -> bool:
         await P.begin_delete_posts(update)
         return True
 
-    # ⏰ Posting oralig'i — to'g'ridan-to'g'ri qo'lda qiymat so'raladi
+    # ⏰ Posting oralig'i — eski tugma (interval oynasiga yo'naltiramiz)
     if text == T.BTN_TIMER:
-        await Tm.begin_set_interval(update)
-        return True
-
-    # 📈 Hisobot
-    if text == T.BTN_REPORT:
-        await show_report(update)
-        return True
-
-    # 📦 Paket va limitlar
-    if text == T.BTN_PLAN:
-        await show_plan(update)
+        await show_interval_choice(update)
         return True
 
     # 👥 Referal
