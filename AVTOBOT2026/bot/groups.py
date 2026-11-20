@@ -882,13 +882,9 @@ async def discover_groups(update: Update) -> None:
     if not found:
         with contextlib.suppress(Exception):
             await status_msg.edit_text(T.DISCOVER_PICK_EMPTY)
-        from bot.menu import worker_manager
+        from bot.menu import show_home
 
-        running = bool(worker_manager and worker_manager.is_running(uid))
-        await update.message.reply_text(
-            "🏠 Asosiy menyu",
-            reply_markup=await KB.kb_main_for(uid, running=running),
-        )
+        await show_home(update, uid)
         log(
             f"🔍 Guruh topish: {uid} — topilmadi "
             f"(o'tkazildi {skipped}, kanal {channels_skipped}, xato {len(errors)})"

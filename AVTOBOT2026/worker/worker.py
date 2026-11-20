@@ -67,6 +67,22 @@ from worker.client_pool import ClientPool, PoolBusyError, SessionInvalidError
 client_pool: ClientPool | None = None
 application = None
 
+# Jarayon butunlay to'xtayotganmi (SIGTERM/SIGINT). Shu bayroq True bo'lsa,
+# worker'lar "running" holatini o'zgartirmaydi — shunda yangi process
+# ishga tushganda ular avtomatik tiklanadi.
+_process_shutting_down = False
+
+
+def set_process_shutting_down(value: bool = True) -> None:
+    """Jarayon to'xtayotganini belgilaydi (main.py dan chaqiriladi)."""
+    global _process_shutting_down
+    _process_shutting_down = value
+
+
+def _is_process_shutdown() -> bool:
+    """Jarayon to'xtayotgan bo'lsa ``True``."""
+    return _process_shutting_down
+
 
 def set_deps(pool: ClientPool, app) -> None:
     """main.py dan chaqiriladi."""
@@ -336,17 +352,22 @@ async def posting_loop(uid: int, stop: asyncio.Event) -> None:
     """
     log(f"🟢 Worker:{uid} ishga tushdi")
 
-    first_delay = random.randint(0, START_JITTER_S)
-    if first_delay:
-        log(f"⏳ Worker:{uid} start jitter {first_delay}s")
-        if await sleep_or_stop(stop, first_delay):
-            return
-
     post_index = 0
     group_fails: dict[str, int] = {}
     scheduler_poll_s = 60
 
     try:
+        # Jitter — worker boshlanishidan oldin kichik kutish.
+        # Bu `try` ichida bo'lishi shart: agar foydalanuvchi shu vaqtda
+        # "Stop" bossa, `finally` bloki ishga tushib "running" holatini
+        # tozalashi kerak (aks holda to'xtagan foydalanuvchi restartda
+        # avtomatik tiklanib ketardi).
+        first_delay = random.randint(0, START_JITTER_S)
+        if first_delay:
+            log(f"⏳ Worker:{uid} start jitter {first_delay}s")
+            if await sleep_or_stop(stop, first_delay):
+                return
+
         while not stop.is_set():
             # Uzoq ishlayotgan worker ham ruxsat/tarif o'zgarishini tekshiradi.
             user = await db.get_user(uid)
@@ -698,8 +719,22 @@ async def posting_loop(uid: int, stop: asyncio.Event) -> None:
                 f"⚠️ Worker xato\nUID: {uid}\n{type(exc).__name__}",
             )
     finally:
-        await db.set_running(uid, False)
-        log(f"🔴 Worker:{uid} to'xtadi")
+        # "running" bayrog'i faqat foydalanuvchi **o'zi** to'xtatgan
+        # holda o'chiriladi.
+        #
+        # Jarayon to'xtayotganda (SIGTERM — masalan VPS da kod yangilandi)
+        # `running` saqlanib qoladi, shunda `restore_running_workers()`
+        # yangi process'da worker'ni avtomatik tiklaydi. Aks holda har bir
+        # kod yangilanishida foydalanuvchi qaytadan "Start" bosishi
+        # kerak bo'lardi va uning e'lonlari to'xtab qolardi.
+        if stop.is_set() and not _is_process_shutdown():
+            await db.set_running(uid, False)
+            log(f"🔴 Worker:{uid} to'xtadi (foydalanuvchi to'xtatdi)")
+        else:
+            log(
+                f"🔄 Worker:{uid} jarayon to'xtayotgani uchun to'xtadi — "
+                "'running' saqlanadi (restartda tiklanadi)"
+            )
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -736,6 +771,10 @@ class WorkerManager:
 
         def _handler(signum, frame):
             log(f"🛑 Signal {signum} qabul qilindi")
+            # Jarayon butunlay to'xtayotganini belgilaymiz — worker'lar
+            # "running" holatini o'zgartirmaydi va yangi process'da
+            # avtomatik tiklanadi.
+            set_process_shutting_down(True)
             self._shutdown_event.set()
 
         with contextlib.suppress(Exception):
@@ -821,7 +860,10 @@ class WorkerManager:
         return True
 
     async def stop_all(self) -> None:
-        """Barcha workerlarni to'xtatish."""
+        """Barcha workerlarni to'xtatish (jarayon yopilayotgan paytda)."""
+        # Jarayon butunlay to'xtayotgan — worker'lar "running" holatini
+        # o'zgartirmasligi kerak, shunda yangi process'da tiklanadi.
+        set_process_shutting_down(True)
         uids = list(self._workers.keys())
         log(f"🛑 Barcha workerlar to'xtatilmoqda ({len(uids)} ta)")
         await asyncio.gather(

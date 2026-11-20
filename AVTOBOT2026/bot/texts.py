@@ -470,6 +470,19 @@ STOP_NOT_RUNNING = "⚠️ Hozir ishlamayapti."
 
 STOP_DONE = "⛔ Posting to'xtatildi."
 
+# ─────────────────────────────────────────────────────────────────────────
+# HOLAT YORLIG'I (asosiy menyu ustida)
+# ─────────────────────────────────────────────────────────────────────────
+# Start va Stop tugmalari DOIMIY va alohida qoladi. Holat esa menyu
+# matnida alohida qator sifatida ko'rsatiladi — foydalanuvchi o'z
+# holatini bir qarashda biladi.
+STATE_ON = "🟢 Posting **ishlamoqda**"
+STATE_OFF = "🔴 Posting **to'xtatilgan**"
+
+STATE_RESTARTED = (
+    "♻️ Bot yangilandi — postingingiz avtomatik tiklandi va davom etmoqda."
+)
+
 ACTION_CANCELLED = "❌ Bekor qilindi."
 
 ACTION_YES = "✅ Ha"

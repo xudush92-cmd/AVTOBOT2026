@@ -1822,6 +1822,13 @@ async def _main() -> None:
     finally:
         log("🛑 To'xtatilmoqda...")
 
+        # Jarayon butunlay to'xtayotganini **darhol** belgilaymiz. Shu
+        # bayroq True bo'lsa worker'lar "running" holatini o'zgartirmaydi —
+        # yangi process ishga tushganda ular avtomatik tiklanadi.
+        # Aks holda har bir kod yangilanishida foydalanuvchi qaytadan
+        # "Start" bosishi kerak bo'lardi va uning e'lonlari to'xtab qolardi.
+        Worker.set_process_shutting_down(True)
+
         # Avval yangi update kelishini to'xtatamiz; mavjud handlerlar resurslar
         # yopilishidan oldin Application.stop orqali tugashini kutadi.
         polling_stop.set()
