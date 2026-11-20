@@ -69,6 +69,38 @@ from core.session_manager import (  # noqa: E402
 from core.utils import calc_expires  # noqa: E402
 
 
+def assert_approved_within_days(mock_call, uid, days, testcase=None):
+    """``approve_user``/``approve_pending_user`` chaqiruvida muddat ~``days`` kun.
+
+    ``calc_expires()`` vaqtni darhol hisoblaydi — kod ham darhol
+    hisoblaganda ikki ``now()`` chaqiruvi orasida (sekin serverda 1+
+    soniya) farq chiqishi mumkin. Aniq sanani solishtirmaslik uchun
+    muddat intervali tekshiriladi.
+    """
+    from datetime import datetime, timezone
+
+    args = mock_call.await_args
+    assert args is not None, "chaqiruv bo'lmagan"
+    actual_uid = args.args[0]
+    actual_expires = args.args[1]
+    tc = testcase
+    tc.assertEqual(actual_uid, uid, "noto'g'ri uid berilgan")
+    expires = datetime.strptime(actual_expires, "%Y-%m-%d %H:%M:%S").replace(
+        tzinfo=timezone.utc
+    )
+    delta = expires - datetime.now(timezone.utc)
+    tc.assertLessEqual(
+        delta.total_seconds(),
+        days * 86400 + 5,
+        f"muddat {days} kundan ko'p bo'lmasligi kerak",
+    )
+    tc.assertGreater(
+        delta.total_seconds(),
+        (days - 1) * 86400,
+        f"muddat taxminan {days} kun bo'lishi kerak",
+    )
+
+
 def reply_texts(markup) -> list[str]:
     return [button.text for row in markup.keyboard for button in row]
 
@@ -815,7 +847,10 @@ class AdminApprovalFlowTests(unittest.IsolatedAsyncioTestCase):
             await AA._action_approve_locked(update, 999, self.UID)
 
         validate.assert_awaited_once_with("pending-session", self.UID)
-        promote.assert_awaited_once_with(self.UID, calc_expires(DEFAULT_DURATION_DAYS))
+        promote.assert_awaited_once()
+        assert_approved_within_days(
+            promote, self.UID, DEFAULT_DURATION_DAYS, self
+        )
         revoke.assert_not_awaited()
         clear.assert_not_awaited()
         del_pending.assert_not_awaited()
@@ -941,8 +976,9 @@ class AdminApprovalFlowTests(unittest.IsolatedAsyncioTestCase):
 
         del_pending.assert_awaited_once_with(self.UID)
         promote.assert_not_awaited()
-        legacy_approve.assert_awaited_once_with(
-            self.UID, calc_expires(DEFAULT_DURATION_DAYS)
+        legacy_approve.assert_awaited_once()
+        assert_approved_within_days(
+            legacy_approve, self.UID, DEFAULT_DURATION_DAYS, self
         )
         args, kwargs = self.bot.send_message.await_args
         self.assertEqual(args[1], T.USER_APPROVED)
@@ -966,8 +1002,9 @@ class AdminApprovalFlowTests(unittest.IsolatedAsyncioTestCase):
 
         validate.assert_not_awaited()
         promote.assert_not_awaited()
-        legacy_approve.assert_awaited_once_with(
-            self.UID, calc_expires(DEFAULT_DURATION_DAYS)
+        legacy_approve.assert_awaited_once()
+        assert_approved_within_days(
+            legacy_approve, self.UID, DEFAULT_DURATION_DAYS, self
         )
         args, kwargs = self.bot.send_message.await_args
         self.assertEqual(args[1], T.USER_APPROVED)
