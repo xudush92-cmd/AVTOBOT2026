@@ -14,7 +14,16 @@ qaytish rejasini beradi.
 | Worker yuborish | 🟡 o'rta | Endi albom `send_file([...])` orqali, matnli post `link_preview` bayrog'i bilan ketadi. Kunlik limit/faol soat yoqilsa, yuborishlar o'sha oynaga moslashadi |
 | Media disk | 🟡 o'rta | Albomlar bilan fayllar soni o'sadi. Har user uchun kvota: `MAX_MEDIA_FILES_PER_USER` (standart 200) |
 
-Barcha yangi funksiya testlangan: **535 test** (`python -m unittest discover -s tests -t tests`).
+Barcha yangi funksiya testlangan: **547 test** (`python -m unittest discover -s tests -t tests`).
+
+### 🆕 Restartda posting to'xtamaydi — worker avtomatik tiklanadi
+
+| Qism | Xavf | Izoh |
+| ---- | ---- | ---- |
+| `running` bayrog'i restartda to'xtardi | 🟢 past | VPS da kod yangilanganda (`systemctl restart`) `posting_loop` ning `finally` bloki `set_running(uid, False)` qilardi. Natijada foydalanuvchining e'lonlari **to'xtab qolardi** va u qaytadan `▶️ Start` bosishi kerak edi. Endi jarayon to'xtayotganda (`SIGTERM`) `running` **saqlanadi** va yangi process'da `restore_running_workers()` worker'ni **avtomatik tiklaydi** |
+| `⛔ Stop` bosgan foydalanuvchilar | 🟢 past | Foydalanuvchi **o'zi** `Stop` bosgan bo'lsa, `running` `False` qilinadi — u restartda **avtomatik tiklanmaydi**, to'xtab tursin |
+| Jitter paytidagi `Stop` | 🟢 past | `start jitter` kutish paytida `Stop` bosilsa, `finally` bloki ishlamasdi (`return` `try` dan tashqarida edi) va `running` `True` qolardi — ya'ni to'xtagan foydalanuvchi restartda tiklanib ketardi. Endi jitter `try` blokiga ko'chirilgan |
+| Holat ko'rinishi | 🟢 past | Asosiy menyu ustida `🟢 Posting ishlamoqda` / `🔴 Posting to'xtatilgan` qatori ko'rsatiladi. `▶️ Start` va `⛔ Stop` tugmalari **doimiy va alohida** qoladi — holat ularning matnini o'zgartirmaydi |
 
 ### 🆕 Polling supervisor tuzatildi — bot javob bermay qolmasin
 

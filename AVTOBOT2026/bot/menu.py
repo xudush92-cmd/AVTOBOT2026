@@ -34,6 +34,36 @@ def set_worker_manager(wm) -> None:
     worker_manager = wm
 
 
+def current_state(uid: int) -> bool:
+    """Foydalanuvchining posting holati (jarayon ichidagi haqiqiy holat)."""
+    return bool(worker_manager and worker_manager.is_running(uid))
+
+
+def state_line(uid: int) -> str:
+    """Asosiy menyu ustidagi holat qatori.
+
+    ``▶️ Start`` va ``⛔ Stop`` tugmalari **doimiy va alohida** qoladi —
+    holat faqat matnda ko'rsatiladi.
+    """
+    return T.STATE_ON if current_state(uid) else T.STATE_OFF
+
+
+async def show_home(update: Update, uid: int, note: str = "") -> None:
+    """Asosiy menyuni holat qatori bilan ko'rsatadi.
+
+    Barcha "🏠 Asosiy menyu" chiqarish joylari shu funksiyadan
+    foydalanadi — holat har doim bir xil ko'rinadi.
+    """
+    text = "🏠 Asosiy menyu"
+    if note:
+        text = f"{note}\n\n{text}"
+    await update.message.reply_text(
+        f"{text}\n\n{state_line(uid)}",
+        parse_mode="Markdown",
+        reply_markup=await KB.kb_main_for(uid, running=current_state(uid)),
+    )
+
+
 # ─────────────────────────────────────────────────────────────────────────
 # STATUS
 # ─────────────────────────────────────────────────────────────────────────
@@ -398,12 +428,7 @@ async def route_menu_button(update: Update, text: str) -> bool:
 
     # ⬅️ Kiritish oynasidan asosiy menyuga
     if text == T.BTN_BACK:
-        uid = update.effective_user.id
-        running = bool(worker_manager and worker_manager.is_running(uid))
-        await update.message.reply_text(
-            "🏠 Asosiy menyu",
-            reply_markup=await KB.kb_main_for(uid, running=running),
-        )
+        await show_home(update, update.effective_user.id)
         return True
 
     return False

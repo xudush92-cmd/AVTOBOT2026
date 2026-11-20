@@ -460,14 +460,13 @@ async def _handle_start_confirmation_locked(
         return
     ok, text = await confirm_start(uid)
     await q.edit_message_text(text)
-    running = bool(ok)
-    from bot.menu import worker_manager
+    from bot.menu import current_state
 
-    if worker_manager and worker_manager.is_running(uid):
-        running = True
+    running = current_state(uid)
     await application.bot.send_message(
         uid,
-        "Holat yangilandi.",
+        f"Holat yangilandi.\n\n{T.STATE_ON if running else T.STATE_OFF}",
+        parse_mode="Markdown",
         reply_markup=await KB.kb_main_for(uid, running=running),
     )
 
@@ -492,10 +491,14 @@ async def _handle_stop_confirmation_locked(update: Update, uid: int, data: str) 
         return
     _, text = await confirm_stop(uid)
     await q.edit_message_text(text)
+    from bot.menu import current_state
+
+    running = current_state(uid)
     await application.bot.send_message(
         uid,
-        "Holat yangilandi.",
-        reply_markup=await KB.kb_main_for(uid, running=False),
+        f"Holat yangilandi.\n\n{T.STATE_ON if running else T.STATE_OFF}",
+        parse_mode="Markdown",
+        reply_markup=await KB.kb_main_for(uid, running=running),
     )
 
 
@@ -530,12 +533,13 @@ async def _handle_intv_confirmation_locked(
     user = await db.get_user(uid)
     if action == "no":
         await q.edit_message_text(T.ACTION_CANCELLED)
+        from bot.menu import current_state
+
         await application.bot.send_message(
             uid,
-            "🏠 Asosiy menyu",
-            reply_markup=await KB.kb_main_for(
-                uid, running=bool(user and user.get("running"))
-            ),
+            f"🏠 Asosiy menyu\n\n{T.STATE_ON if current_state(uid) else T.STATE_OFF}",
+            parse_mode="Markdown",
+            reply_markup=await KB.kb_main_for(uid, running=current_state(uid)),
         )
         return
 
@@ -552,10 +556,12 @@ async def _handle_intv_confirmation_locked(
     await db.set_interval(uid, int(minutes))
     log(f"⏰ Interval: {uid} → {minutes}")
     await q.edit_message_text(T.interval_set(int(minutes)))
+    from bot.menu import current_state
+
     await application.bot.send_message(
         uid,
         "Holat yangilandi.",
-        reply_markup=await KB.kb_main_for(uid, running=bool(user.get("running"))),
+        reply_markup=await KB.kb_main_for(uid, running=current_state(uid)),
     )
 
 

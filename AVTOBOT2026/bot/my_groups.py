@@ -307,10 +307,9 @@ async def handle_my_groups_callback(
         await q.answer()
         with contextlib.suppress(Exception):
             await q.edit_message_text("💬 Guruhlar yopildi.")
-        await update.message.reply_text(
-            "🏠 Asosiy menyu",
-            reply_markup=await _back_markup(uid),
-        )
+        from bot.menu import show_home
+
+        await show_home(update, uid)
         return
 
     if action == "page":
