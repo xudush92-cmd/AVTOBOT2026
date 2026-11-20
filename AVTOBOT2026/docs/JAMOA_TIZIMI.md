@@ -67,21 +67,34 @@ tayyorlaydi. Oddiy foydalanuvchi o'zi jamoa admini bo'la olmaydi
 ```
 
 Admin shu raqam bilan ro'yxatdan o'tsa — **darhol jamoa admini** bo'ladi
-(tasdiq kutilmaydi). Keyin birinchi marta `👥 Jamoam` tugmasini bosganda
-**o'z jamoasini o'zi shakllantiradi**:
+(tasdiq kutilmaydi) va uning uchun **avtomatik ravishda haqiqiy jamoa
+yaratiladi**. Jamoa nomi avtomatik (`Jamoa #<uid>`) yoki super admin
+tomonidan berilgan bo'lishi mumkin. Admin darhol o'z jamoasiga ega bo'ladi
+— `team_id = 0` holda qolmaydi:
 
 ```
-👥 Jamoam → 🔢 Jamoangizda qancha foydalanuvchi bo'ladi?  → 5
-          → 📋 Jamoa nomini kiriting:  → "Avtoelon Toshkent"
-          → ✅ Jamoa yaratildi
-             🔗 Havola: https://t.me/Bot?start=team_12
+🖥 Super Admin → 👑 Jamoa adminlari → ➕ Admin qo'shish
+                                        ↓
+                                    +998901112233
+                                        ↓
+                          "✅ Admin tayyorlandi"
+                          "👥 Jamoa yaratildi: Jamoa #5001"
+```
+
+Admin shu raqam bilan ro'yxatdan o'tgach — jamoa allaqachon tayyor:
+
+```
+👥 Jamoam → 👥 Jamoa: Jamoa #5001
+          → 📱 Do'st telefon raqamini kiriting:  → +998907776655
+          → ✅ Do'st jamoaga qo'shildi (tasdiqlash kutilmoqda)
 ```
 
 | Qoida | Qiymat |
 | ----- | ------ |
 | Minimal jamoa hajmi | 2 ta foydalanuvchi (`TEAM_MIN_MEMBERS`) |
 | Jamoa adminining muddati | `TEAM_ADMIN_DEFAULT_DAYS` (standart 30 kun) |
-| Jamoa adminining sig'imi | admin o'zi kiritadi, super admin keyin +/- qila oladi |
+| Jamoa adminining sig'imi | super admin boshqaradi (`TEAM_DEFAULT_MAX_USERS`), keyin +/- qila oladi |
+| Jamoa nomi | super admin panelidan yaratiladi; avtomatik holda `Jamoa #<uid>` |
 
 **Jamoa admini darhol tasdiqlangan bo'ladi** — u super admin tomonidan
 tayyorlangan bo'lgani uchun «tasdiq kutilmoqda» holatiga tushmaydi. U:

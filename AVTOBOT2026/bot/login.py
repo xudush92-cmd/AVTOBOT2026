@@ -752,7 +752,11 @@ async def _auto_bind_team_invite(update: Update, uid: int, phone: str) -> bool:
 
 
 async def _auto_make_team_admin(uid: int, phone: str) -> bool:
-    """Super admin taklif qilgan raqam — ro'yxatdan o'tsa jamoa admini bo'ladi."""
+    """Super admin taklif qilgan raqam — ro'yxatdan o'tsa jamoa admini bo'ladi.
+
+    Admin darhol **haqiqiy jamoaga** bog'lanadi: jamoa avtomatik yaratiladi
+    va uning egasiga aylanadi. Shunda admin `team_id = 0` holda qolmaydi.
+    """
     from config.config import TEAM_ADMIN_DEFAULT_DAYS, TEAM_DEFAULT_MAX_USERS
     from core.utils import calc_expires
 
@@ -760,18 +764,38 @@ async def _auto_make_team_admin(uid: int, phone: str) -> bool:
     if not invite or (invite.get("status") or "pending") != "pending":
         return False
 
-    await db.set_team_admin(
-        uid,
-        0,
-        max_users=TEAM_DEFAULT_MAX_USERS,
-        admin_expires_at=calc_expires(TEAM_ADMIN_DEFAULT_DAYS),
-    )
+    expires_at = calc_expires(TEAM_ADMIN_DEFAULT_DAYS)
+
+    # Jamoa adminiga haqiqiy jamoa yaratamiz (yoki mavjudini ulashamiz).
+    user = await db.get_user(uid) or {}
+    current_team_id = int(user.get("team_id") or 0)
+    team = await db.get_team(current_team_id) if current_team_id else None
+
+    if team:
+        await db.set_team_admin(
+            uid,
+            current_team_id,
+            max_users=int(user.get("admin_max_users") or TEAM_DEFAULT_MAX_USERS),
+            admin_expires_at=expires_at,
+        )
+    else:
+        team = await db.create_team_for_admin(
+            uid,
+            "",
+            max_users=TEAM_DEFAULT_MAX_USERS,
+            admin_expires_at=expires_at,
+        )
+        if not team:
+            # Jamoa yaratilmasa — hech qanday adminlik belgisi qo'yilmaydi.
+            log(f"⚠️ Jamoa yaratilmadi, adminlik berilmadi: uid={uid}")
+            return False
+
     # Jamoa admini ham oddiy foydalanuvchi kabi bot imkoniyatlaridan
     # foydalanadi (posting, guruhlar, postlar).
-    await db.approve_user(uid, calc_expires(TEAM_ADMIN_DEFAULT_DAYS))
+    await db.approve_user(uid, expires_at)
     await db.set_awaiting_approval(uid, False)
     await db.set_team_invite_status(phone, "used", kind="admin")
-    log(f"👑 Taklif qilingan user jamoa admini bo'ldi: {uid}")
+    log(f"👑 Taklif qilingan user jamoa admini bo'ldi: {uid} (jamoa #{team['id']})")
     return True
 
 

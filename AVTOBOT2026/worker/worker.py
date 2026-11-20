@@ -23,6 +23,7 @@ from telethon.errors import (
     ChatWriteForbiddenError,
     FloodWaitError,
     PeerIdInvalidError,
+    SlowModeWaitError,
     UserDeactivatedBanError,
     UsernameInvalidError,
     UsernameNotOccupiedError,
@@ -507,6 +508,8 @@ async def posting_loop(uid: int, stop: asyncio.Event) -> None:
                     jitter_s = random.randint(-JITTER_S, JITTER_S)
                     flood_wait_until: float | None = None
                     attempted_at: float | None = None
+                    # Slow mode faqat shu guruhni bloklaydi — siklni to'xtatmaydi.
+                    slow_mode_hit = False
 
                     try:
                         await asyncio.wait_for(
@@ -520,6 +523,31 @@ async def posting_loop(uid: int, stop: asyncio.Event) -> None:
                         )
                         await db.touch_last_active(uid)
                         await _maybe_grant_referral_bonus(uid)
+
+                    except SlowModeWaitError as exc:
+                        # Guruh "sekin rejim" (slow mode) da: Telegram bu
+                        # guruhga navbatdagidan oldin yuborishni taqiqlaydi.
+                        # `.seconds` — qancha sekund kutish kerakligi.
+                        # Muhim: bu FloodWait emas! FloodWait butun akkauntga
+                        # ta'sir qiladi, slow mode esa faqat shu guruhga.
+                        # Shuning uchun boshqa guruhlarga yuborish davom etadi.
+                        wait_s = int(getattr(exc, "seconds", 30)) + 5
+                        attempted_at = time.time()
+                        # Keyingi urinish aniq shu vaqtdan keyin bo'lishi
+                        # shart — darhol qayta urinish qilinmaydi.
+                        flood_wait_until = attempted_at + wait_s
+                        slow_mode_hit = True
+                        log(
+                            f"🐢 {uid} → {chat} sekin rejim (slow mode) {wait_s}s",
+                            "warning",
+                        )
+                        await db.log_send(
+                            uid,
+                            False,
+                            group_id=group_id,
+                            post_id=post.get("id"),
+                            error=f"SlowMode {wait_s}s",
+                        )
 
                     except FloodWaitError as exc:
                         wait_s = int(getattr(exc, "seconds", 30)) + 5
@@ -615,7 +643,14 @@ async def posting_loop(uid: int, stop: asyncio.Event) -> None:
                         wait_s = max(0, int(next_send_at - time.time()))
                         log(f"⏳ {uid} → {chat} navbat: {wait_s}s")
 
-                    if flood_wait_until is not None:
+                    if flood_wait_until is not None and not slow_mode_hit:
+                        # Faqat FloodWait butun akkauntni bloklaydi — shu
+                        # sababli sikl to'xtatiladi.
+                        #
+                        # Slow mode esa faqat shu guruhga tegarli: boshqa
+                        # guruhlarga yuborish davom etishi kerak, shuning uchun
+                        # u yerda kutish qilinmaydi (navbat allaqachon
+                        # ``next_send_at`` orqali saqlangan).
                         if await sleep_or_stop(
                             stop, max(0, flood_wait_until - time.time())
                         ):

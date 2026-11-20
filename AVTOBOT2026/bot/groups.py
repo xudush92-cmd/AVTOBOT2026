@@ -23,6 +23,7 @@ from telethon.errors import (
     InviteHashExpiredError,
     InviteHashInvalidError,
     PeerIdInvalidError,
+    SlowModeWaitError,
     UsernameInvalidError,
     UsernameNotOccupiedError,
     UserNotParticipantError,
@@ -268,6 +269,10 @@ async def check_group_access(session_str: str, group: str) -> tuple[bool, str]:
         return False, "invalid"
     except FloodWaitError:
         return False, "flood"
+    except SlowModeWaitError:
+        # Guruh sekin rejimda — bu yuborish xatosi, o'qish xatosi emas.
+        # Sabab "flood" emas, chunki Flood butun akkauntni bloklaydi.
+        return False, "slow_mode"
     except TimeoutError:
         return False, "timeout"
     except ValueError:

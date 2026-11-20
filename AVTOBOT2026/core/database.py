@@ -2509,6 +2509,58 @@ async def set_team_admin(
     return cur.rowcount > 0
 
 
+async def create_team_for_admin(
+    uid: int,
+    team_name: str,
+    max_users: int = 0,
+    admin_expires_at: str | None = None,
+) -> dict | None:
+    """Super admin tayyorlagan jamoa admini uchun **haqiqiy** jamoa yaratadi.
+
+    Jamoa nomi bo'sh bo'lsa — avtomatik unikal nom yaratiladi
+    (``Jamoa #<uid>``), shunda har bir adminning jamoasi alohida bo'ladi.
+
+    Admin darhol shu jamoaga bog'lanadi: ``team_id`` va ``owner_admin_uid``
+    to'ldiriladi, keyingi o'rinda ``is_team_admin = 1`` qo'yiladi.
+
+    Qaytaradi: yaratilgan jamoa (``dict``) yoki ``None`` (muvaffaqiyatsiz).
+    """
+    clean = " ".join((team_name or "").split())
+    if not clean:
+        clean = f"Jamoa #{int(uid)}"
+
+    # Nom band bo'lsa — unikal variant qo'shiladi (har bir jamoa alohida).
+    if await get_team_by_name(uid, clean):
+        base = clean
+        suffix = 2
+        while await get_team_by_name(uid, f"{base} ({suffix})"):
+            suffix += 1
+        clean = f"{base} ({suffix})"
+
+    team = await create_team(
+        clean,
+        uid,
+        max_users=max_users,
+        expires_at=admin_expires_at,
+    )
+    if not team:
+        return None
+
+    await set_team_admin(
+        uid,
+        int(team["id"]),
+        max_users=max_users,
+        admin_expires_at=admin_expires_at,
+    )
+    # Jamoa egasi sifatini ham aniq belgilaymiz — a'zolar shu maydon orqali
+    # jamoani aniqlaydi.
+    await _execute_write(
+        "UPDATE users SET owner_admin_uid = ?, updated_at = ? WHERE uid = ?",
+        (int(uid), iso_now(), int(uid)),
+    )
+    return team
+
+
 async def set_admin_max_users(uid: int, max_users: int) -> bool:
     """Jamoa adminining sig'imini o'zgartiradi (faqat super admin)."""
     await upsert_user(uid)
