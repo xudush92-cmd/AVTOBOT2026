@@ -339,7 +339,6 @@ class PlanLimitsStatsTestCase(unittest.IsolatedAsyncioTestCase):
         from bot import my_groups as MG
         from bot import posts as P
         from bot import referral as R
-        from bot import timer as Tm
 
         update = SimpleNamespace(
             effective_user=SimpleNamespace(id=self.UID),
@@ -349,9 +348,7 @@ class PlanLimitsStatsTestCase(unittest.IsolatedAsyncioTestCase):
             T.BTN_FIND_GROUPS: (G, "discover_groups"),
             T.BTN_ADD_POST: (P, "begin_add_post"),
             T.BTN_DEL_POST: (P, "begin_delete_posts"),
-            T.BTN_TIMER: (Tm, "begin_set_interval"),
-            T.BTN_GROUP_INTERVAL: (Tm, "begin_set_group_interval"),
-            T.BTN_REPORT: (M, "show_report"),
+            T.BTN_INTERVAL: (M, "show_interval_choice"),
             T.BTN_REFERRAL: (R, "show_referral"),
         }
         for label, (module, name) in targets.items():
@@ -418,8 +415,8 @@ class PlanLimitsStatsTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("Menu.handle_menu", source)
         self.assertIn("Menu.route_menu_button", source)
 
-    async def test_status_report_plan_screens_render(self) -> None:
-        """Ekranlar haqiqiy baza bilan xatosiz ochiladi (import/NameError regressiyasi)."""
+    async def test_interval_and_groups_screens_render(self) -> None:
+        """Yangi oynalar haqiqiy baza bilan xatosiz ochiladi."""
         from types import SimpleNamespace
         from unittest.mock import AsyncMock
 
@@ -437,45 +434,49 @@ class PlanLimitsStatsTestCase(unittest.IsolatedAsyncioTestCase):
             await fn(update)
             return update.message.reply_text.await_args.args[0]
 
-        for fn, headings in (
-            (menu.show_status, ("STATUS",)),
-            # Hisobot endi paket/limitlarni ham o'z ichiga oladi — bitta ekran.
-            (menu.show_report, ("HISOBOT", "PAKET")),
-            (menu.show_plan, ("PAKET",)),
+        from bot import my_groups as MG
+
+        for fn, heading in (
+            (menu.show_interval_choice, "INTERVAL"),
+            (MG.show_my_groups, "GURUHLAR"),
         ):
             with self.subTest(fn=fn.__name__):
-                text = await render(fn)
-                for heading in headings:
-                    self.assertIn(heading, text.upper())
-                self.assertGreater(len(text), 80)
+                if fn is MG.show_my_groups:
+                    text = await render(lambda u: MG.show_my_groups(u, self.UID))
+                else:
+                    text = await render(fn)
+                self.assertIn(heading, text.upper())
+                self.assertGreater(len(text), 20)
 
     async def test_menu_buttons_route_to_new_screens(self) -> None:
         routes = {
-            T.BTN_REPORT: "show_report",
             T.BTN_FIND_GROUPS: "discover_groups",
+            T.BTN_INTERVAL: "show_interval_choice",
         }
         source = Path(APP_DIR / "bot/menu.py").read_text(encoding="utf-8")
         for label, target in routes.items():
             self.assertIn(label, source)
             self.assertIn(target, source)
-        # Hisobot ekrani paket/limitlarni ham chiqaradi (bitta tugma, bitta ekran).
-        self.assertIn("plan_text", source)
         # Yangi yassi menyu tugmalari main FSM escape ro'yxatida ham bo'lishi kerak.
         main_source = Path(APP_DIR / "main.py").read_text(encoding="utf-8")
         for name in (
             "BTN_FIND_GROUPS",
             "BTN_ADD_POST",
             "BTN_DEL_POST",
-            "BTN_REPORT",
+            "BTN_INTERVAL",
         ):
             self.assertIn(name, main_source)
         # Olib tashlangan tugmalar routerda bo'lmasligi kerak.
         for name in ("BTN_CHECK_GROUPS", "BTN_EDIT_POST", "BTN_ACCOUNT"):
             self.assertNotIn(name, source)
-        # Klaviaturada alohida Status/Paket tugmasi qolmagan.
+        # Hisobot/Status/Paket tugmalari menyudan butunlay olib tashlandi.
+        for name in ("BTN_REPORT", "BTN_PLAN"):
+            self.assertNotIn(f"T.{name}", source)
+        # Klaviaturada alohida Status/Paket/Hisobot tugmasi qolmagan.
         kb_source = Path(APP_DIR / "bot/keyboards.py").read_text(encoding="utf-8")
         self.assertNotIn("KeyboardButton(T.BTN_STATUS)", kb_source)
         self.assertNotIn("KeyboardButton(T.BTN_PLAN)", kb_source)
+        self.assertNotIn("KeyboardButton(T.BTN_REPORT)", kb_source)
 
 
 if __name__ == "__main__":

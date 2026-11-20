@@ -19,7 +19,6 @@ def kb_login() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         [
             [KeyboardButton(T.BTN_LOGIN)],
-            [KeyboardButton(T.BTN_TEAM_ADMIN)],
         ],
         resize_keyboard=True,
     )
@@ -51,36 +50,26 @@ def kb_main(
     """
     if super_admin:
         return kb_super_admin()
-    # Tugmaning o'zi holatni bildiradi: to'xtagan bo'lsa Start (OFF),
-    # ishlayotgan bo'lsa Stop (ON).
-    action = (
-        f"{T.BTN_STOP} (🟢 ON)" if running else f"{T.BTN_START} (🔴 OFF)"
-    )
+    # Start va Stop — doimiy ikki tugma. Holat (ON/OFF) ularning
+    # yorlig'ida emas, alohida xabarda beriladi.
     rows = [
-        [KeyboardButton(action)],
-        [KeyboardButton(T.BTN_REPORT), KeyboardButton(T.BTN_REFERRAL)],
+        [KeyboardButton(T.BTN_START), KeyboardButton(T.BTN_STOP)],
         [
+            KeyboardButton(T.BTN_FIND_GROUPS),
             KeyboardButton(T.BTN_GROUPS),
-            KeyboardButton(T.BTN_GROUP_INTERVAL),
         ],
         [
             KeyboardButton(T.BTN_ADD_POST),
             KeyboardButton(T.BTN_DEL_POST),
         ],
-        [KeyboardButton(T.BTN_TIMER)],
+        [
+            KeyboardButton(T.BTN_INTERVAL),
+            KeyboardButton(T.BTN_REFERRAL),
+        ],
     ]
     # Jamoa adminiga — o'z jamoasini boshqarish tugmasi.
     if team_admin or team_member:
         rows.append([KeyboardButton(T.BTN_TEAM_MENU)])
-    # Jamoasiz foydalanuvchi — jamoani qo'lda tanlash mumkin va o'z jamoasini
-    # yaratishi (jamoa admini bo'lish) mumkin.
-    else:
-        rows.append(
-            [
-                KeyboardButton(T.BTN_TEAM_PICK),
-                KeyboardButton(T.BTN_TEAM_ADMIN),
-            ]
-        )
     return ReplyKeyboardMarkup(rows, resize_keyboard=True)
 
 
@@ -141,7 +130,6 @@ def kb_referral(link: str, team_link: str = "") -> InlineKeyboardMarkup:
         rows.append(
             [InlineKeyboardButton("🎯 Jamoa havolasi", url=team_link)]
         )
-    rows.append([InlineKeyboardButton("📦 Paket va limitlar", callback_data="ref:plan")])
     return InlineKeyboardMarkup(rows)
 
 
@@ -268,11 +256,9 @@ def kb_my_groups(
 ) -> InlineKeyboardMarkup:
     """Foydalanuvchining o'z guruhlari — bitta boshqaruv oynasi.
 
-    Har bir guruh uchun ikki tugma:
-      * ``⏱ X daq`` / ``⏱ Umumiy`` — **alohida** intervalni o'zgartirish;
-      * ``🗑 N. guruh`` — guruhni o'chirish.
-
-    Yuqorida — guruh qo'shish (avtomatik qidiruv) va umumiy interval.
+    Yuqorida — guruh qo'shish (avtomatik qidiruv). Pastda — har bir
+    guruh uchun **faqat** o'chirish tugmasi (``🗑 N. guruh``).
+    Interval o'zgartirish ``⏱ Interval`` oynasidan amalga oshadi.
     """
     max_page = max(0, (len(groups) - 1) // page_size)
     page = min(max(page, 0), max_page)
@@ -282,24 +268,15 @@ def kb_my_groups(
             InlineKeyboardButton(
                 "🔍 Guruhlarni topish", callback_data="mg:find"
             ),
-            InlineKeyboardButton(
-                "⏱ Umumiy interval", callback_data="mg:global"
-            ),
         ]
     ]
     for offset, item in enumerate(groups[start : start + page_size], start):
         group_id = int(item["id"])
         value = str(item["value"])
-        interval = item.get("interval_min")
-        interval_label = f"{int(interval)} daq" if interval is not None else "Umumiy"
         rows.append(
             [
                 InlineKeyboardButton(
-                    f"⏱ {interval_label}",
-                    callback_data=f"mg:gint:{group_id}",
-                ),
-                InlineKeyboardButton(
-                    f"🗑 {offset + 1}. {value[:24]}",
+                    f"🗑 {offset + 1}. {value[:30]}",
                     callback_data=f"mg:del:{group_id}",
                 ),
             ]
@@ -322,6 +299,30 @@ def kb_my_groups(
         [InlineKeyboardButton("⬅️ Asosiy menyu", callback_data="mg:back")]
     )
     return InlineKeyboardMarkup(rows)
+
+
+def kb_interval_choice() -> InlineKeyboardMarkup:
+    """⏱ Interval oynasi — umumiy yoki bitta guruh uchun.
+
+    Ikki xil interval mavjud:
+      * ``🌐 Barcha guruhlar uchun`` — umumiy interval (barcha guruh);
+      * ``⏱ Bitta guruh uchun`` — alohida interval (tanlangan guruh).
+    """
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    "🌐 Barcha guruhlar uchun", callback_data="int:global"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    "⏱ Bitta guruh uchun", callback_data="int:one"
+                )
+            ],
+            [InlineKeyboardButton("⬅️ Asosiy menyu", callback_data="int:back")],
+        ]
+    )
 
 
 def kb_my_group_interval(

@@ -210,9 +210,13 @@ class LegacyMigrationTestCase(unittest.IsolatedAsyncioTestCase):
             await fn(update)
             return update.message.reply_text.await_args.args[0]
 
-        self.assertIn("STATUS", (await render(menu.show_status)).upper())
-        self.assertIn("HISOBOT", (await render(menu.show_report)).upper())
-        self.assertIn("PAKET", (await render(menu.show_plan)).upper())
+        from bot import my_groups as MG
+
+        self.assertIn("INTERVAL", (await render(menu.show_interval_choice)).upper())
+        self.assertIn(
+            "GURUHLAR",
+            (await render(lambda u: MG.show_my_groups(u, self.UID))).upper(),
+        )
 
     async def test_stats_panel_survives_missing_history(self) -> None:
         await db.init_db()

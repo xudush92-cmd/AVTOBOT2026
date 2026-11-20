@@ -14,7 +14,7 @@ qaytish rejasini beradi.
 | Worker yuborish | 🟡 o'rta | Endi albom `send_file([...])` orqali, matnli post `link_preview` bayrog'i bilan ketadi. Kunlik limit/faol soat yoqilsa, yuborishlar o'sha oynaga moslashadi |
 | Media disk | 🟡 o'rta | Albomlar bilan fayllar soni o'sadi. Har user uchun kvota: `MAX_MEDIA_FILES_PER_USER` (standart 200) |
 
-Barcha yangi funksiya testlangan: **481 test** (`python -m unittest discover -s tests -t tests`).
+Barcha yangi funksiya testlangan: **497 test** (`python -m unittest discover -s tests -t tests`).
 
 ### 🆕 «🔍 Guruhlarni topish» skaneri — tez, izolyatsiyalangan, havolali
 
@@ -57,6 +57,21 @@ yozuvlarini vaqtincha bloklab qoldirgan bo'lardi.
 | Qism | Xavf | Izoh |
 | ---- | ---- | ---- |
 | `core/update_locks.py` | 🟢 past | Lock'lar avval `uid % 256` (striped) uslubida taqsimlanardi. Natijada `uid=1` va `uid=257` **bir xil** lock'ni olardi — bitta foydalanuvchi uzoq amal qilsa, ikkinchisi **kutib qolardi**. Endi lock'lar **aybiga** yaratiladi va `WeakValueDictionary` bilan saqlanadi (faol bo'lmagan lock'lar xotiradan o'chadi) |
+
+### 🆕 Soddalashtirilgan menyu — kamroq, aniqroq tugmalar
+
+Foydalanuvchilar tugmalarni ko'p deb xal qilayotgani uchun menyu
+qisqartirildi. Hisobot/Status/Paket **butunlay olib tashlandi**.
+
+| Qism | Xavf | Izoh |
+| ---- | ---- | ---- |
+| Asosiy menyu | 🟢 past | Endi: `▶️ Start`, `⛔ Stop`, `🔍 Guruhlarni topish`, `💬 Guruhlar`, `➕ Post qo'shish`, `🗑 Post o'chirish`, `⏱ Interval`, `👥 Referal` (+ jamoa a'zosi/adminida `👥 Jamoam`) |
+| Start/Stop ajratildi | 🟢 past | Ikkalasi **doimiy, alohida** tugmalar. Holat yorlig'i olib tashlandi — tugma bosilganda alohida xabar bilan aytiladi |
+| `📈 Hisobot` / `📊 Status` / `📦 Paket` | 🟢 past | Butunlay olib tashlandi. `/status` buyrug'i ham olib tashlandi (Telegram buyruqlar ro'yxatidan ham) |
+| `⏱ Interval` | 🟢 past | Ikki xil interval **bitta oynada**: `🌐 Barcha guruhlar uchun` va `⏱ Bitta guruh uchun`. Eski `⏱ Guruh intervali` va `⏱ Posting oralig'i` tugmalari o'rniga keldi |
+| `💬 Guruhlar` oynasi | 🟢 past | Yuqorida **guruh havolalari** (raqam bilan, `https://t.me/...`), pastda **faqat** `🗑 N. guruh` o'chirish tugmalari. Yopiq guruhlarda havola chiqmaydi |
+| Jamoa tugmalari | 🟡 o'rta | Jamoasiz foydalanuvchida `🎯 Jamoani tanlash` va `👑 Admin bo'lish` **yo'q**. Jamoa adminini faqat super admin panelidan qo'shish mumkin. Batafsil — `docs/JAMOA_TIZIMI.md` |
+| Eski klaviaturalar | 🟢 past | Eski tugma matnlari (`⏱ Guruh intervali`, `⏱ Posting oralig'i`, `🎯 Jamoani tanlash`) **ishlashda davom etadi** — ular yangi oynalarga yo'naltiriladi |
 
 ### 🆕 💬 Foydalanuvchining o'z guruhlarini boshqarish oynasi
 

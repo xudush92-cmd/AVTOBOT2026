@@ -1809,25 +1809,27 @@ class MainKeyboardRoleTests(unittest.IsolatedAsyncioTestCase):
         markup = await KB.kb_main_for(USER_1)
         self.assertIn(T.BTN_TEAM_MENU, self._buttons(markup))
 
-    async def test_plain_user_sees_team_pick_button(self) -> None:
-        """Jamoasiz foydalanuvchi «🎯 Jamoani tanlash» tugmasini ko'radi."""
-        await db.upsert_user(USER_1, name="Oddiy")
-        markup = await KB.kb_main_for(USER_1)
-        self.assertIn(T.BTN_TEAM_PICK, self._buttons(markup))
-        self.assertNotIn(T.BTN_TEAM_MENU, self._buttons(markup))
+    async def test_plain_user_sees_no_team_pick_button(self) -> None:
+        """Jamoasiz foydalanuvchi jamoani tanlash tugmasini KO'RMASDI.
 
-    async def test_plain_user_sees_admin_button(self) -> None:
-        """Jamoasiz foydalanuvchi «👑 Admin bo'lish» tugmasini ko'radi.
-
-        Foydalanuvchi jamoa yaratishi (jamoa admini bo'lishi) mumkin —
-        bu tugma asosiy menyuda bo'lishi shart.
+        Jamoalar yopiq — jamoaga faqat jamoa admini qo'shadi.
         """
         await db.upsert_user(USER_1, name="Oddiy")
         markup = await KB.kb_main_for(USER_1)
-        self.assertIn(
+        self.assertNotIn(T.BTN_TEAM_PICK, self._buttons(markup))
+        self.assertNotIn(T.BTN_TEAM_MENU, self._buttons(markup))
+
+    async def test_plain_user_does_not_see_admin_button(self) -> None:
+        """Jamoasiz foydalanuvchi «👑 Admin bo'lish» tugmasini KO'RMASDI.
+
+        Jamoa adminini faqat super admin panelidan qo'shish mumkin.
+        """
+        await db.upsert_user(USER_1, name="Oddiy")
+        markup = await KB.kb_main_for(USER_1)
+        self.assertNotIn(
             T.BTN_TEAM_ADMIN,
             self._buttons(markup),
-            "jamoa admini bo'lish tugmasi asosiy menyuda bo'lishi kerak",
+            "jamoa adminini faqat super admin yaratadi",
         )
 
     async def test_team_member_does_not_see_admin_button(self) -> None:
@@ -1850,10 +1852,10 @@ class MainKeyboardRoleTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn(T.BTN_TEAM_PICK, self._buttons(markup))
         self.assertNotIn(T.BTN_TEAM_ADMIN, self._buttons(markup))
 
-    async def test_login_keyboard_has_admin_button(self) -> None:
-        """Kirish ekranida ham jamoa admini bo'lish tugmasi bor."""
+    async def test_login_keyboard_has_no_admin_button(self) -> None:
+        """Kirish ekranida jamoa admini bo'lish tugmasi yo'q."""
         buttons = [b.text for row in KB.kb_login().keyboard for b in row]
-        self.assertIn(T.BTN_TEAM_ADMIN, buttons)
+        self.assertNotIn(T.BTN_TEAM_ADMIN, buttons)
         self.assertIn(T.BTN_LOGIN, buttons)
 
     async def test_legacy_team_pick_text_still_works(self) -> None:
@@ -1874,7 +1876,11 @@ class MainKeyboardRoleTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(handled, "eski tugma matni ham ishlashi kerak")
 
     async def test_admin_button_starts_team_creation(self) -> None:
-        """«👑 Admin bo'lish» bosilganda jamoa yaratish oqimi boshlanadi."""
+        """«👑 Admin bo'lish» bosilganda jamoa yaratish oqimi boshlanadi.
+
+        Tugma menyudan olib tashlangan (jamoa adminini faqat super admin
+        yaratadi), lekin eski klaviaturadagi matn ham ishlashda davom etadi.
+        """
         from bot.menu import route_menu_button
 
         await db.upsert_user(USER_1, name="Oddiy")

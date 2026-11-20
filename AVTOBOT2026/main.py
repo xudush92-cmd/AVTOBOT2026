@@ -93,7 +93,7 @@ MENU_BUTTONS = frozenset(
         T.BTN_ADD_POST,
         T.BTN_DEL_POST,
         T.BTN_TIMER,
-        T.BTN_REPORT,
+        T.BTN_INTERVAL,
         T.BTN_REFERRAL,
         T.BTN_TEAM_ADMIN,
         T.BTN_TEAM_MENU,
@@ -161,16 +161,18 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """/status — menyu tugmasisiz ham holatni ko'rsatadi."""
+    """/status — olib tashlangan; foydalanuvchiga qisqa yo'riqnoma."""
     uid = update.effective_user.id
     async with user_update_lock(uid):
         user = await db.get_user(uid)
         if uid == SUPER_ADMIN or not (user and user.get("is_admin")):
             await update.message.reply_text(T.WELCOME_SHORT, reply_markup=KB.kb_login())
             return
-        from bot.menu import show_status
-
-        await show_status(update)
+        await update.message.reply_text(
+            "ℹ️ «Status» va «Hisobot» olib tashlangan.\n\n"
+            "Holatni «▶️ Start» / «⛔ Stop» tugmalari orqali boshqarasiz.",
+            reply_markup=await get_menu(uid),
+        )
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -1500,7 +1502,6 @@ async def set_bot_commands(app: Application) -> bool:
     commands = [
         BotCommand("start", "Botni ochish / menyu"),
         BotCommand("help", "Qanday ishlaydi — qisqa yo'riqnoma"),
-        BotCommand("status", "Holat va kunlik hisobot"),
     ]
     try:
         await _with_retry(lambda: app.bot.set_my_commands(commands))
@@ -1684,7 +1685,6 @@ async def _main() -> None:
     )
     app.add_handler(CommandHandler("help", cmd_help))
     app.add_handler(CommandHandler("status", cmd_status))
-    app.add_handler(CommandHandler("statistika", cmd_status))
     # PTB 21.6: set_my_commands Application'da emas, Bot obyektida.
     # Bu so'rov faqat menyu buyruqlarini ro'ylaydi — muvaffaqiyatsiz bo'lsa
     # ham bot ishlashda davom etishi kerak. Aks holda Telegram vaqtincha

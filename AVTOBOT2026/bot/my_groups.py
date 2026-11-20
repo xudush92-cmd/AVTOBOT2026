@@ -2,15 +2,20 @@
 
 Oqim:
 1. Asosiy menyudagi ``💬 Guruhlar`` tugmasi bu oynani ochadi.
-2. Oynada har bir guruh uchun:
-   * ``⏱ X daq`` / ``⏱ Umumiy`` — **alohida** intervalni o'zgartirish;
-   * ``🗑 N. guruh`` — guruhni o'chirish.
-3. Yuqorida — ``🔍 Guruhlarni topish`` (avtomatik qidiruv) va
-   ``⏱ Umumiy interval`` (barcha guruh uchun).
+2. Oynada yuqorida — ``🔍 Guruhlarni topish`` (avtomatik qidiruv) va
+   guruh **havolalari** ro'yxati (raqam bilan).
+3. Pastda — har bir guruh uchun **faqat** ``🗑 N. guruh`` o'chirish tugmasi.
 
-Callback prefiksi: ``mg:`` (mening guruhlarim). Super adminning
-``uc:`` prefiksidan ajratilgan — admin boshqa foydalanuvchining
-guruhini boshqaradi, bu esa **o'z** guruhini.
+Interval o'zgartirish alohida oynada — ``⏱ Interval``:
+  * ``🌐 Barcha guruhlar uchun`` — umumiy interval;
+  * ``⏱ Bitta guruh uchun`` — bitta tanlangan guruh uchun.
+
+Callback prefikslari:
+  * ``mg:`` — mening guruhlarim (o'chirish, skaner);
+  * ``int:`` — interval oynasi.
+
+Ikkalasi ham super adminning ``uc:`` prefiksidan ajratilgan — admin
+boshqa foydalanuvchining guruhini boshqaradi, bu esa **o'z** guruhini.
 
 Muhim: bu modul **faqat** super admin bo'lmagan foydalanuvchilar uchun.
 Super admin allaqachon ``uc:`` orqali barcha foydalanuvchilarni
@@ -42,6 +47,37 @@ def _is_super_admin(uid: int) -> bool:
     from config.config import SUPER_ADMIN
 
     return int(uid) == int(SUPER_ADMIN)
+
+
+def public_link(value: str) -> str:
+    """Guruh uchun ochiq havola (``https://t.me/username``).
+
+    Faqat username bor guruhlarda mavjud. Yopiq guruhlarda
+    (``-100...`` marked ID) Telegram ochiq havola bermaydi — u yerda
+    bo'sh qaytariladi va havola ro'yxatda chiqarilmaydi.
+    """
+    raw = (value or "").strip()
+    if raw.startswith("@"):
+        return f"https://t.me/{raw[1:]}"
+    if raw.startswith("https://t.me/"):
+        return raw
+    return ""
+
+
+def escape_html(text: str) -> str:
+    """Telegram HTML uchun maxsus belgilarni escape qiladi.
+
+    ``_`` — Telegram'ning *italic* belgisi. Username ichida u bo'lsa
+    (``taxi_tashkent``) matn noto'g'ri chiziladi, shuning uchun
+    ``\\_`` ga almashtiriladi.
+    """
+    return (
+        (text or "")
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace("_", "\\_")
+    )
 
 
 async def _back_markup(uid: int):
@@ -81,13 +117,26 @@ async def show_my_groups(
 
     max_page = max(0, (len(groups) - 1) // PAGE_SIZE)
     page = min(max(page, 0), max_page)
-    global_interval = await db.get_interval(uid)
+
+    # Guruh havolalari — raqam bilan. Yopiq guruhlarda havola yo'q.
+    links: list[str] = []
+    for item in groups:
+        link = public_link(str(item.get("value") or ""))
+        if link:
+            links.append(link)
+    links_block = ""
+    if links:
+        numbered = "\n".join(
+            f"{idx}. {escape_html(link)}"
+            for idx, link in enumerate(links, start=1)
+        )
+        links_block = f"\n\n<b>🔗 Guruh havolalari:</b>\n\n{numbered}"
+
     text = (
         "💬 <b>GURUHLAR</b>\n\n"
-        f"Guruhlar soni: {len(groups)} ta\n"
-        f"Umumiy interval: {global_interval} daqiqa\n\n"
-        "Har guruh yonidagi <b>⏱</b> tugmasi orqali alohida interval "
-        "belgilaysiz. <b>🗑</b> — guruhni o'chiradi."
+        f"Guruhlar soni: {len(groups)} ta"
+        f"{links_block}\n\n"
+        "Quyidagi <b>🗑</b> tugmalari orqali guruhni o'chirish mumkin."
     )
     if note:
         text = f"{note}\n\n{text}"
@@ -135,6 +184,72 @@ async def show_group_interval(
                 group_id, custom_interval
             ),
         )
+
+
+async def handle_interval_choice_callback(
+    update: Update,
+    uid: int,
+    data: str,
+) -> None:
+    """``int:`` prefiksi — ⏱ Interval oynasi.
+
+    Action'lar:
+      * ``int:global`` — umumiy intervalni o'zgartirish;
+      * ``int:one`` — bitta guruh uchun alohida interval;
+      * ``int:back`` — asosiy menyuga qaytish.
+    """
+    q = update.callback_query
+    action = data.split(":")[1] if ":" in data else ""
+
+    if action == "noop":
+        await q.answer()
+        return
+
+    if action == "back":
+        await q.answer()
+        with contextlib.suppress(Exception):
+            await q.edit_message_text(
+                "⬅️ Asosiy menyu",
+                reply_markup=await _back_markup(uid),
+            )
+        return
+
+    if action == "global":
+        # Umumiy interval — an'anaviy oqim (raqamni qo'lda kiritish).
+        await q.answer()
+        from bot import timer as Tm
+
+        await Tm.begin_set_interval(update)
+        return
+
+    if action == "one":
+        # Bitta guruh uchun — guruhni tanlash oynasi.
+        await q.answer()
+        groups = await db.get_chat_records(uid)
+        if not groups:
+            with contextlib.suppress(Exception):
+                await q.edit_message_text(
+                    "💬 Guruhlar yopiq. Avval guruh qo'shing.",
+                    reply_markup=KB.kb_my_groups([], 0),
+                )
+            return
+        global_interval = await db.get_interval(uid)
+        text = (
+            "⏱ <b>GURUH INTERVALI</b>\n\n"
+            f"Umumiy interval: {global_interval} daqiqa\n\n"
+            "Intervalni o'zgartirmoqchi guruhni tanlang."
+        )
+        with contextlib.suppress(Exception):
+            await q.edit_message_text(
+                text,
+                parse_mode="HTML",
+                reply_markup=KB.kb_group_interval_picker(
+                    groups, global_interval
+                ),
+            )
+        return
+
+    await q.answer()
 
 
 async def handle_my_groups_callback(
