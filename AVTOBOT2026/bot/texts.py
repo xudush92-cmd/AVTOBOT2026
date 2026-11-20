@@ -1488,6 +1488,14 @@ TEAM_ADMIN_NO_TEAM = (
     "Jamoangizni o'zingiz shakllantiring — nomini va sig'imini kiriting."
 )
 
+# Super admin tayyorlagan admin uchun (jamoa avtomatik yaratilgan holat).
+TEAM_ADMIN_CREATED_NOTICE = (
+    "✅ Siz uchun jamoa tayyorlandi.\n\n"
+    "👥 <b>{name}</b>\n"
+    "👤 Sig'imi: {limit}\n\n"
+    "Endi jamoangizga do'stlarni telefon orqali qo'sha olasiz."
+)
+
 # ── Oddiy jamoa a'zosi uchun (jamoadan chiqish) ──
 TEAM_MEMBER_INFO = (
     "👥 <b>{name}</b>\n\n"

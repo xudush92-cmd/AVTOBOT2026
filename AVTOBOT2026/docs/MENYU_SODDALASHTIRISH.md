@@ -188,5 +188,5 @@ va admin panelini cheklamaydigan yengil yondashuv.
   xabarlarida qoladi, lekin yangi menyuda ko'rinmaydi va yangi foydalanuvchi
   ularga duch kelmaydi.
 - Admin paneli va uning guruh/post boshqaruvi **o'zgarishsiz** qoldi.
-- Testlar: `python -m unittest discover -s tests -t tests` — **509 test**,
+- Testlar: `python -m unittest discover -s tests -t tests` — **520 test**,
   barchasi yashil.

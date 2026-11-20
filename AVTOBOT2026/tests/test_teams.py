@@ -1080,9 +1080,18 @@ class DurationCapTests(unittest.IsolatedAsyncioTestCase):
 
         member = await db.get_user(USER_1)
         self.assertTrue(member["is_admin"])
-        self.assertEqual(
-            member["tariff_expires_at"],
-            calc_expires(60),
+        # Muddat 60 kundan ko'p bo'lmasligi kerak. Aniq sanani emas,
+        # intervalni tekshiramiz — `calc_expires` vaqt chegarasiga bog'liq
+        # (ikkita `now()` chaqiruvi orasida 1 soniya o'tishi mumkin).
+        from datetime import datetime
+
+        expires = datetime.strptime(
+            member["tariff_expires_at"], "%Y-%m-%d %H:%M:%S"
+        )
+        days = (expires - datetime.utcnow()).days
+        self.assertIn(
+            days,
+            (59, 60),
             "jamoa admini 60 kundan ko'p muddat bermasligi kerak",
         )
 

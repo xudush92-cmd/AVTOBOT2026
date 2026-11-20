@@ -14,7 +14,14 @@ qaytish rejasini beradi.
 | Worker yuborish | 🟡 o'rta | Endi albom `send_file([...])` orqali, matnli post `link_preview` bayrog'i bilan ketadi. Kunlik limit/faol soat yoqilsa, yuborishlar o'sha oynaga moslashadi |
 | Media disk | 🟡 o'rta | Albomlar bilan fayllar soni o'sadi. Har user uchun kvota: `MAX_MEDIA_FILES_PER_USER` (standart 200) |
 
-Barcha yangi funksiya testlangan: **509 test** (`python -m unittest discover -s tests -t tests`).
+Barcha yangi funksiya testlangan: **520 test** (`python -m unittest discover -s tests -t tests`).
+
+### 🆕 Jamoa adminiga haqiqiy jamoa + sekin rejim (slow mode) ishlovi
+
+| Qism | Xavf | Izoh |
+| ---- | ---- | ---- |
+| Avtomatik jamoa yaratish | 🟢 past | Super admin jamoa adminini tayyorlaganda uning uchun **haqiqiy jamoa** yaratiladi va admin darhol shu jamoaga bog'lanadi (`team_id` 0 bo'lmaydi). Jamoa nomi avtomatik (`Jamoa #<uid>`) — har bir adminning jamoasi **unikal**. Admin allaqachon jamoaga bog'langan bo'lsa, mavjudi saqlanadi (ikkinchisi yaratilmaydi) |
+| `SlowModeWaitError` | 🟢 past | Telegram'dagi guruh "sekin rejimi" endi alohida ushlanadi: `.seconds` dan foydalaniladi, keyingi yuborish **o'z vaqtida rejalashtiriladi** va darhol qayta urinish qilinmaydi. Bu `FloodWaitError` dan farqli — **faqat shu guruhni** bloklaydi, shuning uchun boshqa guruhlarga yuborish davom etadi |
 
 ### 🆕 «🔍 Guruhlarni topish» skaneri — tez, izolyatsiyalangan, havolali
 

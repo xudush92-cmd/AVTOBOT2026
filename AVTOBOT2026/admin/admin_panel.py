@@ -559,6 +559,42 @@ async def handle_db_callback(update: Update, admin_uid: int, data: str) -> None:
 # ─────────────────────────────────────────────────────────────────────────
 # JAMOA ADMINLARI (super admin)
 # ─────────────────────────────────────────────────────────────────────────
+async def _attach_team_for_admin(target: int) -> dict | None:
+    """Jamoa adminiga **haqiqiy** jamoa yaratib bog'laydi.
+
+    Super admin jamoa adminini tayyorlaganda admin darhol o'z jamoasiga
+    ega bo'lishi kerak — jamoani keyincha o'zi yaratmasligi uchun.
+    Agar admin allaqachon jamoaga bog'langan bo'lsa — mavjud jamoa
+    saqlanadi (yangi jamoa yaratilmaydi).
+    """
+    user = await db.get_user(target) or {}
+    current_team_id = int(user.get("team_id") or 0)
+
+    if current_team_id:
+        team = await db.get_team(current_team_id)
+        if team:
+            # Jamoa allaqachon bor — faqat admin belgilarini yangilaymiz.
+            await db.set_team_admin(
+                target,
+                current_team_id,
+                max_users=int(user.get("admin_max_users") or TEAM_DEFAULT_MAX_USERS),
+                admin_expires_at=calc_expires(TEAM_ADMIN_DEFAULT_DAYS),
+            )
+            return team
+
+    team = await db.create_team_for_admin(
+        target,
+        "",
+        max_users=TEAM_DEFAULT_MAX_USERS,
+        admin_expires_at=calc_expires(TEAM_ADMIN_DEFAULT_DAYS),
+    )
+    if team:
+        log(f"👥 Yaratildi: jamoa #{team['id']} (admin uid={target})")
+    else:
+        log(f"⚠️ Jamoa yaratilmadi: admin uid={target}")
+    return team
+
+
 async def begin_add_team_admin(update: Update) -> None:
     """Yangi jamoa admini qo'shish — telefon raqam kiritish."""
     from bot.login import user_states
@@ -591,16 +627,11 @@ async def handle_add_team_admin_phone(update: Update, uid: int, text: str) -> No
     user_states.pop(uid, None)
 
     # Allaqachon ro'yxatdan o'tgan bo'lsa — uni hozir jamoa admini qilib
-    # tayinlaymiz (super adminning tanlovi bo'yicha).
+    # tayinlaymiz va **haqiqiy jamoa** yaratib bog'laymiz.
     existing = await db.get_user_by_phone(phone)
     if existing:
         target = int(existing["uid"])
-        await db.set_team_admin(
-            target,
-            0,
-            max_users=TEAM_DEFAULT_MAX_USERS,
-            admin_expires_at=calc_expires(TEAM_ADMIN_DEFAULT_DAYS),
-        )
+        await _attach_team_for_admin(target)
         # Jamoa admini ham oddiy foydalanuvchi kabi bot imkoniyatlaridan
         # foydalanadi — tasdiqlanmagan bo'lsa, tasdiqlaymiz.
         if not existing.get("is_admin") or existing.get("awaiting_approval"):
@@ -636,8 +667,8 @@ async def show_team_admins(update: Update) -> None:
             "👑 Hozircha jamoa admini yo'q.\n\n"
             "Jamoa adminini **faqat siz** tayyorlaysiz — «➕ Admin "
             "qo'shish» tugmasi orqali telefon raqamini kiriting.\n\n"
-            "Admin ro'yxatdan o'tgach, o'z jamoasining nomi va sig'imi bilan "
-            "jamoani o'zi shakllantiradi.",
+            "Admin ro'yxatdan o'tgach uning uchun avtomatik ravishda "
+            "**jamoa yaratib qo'yiladi** — u darhol o'z jamoasiga ega bo'ladi.",
             reply_markup=KB.kb_team_admins([]),
         )
         return
@@ -690,12 +721,12 @@ async def show_team_admin_card(update: Update, target: int) -> None:
     limit = int(admin.get("admin_max_users") or 0)
     limit_text = f"{limit} ta" if limit else "cheksiz"
 
-    # Jamoasi hali yaratilmagan admin — jamoani o'zi shakllantiradi.
+    # Jamoasi avtomatik yaratilgan admin — jamoa nomi ko'rsatiladi.
     team_line = (
         f"📋 Jamoa: {team_name}"
         if team_name
-        else "📋 Jamoa: ⏳ hali yaratilmagan — admin «👥 Jamoam» "
-        "orqali nomini va sig'imini kiritadi"
+        else "📋 Jamoa: ⏳ hali yaratilmagan — super admin uni tayyorlaganda "
+        "avtomatik yaratiladi"
     )
 
     text = (
