@@ -14,7 +14,20 @@ qaytish rejasini beradi.
 | Worker yuborish | 🟡 o'rta | Endi albom `send_file([...])` orqali, matnli post `link_preview` bayrog'i bilan ketadi. Kunlik limit/faol soat yoqilsa, yuborishlar o'sha oynaga moslashadi |
 | Media disk | 🟡 o'rta | Albomlar bilan fayllar soni o'sadi. Har user uchun kvota: `MAX_MEDIA_FILES_PER_USER` (standart 200) |
 
-Barcha yangi funksiya testlangan: **520 test** (`python -m unittest discover -s tests -t tests`).
+Barcha yangi funksiya testlangan: **530 test** (`python -m unittest discover -s tests -t tests`).
+
+### 🆕 Eski ichki menyular tozalandi (minimal UI — yakuniy)
+
+| Qism | Xavf | Izoh |
+| ---- | ---- | ---- |
+| `kb_groups_menu()` / `kb_posts_menu()` | 🟢 past | Eski alohida «Guruhlar» va «Postlar» **ichki** menyulari butunlay olib tashlandi. Ularning o'rniga: `💬 Guruhlar` — yangi inline boshqaruv oynasi (havolalar + `🗑 N. guruh`), qolgan joylarda — asosiy menyu |
+| `gchk:back` | 🟢 past | Guruhni tekshirish oynasidan orqaga qaytish endi eski menyuga emas, **yangi inline** `💬 Guruhlar` oynasiga qaytadi |
+| `/help` matni | 🟢 past | `📈 Hisobot` (olib tashlangan funksiya) va `video` (rad etiladigan format) eslatilishlari olib tashlandi — matn endi haqiqiyga mos |
+| Post qo'shish ko'rsatmasi | 🟢 past | «Bitta rasm / **video** / fayl» → «Bitta rasm yoki fayl» (video rad etiladi) |
+
+Eski tugmalar (`➕ Guruh qo'shish`, `🔎 Guruhni tekshirish`, `⏱ Guruh intervali`,
+`✏️ Postni tahrirlash`, `👁 Ko'rinishi`, `🧪 Sinov yuborish`) foydalanuvchi
+ekranida **ko'rinmaydi**.
 
 ### 🆕 Jamoa adminiga haqiqiy jamoa + sekin rejim (slow mode) ishlovi
 

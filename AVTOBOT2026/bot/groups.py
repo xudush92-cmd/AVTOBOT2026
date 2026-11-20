@@ -311,9 +311,9 @@ async def begin_check_groups(update: Update) -> None:
     uid = update.effective_user.id
     groups = await db.get_chat_records(uid)
     if not groups:
-        await update.message.reply_text(
-            T.GROUPS_EMPTY_HINT, reply_markup=KB.kb_groups_menu()
-        )
+        from bot import my_groups as MG
+
+        await MG.render_groups_inline(update, uid)
         return
     await update.message.reply_text(
         T.GROUP_PICKER_CHECK,
@@ -328,9 +328,10 @@ async def handle_group_check_callback(
     q = update.callback_query
     parts = data.split(":")
     if len(parts) >= 2 and parts[1] == "back":
-        await q.edit_message_text(
-            "💬 Guruhlar menyusi", reply_markup=KB.kb_groups_menu()
-        )
+        # Orqaga — yangi inline "💬 Guruhlar" oynasi (eski menyu emas).
+        from bot import my_groups as MG
+
+        await MG.render_groups_inline(update, uid, edit=True)
         return
     if len(parts) >= 3 and parts[1] == "page":
         try:
@@ -372,10 +373,9 @@ async def show_groups(update: Update) -> None:
     chats = await db.get_chat_records(uid)
 
     if not chats:
-        await update.message.reply_text(
-            T.GROUPS_EMPTY_HINT,
-            reply_markup=KB.kb_groups_menu(),
-        )
+        from bot import my_groups as MG
+
+        await MG.render_groups_inline(update, uid)
         return
 
     global_interval = await db.get_interval(uid)
@@ -403,7 +403,9 @@ async def show_groups(update: Update) -> None:
     for index, chunk in enumerate(chunks):
         await update.message.reply_text(
             chunk,
-            reply_markup=(KB.kb_groups_menu() if index == len(chunks) - 1 else None),
+            reply_markup=(
+                await KB.kb_main_for(uid) if index == len(chunks) - 1 else None
+            ),
         )
 
 
@@ -497,9 +499,12 @@ async def handle_add_groups(update: Update, text: str) -> None:
     report = T.groups_added_report(added, duplicates, errors)
     with contextlib.suppress(Exception):
         await msg.edit_text(report)
+    # Natija allaqachon `msg` da ko'rsatildi — asosiy menyuni qaytaramiz.
+    # ``kb_main()`` rolsiz variant ishlatiladi: bu oqimda baza bilan
+    # qo'shimcha so'rov kerak emas.
     await update.message.reply_text(
-        "💬 Guruhlar menyusi",
-        reply_markup=KB.kb_groups_menu(),
+        "💬 Guruhlar",
+        reply_markup=KB.kb_main(),
     )
 
     log(f"📊 Guruhlar: {uid} → +{len(added)} (⚠️{len(duplicates)} ❌{len(errors)})")

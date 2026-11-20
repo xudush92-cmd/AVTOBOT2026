@@ -3,10 +3,10 @@ Asosiy menyu handlerlari (yassi, ichki menyusiz klaviatura).
 
 Tugmalar:
 - ▶️ Start / ⛔ Stop
-- 📊 Status / 📈 Hisobot / 📦 Paket
-- 🔍 Guruhlarni topish / ➖ Guruh o'chirish
+- 🔍 Guruhlarni topish / 💬 Guruhlar
 - ➕ Post qo'shish / 🗑 Post o'chirish
-- ⏱ Posting oralig'i / 👥 Referal
+- ⏱ Interval / 👥 Referal
+- 👥 Jamoam (faqat jamoa a'zosi/adminida)
 """
 
 from __future__ import annotations

@@ -839,7 +839,9 @@ async def _handle_post_picker_locked(
     parts = data.split(":")
 
     if len(parts) >= 2 and parts[1] in {"cancel", "back"}:
-        await q.edit_message_text(T.ACTION_CANCELLED, reply_markup=KB.kb_posts_menu())
+        await q.edit_message_text(
+            T.ACTION_CANCELLED, reply_markup=await KB.kb_main_for(uid)
+        )
         return
     if len(parts) >= 3 and parts[1] == "page":
         try:
@@ -912,7 +914,7 @@ async def _handle_test_pick_locked(update: Update, uid: int, data: str) -> None:
     parts = data.split(":")
     if len(parts) >= 2 and parts[1] in {"cancel", "back"}:
         await q.edit_message_text(
-            "📝 Postlar menyusi", reply_markup=KB.kb_posts_menu()
+            "📝 Postlar menyusi", reply_markup=await KB.kb_main_for(uid)
         )
         return
     if len(parts) >= 3 and parts[1] == "page":
@@ -932,7 +934,7 @@ async def _handle_test_pick_locked(update: Update, uid: int, data: str) -> None:
     groups = await db.get_chat_records(uid)
     if not groups:
         await q.edit_message_text(
-            T.GROUPS_EMPTY_HINT, reply_markup=KB.kb_groups_menu()
+            T.GROUPS_EMPTY_HINT, reply_markup=await KB.kb_main_for(uid)
         )
         return
     await q.edit_message_text(
@@ -946,7 +948,7 @@ async def _handle_test_group_locked(update: Update, uid: int, data: str) -> None
     parts = data.split(":")
     if len(parts) >= 2 and parts[1] == "back":
         await q.edit_message_text(
-            "📝 Postlar menyusi", reply_markup=KB.kb_posts_menu()
+            "📝 Postlar menyusi", reply_markup=await KB.kb_main_for(uid)
         )
         return
     if len(parts) >= 4 and parts[1] == "page":
@@ -1008,7 +1010,7 @@ async def handle_test_send_confirm(update: Update, uid: int, data: str) -> None:
     await q.edit_message_text("⏳ Yuborilmoqda...")
     _, message = await send_test_to_group(uid, post_id, group_id)
     await application.bot.send_message(
-        uid, message, reply_markup=KB.kb_posts_menu()
+        uid, message, reply_markup=await KB.kb_main_for(uid)
     )
 
 
