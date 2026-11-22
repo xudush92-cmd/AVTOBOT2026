@@ -32,6 +32,7 @@ from telegram import Update
 from telethon import TelegramClient
 from telethon.sessions import StringSession
 
+from bot import discover_sessions as DS
 from bot import keyboards as KB
 from bot import texts as T
 from config.config import API_HASH, API_ID
@@ -144,6 +145,25 @@ async def build_groups_window(
             "«🔍 Guruhlarni topish» tugmasi orqali Telegram'dagi "
             "guruhlaringizni avtomatik toping va qo'shing."
         )
+        # Skanerda topilgan, lekin hali qo'shilmagan guruhlar bo'lsa —
+        # foydalanuvchi "guruhlar yo'q" deb xato tushunmasligi uchun
+        # aniq eslatma beriladi.
+        pending = DS.get_session(uid)
+        if pending is not None and getattr(pending, "groups", None):
+            found = len(pending.groups)
+            selected = len(getattr(pending, "selected", set()) or set())
+            if selected:
+                text += (
+                    f"\n\nℹ️ Skanerda <b>{found}</b> ta guruh topilgan, "
+                    f"<b>{selected}</b> tasi tanlangan. "
+                    "Ro'yxatda «Tanlanganlarni qo'shish» tugmasini bosib, "
+                    "guruhlarni shu yerda qo'shing."
+                )
+            else:
+                text += (
+                    f"\n\nℹ️ Skanerda <b>{found}</b> ta guruh topilgan. "
+                    "Ularni tanlab, «Tanlanganlarni qo'shish» tugmasini bosing."
+                )
         if note:
             text = f"{note}\n\n{text}"
         return text, KB.kb_my_groups([], 0)
@@ -499,6 +519,10 @@ async def handle_my_groups_callback(
             log_gap(uid, "Guruh topilmadi yoki o'chirilgan", action=data)
             return
         removed = await db.remove_chat_by_id(uid, group_id)
+        if removed:
+            # O'chirish izi logga yoziladi — keyin "guruhlar yo'q" holatida
+            # nima bo'lganini tekshirish mumkin bo'ladi.
+            log(f"🗑 {uid} guruh o'chirildi (foydalanuvchi): {group['value']}")
         await q.answer(
             f"🗑 O'chirildi: {group['value']}" if removed else "❌ O'chirilmadi",
             show_alert=True,

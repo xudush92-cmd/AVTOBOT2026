@@ -607,6 +607,10 @@ async def _handle_del_group_locked(update: Update, uid: int, data: str) -> None:
         return
     group_id, page = int(parts[2]), max(0, int(parts[3]))
     removed = await db.remove_chat_by_id(uid, group_id)
+    if removed:
+        # O'chirish izi logga yoziladi — keyin "guruhlar yo'q" holatida
+        # nima bo'lganini tekshirish mumkin bo'ladi.
+        log(f"🗑 {uid} guruh o'chirildi (tugma): {removed}")
     groups = await db.get_chat_records(uid)
     if not groups:
         await q.edit_message_text(

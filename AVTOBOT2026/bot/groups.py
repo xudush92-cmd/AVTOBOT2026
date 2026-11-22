@@ -589,7 +589,12 @@ async def handle_add_groups(update: Update, text: str) -> None:
             errors.extend(f"{rest} (paket chegarasi)" for rest in groups[i:])
             break
         else:
-            errors.append(f"{group} (saqlashda xato)")
+            errors.append(f"{group} (saqlashda xato: {save_reason})")
+            log(
+                f"manual add_chat xatolik: uid={uid}, value={group}, "
+                f"sabab={save_reason}",
+                "warning",
+            )
 
         # Har 5 guruhda progress yangilash
         if i % 5 == 0:
@@ -1178,6 +1183,26 @@ async def handle_discover_callback(update: Update, uid: int, data: str) -> None:
                 break
             else:
                 skipped += 1
+                log(
+                    f"discover_groups: guruh qo'shilmadi "
+                    f"(uid={uid}, value={group.reference}, sabab={reason})",
+                    "warning",
+                )
+
+        # ✅ Qo'shishdan keyin bazada qancha guruh turganini tekshiramiz.
+        # Agar ``add_chat`` "muvaffaqiyatli" deb hisoblanib, lekin yozuv
+        # bazada bo'lmasa — foydalanuvchiga xato yoki to'g'ri natijani
+        # ko'rsatish kerak (avval "guruhlar yo'q" xabari chiqardi).
+        try:
+            stored = await db.get_chat_records(uid)
+        except Exception as exc:  # noqa: BLE001 — himoya
+            stored = []
+            log(
+                f"discover_groups: ro'yxatni tekshirishda xato "
+                f"({uid}: {type(exc).__name__})",
+                "warning",
+            )
+        stored_count = len(stored)
 
         discover_sessions.clear_session(uid)
 
@@ -1190,10 +1215,26 @@ async def handle_discover_callback(update: Update, uid: int, data: str) -> None:
         )
         if limit_hit:
             report += T.DISCOVER_LIMIT_HIT.format(limit=max_groups)
-        await q.answer(
-            f"✅ {len(added)} ta guruh qo'shildi",
-            show_alert=True,
-        )
+
+        # ✅ Qo'shilgan deb hisoblangan guruhlar bazada yo'q bo'lsa —
+        # foydalanuvchiga xato yubormasligimiz kerak. Bunday holatda
+        # "qo'shildi" xabari o'rniga aniq tushuntirish beriladi.
+        if added and not stored_count:
+            report += (
+                "\n\n⚠️ Guruhlar bazaga yozilmadi. "
+                "Xatoni muammoni yozing, biz tuzatamiz."
+            )
+            log(
+                f"discover_groups: {uid} — {len(added)} ta guruh "
+                f"'qo'shildi' deb hisoblandi, lekin bazada 0 ta bor",
+                "error",
+            )
+            await q.answer("❌ Guruhlar qo'shilmadi", show_alert=True)
+        else:
+            await q.answer(
+                f"✅ {len(added)} ta guruh qo'shildi",
+                show_alert=True,
+            )
 
         # ✅ Qo'shilgan guruhlar foydalanuvchiga darhol ko'rinishi kerak —
         # shuning uchun hisobot va yangilangan «💬 Guruhlar» oynasi
@@ -1251,6 +1292,6 @@ async def handle_discover_callback(update: Update, uid: int, data: str) -> None:
                 )
         log(
             f"✅ Tanlangan guruhlar qo'shildi: {uid} → +{len(added)} "
-            f"(takror {duplicates}, o'tkazildi {skipped})"
+            f"(takror {duplicates}, o'tkazildi {skipped}, bazada {stored_count})"
         )
         return
