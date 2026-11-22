@@ -45,6 +45,7 @@ from telethon.sessions import StringSession
 from bot import keyboards as KB
 from bot import texts as T
 from config.config import (
+    ADMIN_CONTACT_PHONE,
     API_HASH,
     API_ID,
     CODE_LENGTH,
@@ -1445,6 +1446,46 @@ async def _finalize_login_locked(uid: int) -> None:
 
     log(f"⏳ Tasdiq kutilmoqda: {uid}")
 
+    # Qaysi admin tasdiqlashi kerak — uch holat:
+    #   1) Jamoa asosi (jamoa admini) — u allaqachon tasdiqlangan,
+    #      super admin raqamiga murojaat qilishga hojat yo'q.
+    #   2) Jamoa a'zosi — tasdiqlaydigan jamoa admini, uning raqami.
+    #   3) Jamoasiz user — tasdiqlaydigan super admin, uning raqami.
+    user_row = await db.get_user(uid) or {}
+    owner_admin_uid = int(user_row.get("owner_admin_uid") or 0)
+    is_team_admin = bool(user_row.get("is_team_admin"))
+
+    if is_team_admin:
+        # Jamoa asosi — tasdiq kutilmaydi. Unga jamoa havolasi kerak,
+        # ammo endi super admin raqamini ko'rsatmaymiz.
+        from bot.teams import team_link
+
+        team_id = int(user_row.get("team_id") or 0)
+        team = await db.get_team(team_id) if team_id else None
+        await application.bot.send_message(
+            uid,
+            T.TEAM_ADMIN_READY.format(
+                name=(team or {}).get("name") or "Jamoangiz",
+                link=team_link(team_id) if team_id else "—",
+            ),
+            reply_markup=await KB.kb_main_for(uid),
+        )
+        return
+
+    if owner_admin_uid and owner_admin_uid != SUPER_ADMIN:
+        # Jamoa a'zosi — murojaat qilish kerak bo'lgan shaxs jamoa admini.
+        contact = await _team_admin_contact(owner_admin_uid)
+        await application.bot.send_message(
+            uid,
+            T.LOGIN_SUCCESS_PENDING_TEAM.format(contact=contact),
+            reply_markup=KB.kb_pending(),
+        )
+        # Tasdiqlovchiga xabar — **fon task**'ida, foydalanuvchi javobini
+        # kechiktirmaslik uchun.
+        schedule_notify_super_for_approval(uid)
+        return
+
+    # Jamoasiz foydalanuvchi — tasdiqlaydigan super admin.
     await application.bot.send_message(
         uid,
         T.LOGIN_SUCCESS_PENDING,
@@ -1454,6 +1495,24 @@ async def _finalize_login_locked(uid: int) -> None:
     # Tasdiqlovchiga xabar — **fon task**'ida, foydalanuvchi javobini
     # kechiktirmaslik uchun.
     schedule_notify_super_for_approval(uid)
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# TASDIQLASH KONTAKTI
+# ─────────────────────────────────────────────────────────────────────────
+async def _team_admin_contact(owner_uid: int) -> str:
+    """Jamoa adminining telefon raqamini qaytaradi.
+
+    Jamoa a'zosiga murojaat qilishi kerak bo'lgan raqam — **jamoa
+    adminining** raqami (super adminning emas). Raqam topilmasa
+    zaxira sifatida umumiy admin kontakti qaytariladi.
+    """
+    if not owner_uid:
+        return ADMIN_CONTACT_PHONE
+    phone = await db.get_phone(owner_uid)
+    if phone:
+        return phone
+    return ADMIN_CONTACT_PHONE
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -1509,6 +1568,12 @@ async def notify_super_for_approval(uid: int) -> None:
 
     user = await db.get_user(uid) or {}
     owner_uid = int(user.get("owner_admin_uid") or 0)
+
+    # Jamoa asosi (jamoa admini) allaqachon tasdiqlangan — unga ariza
+    # yuborilmaydi (u o'ziga o'zi "yangi ariza" yubormasligi kerak).
+    if user.get("is_team_admin"):
+        log(f"👑 Jamoa asosi allaqachon tasdiqlangan — ariza yuborilmaydi: {uid}")
+        return
 
     if owner_uid and owner_uid != SUPER_ADMIN:
         # Jamoali foydalanuvchi — tasdiqlash jamoa adminining vazifasi.

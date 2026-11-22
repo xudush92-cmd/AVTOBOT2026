@@ -250,6 +250,26 @@ LOGIN_SUCCESS_PENDING = (
     f"📞 Tezroq tasdiqlanish uchun: {ADMIN_CONTACT_PHONE}"
 )
 
+# Jamoa a'zosi: tasdiqlash jamoa adminida — uning telefonini ko'rsatamiz.
+LOGIN_SUCCESS_PENDING_TEAM = (
+    "✅ Login muvaffaqiyatli!\n\n"
+    "🔐 Sessiya xavfsiz (shifrlangan) holatda saqlandi.\n"
+    "⏳ Endi jamoa adminingiz sizni tasdiqlashni kutilmoqda.\n\n"
+    "ℹ️ Admin tasdiqlagach sessiya avtomatik faollashadi — qayta Login "
+    "bosish yoki kod kiritish shart emas.\n\n"
+    "📞 Tezroq tasdiqlanish uchun jamoa adminingiz: {contact}"
+)
+
+# Jamoa asosi (jamoa admini) — u allaqachon tasdiqlangan, super admin
+# raqamiga murojaat qilishga hojat yo'q.
+TEAM_ADMIN_READY = (
+    "👑 Siz jamoa admini bo'ldingiz!\n\n"
+    "📋 Jamoangiz: {name}\n"
+    "✅ Siz allaqachon tasdiqdansiz — qo'shimcha kutilish shart emas.\n\n"
+    "🔗 Jamoa havolasi: {link}\n\n"
+    "Endi «👥 Jamoam» orqali do'stlarni qo'shing va ularni tasdiqlang."
+)
+
 # Admin tasdiqlagan sessiya boshqa akkauntga tegishli chiqsa.
 PENDING_SESSION_MISMATCH = (
     "⚠️ Xavfsizlik tekshiruvi: so'ralgan sessiya boshqa Telegram akkauntiga "
@@ -1436,6 +1456,14 @@ TEAM_PENDING_APPROVAL = (
     "Tasdiqlanach botdan foydalanib bo'lmaydi."
 )
 
+# Jamoa a'zosi — tasdiqlash jamoa adminida, uning telefon raqami bilan.
+TEAM_PENDING_APPROVAL_CONTACT = (
+    "⏳ Jamoa admini sizni tasdiqlashni kutilmoqda.\n\n"
+    "📋 Jamoa: {name}\n"
+    "Tasdiqlanach botdan foydalanib bo'lmaydi.\n\n"
+    "📞 Tezroq tasdiqlanish uchun jamoa adminingiz: {contact}"
+)
+
 TEAM_APPROVED = (
     "✅ Jamoa admini sizni tasdiqladi!\n\n"
     "📋 Jamoa: {name}\n"
@@ -1559,15 +1587,64 @@ TEAM_ADD_FRIEND_DONE = (
     "va siz tasdiqlaysiz."
 )
 
-TEAM_ADD_FRIEND_DONE_WITH_ADMIN_LINK = (
+TEAM_ADD_FRIEND_DONE = (
     "✅ Do'st qo'shildi!\n\n"
     "📱 {phone}\n"
     "📋 Jamoa: {team}\n\n"
     "📤 Do'stingizga yuboring:\n"
-    "🔗 Jamoa havolasi: {link}\n"
-    "🔗 Shaxsiy havolangiz: {admin_link}\n\n"
-    "Ikkalasi ham ishlaydi — foydalanuvchi avtomatik sizning jamoangizga "
-    "biriktiriladi va siz tasdiqlaysiz."
+    "🔗 Jamoa havolasi: {link}\n\n"
+    "Foydalanuvchi avtomatik sizning jamoangizga biriktiriladi va siz "
+    "tasdiqlaysiz."
+)
+
+TEAM_ADMIN_RENAME_ASK = (
+    "✏️ Jamoangizning yangi nomini kiriting:\n\n"
+    "Masalan: Avtoelon Toshkent\n\n"
+    "Bu nom foydalanuvchilarga va a'zolarizga ko'rinadi."
+)
+
+TEAM_ADMIN_RENAME_INVALID = (
+    "❌ Jamoa nomi 2–40 ta belgidan iborat bo'lishi kerak."
+)
+
+TEAM_ADMIN_RENAME_TAKEN = (
+    "❌ Bu nom sizning boshqa jamoangizda allaqachon bor.\n\n"
+    "Boshqa nom kiriting."
+)
+
+TEAM_ADMIN_RENAME_DONE = (
+    "✅ Jamoa nomi yangilandi:\n\n📋 {name}"
+)
+
+TEAM_ADMIN_RENAME_NO_TEAM = (
+    "🚫 Sizning jamoangiz topilmadi — avval jamoa yarating."
+)
+
+ADMIN_TEAMBIND_CHOOSE = (
+    "👥 Foydalanuvchini qaysi jamoaga biriktiramiz?\n\n"
+    "Jamoa admini a'zoni tasdiqlaydi — siz faqat yo'naltirasiz."
+)
+
+ADMIN_TEAMBIND_NO_ADMINS = (
+    "👑 Hozircha jamoa admini yo'q.\n\n"
+    "Avval «👑 Jamoa adminlari» bo'limidan jamoa adminini tayyorlang."
+)
+
+ADMIN_TEAMBIND_DONE = (
+    "✅ Foydalanuvchi jamoaga yo'naltirildi.\n\n"
+    "👤 {name}\n"
+    "📋 Jamoa: {team}\n\n"
+    "ℹ️ Endi **jamoa admini** uni tasdiqlashi kerak — ariza unga yuborildi."
+)
+
+ADMIN_TEAMBIND_ALREADY = (
+    "ℹ️ Bu foydalanuvchi allaqachon jamoaga biriktirilgan.\n\n"
+    "📋 Jamoa: {team}"
+)
+
+ADMIN_TEAMBIND_NO_SLOT = (
+    "🚫 {team} jamoasi sig'imi to'lgan.\n\n"
+    "Super admin limitni oshirishi kerak."
 )
 
 TEAM_ADD_FRIEND_EXISTS = (

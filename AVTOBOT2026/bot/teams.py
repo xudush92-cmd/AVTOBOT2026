@@ -61,11 +61,6 @@ def team_link(team_id: int) -> str:
     return f"https://t.me/{BOT_USERNAME}?start=team_{team_id}"
 
 
-def admin_link(admin_uid: int) -> str:
-    """Jamoa adminining shaxsiy havolasi."""
-    return f"https://t.me/{BOT_USERNAME}?start=adm_{admin_uid}"
-
-
 async def admin_teams(admin_uid: int) -> list[dict]:
     """Jamoa adminining o'z jamoalari."""
     return await db.get_teams(admin_uid)
@@ -326,11 +321,10 @@ async def handle_add_friend_phone(update: Update, admin_uid: int, text: str) -> 
     user_states.pop(admin_uid, None)
 
     await update.message.reply_text(
-        T.TEAM_ADD_FRIEND_DONE_WITH_ADMIN_LINK.format(
+        T.TEAM_ADD_FRIEND_DONE.format(
             phone=phone,
             team=team.get("name") or "Jamoangiz",
             link=team_link(int(team["id"])),
-            admin_link=admin_link(admin_uid),
         ),
         reply_markup=await KB.kb_main_for(admin_uid),
     )
@@ -510,6 +504,61 @@ async def handle_team_admin_name(update: Update, uid: int, text: str) -> None:
 
     # Super admin'ni xabardor qilamiz — muddat va sig'imni nazorat qilishi uchun.
     schedule_notify_super_team_admin(uid, name, size)
+
+
+async def handle_team_admin_rename(update: Update, uid: int, text: str) -> None:
+    """Jamoa admini o'z jamoasining nomini o'zgartiradi.
+
+    Super admin tomonidan tayyorlangan jamoalar avtomatik ``Jamoa #<uid>``
+    nomi bilan yaratiladi — admin u nomni o'zgartirishi mumkin bo'lishi
+    kerak, chunki bu nom a'zolar va ariza xabarlarida ko'rinadi.
+    """
+    from bot.login import user_states
+
+    name = " ".join((text or "").split())
+    if not (2 <= len(name) <= 40):
+        await reply_text_safe(
+            update,
+            T.TEAM_ADMIN_RENAME_INVALID,
+            reply_markup=KB.kb_input_cancel(),
+        )
+        return
+
+    team = await primary_team(uid)
+    if not team:
+        user_states.pop(uid, None)
+        await reply_text_safe(
+            update,
+            T.TEAM_ADMIN_RENAME_NO_TEAM,
+            reply_markup=await KB.kb_main_for(uid),
+        )
+        return
+
+    # Nom band emasligi — faqat **o'z jamoalari** orasida tekshiriladi.
+    existing = await db.get_team_by_name(uid, name)
+    if existing and int(existing["id"]) != int(team["id"]):
+        await reply_text_safe(
+            update,
+            T.TEAM_ADMIN_RENAME_TAKEN,
+            reply_markup=KB.kb_input_cancel(),
+        )
+        return
+
+    if not await db.update_team(int(team["id"]), name=name):
+        await reply_text_safe(
+            update,
+            "❌ Jamoa nomini yangilab bo'lmadi. Qayta urinib ko'ring.",
+            reply_markup=KB.kb_input_cancel(),
+        )
+        return
+
+    user_states.pop(uid, None)
+    log(f"✏️ Jamoa nomi yangilandi: jamoa #{team['id']} → {name}")
+    await reply_text_safe(
+        update,
+        T.TEAM_ADMIN_RENAME_DONE.format(name=name),
+        reply_markup=await KB.kb_main_for(uid),
+    )
 
 
 def schedule_notify_super_team_admin(uid: int, name: str, size: int) -> None:
@@ -753,7 +802,12 @@ async def handle_team_admin_callback(update: Update, uid: int, data: str) -> Non
         return
 
     if action == "back":
-        await show_team_admin_panel(update, uid)
+        # Jamoa admini panelidan asosiy menyuga qaytish. (Avval shu
+        # tugma o'z-o'ziga qaytardi — ko'rinish o'zgarmasdi.)
+        from bot.menu import show_home
+
+        await q.answer()
+        await show_home(update, uid)
         return
 
     if action == "addfriend":
@@ -777,17 +831,30 @@ async def handle_team_admin_callback(update: Update, uid: int, data: str) -> Non
         await show_team_invites(update, uid, edit=True)
         return
 
+    if action == "rename":
+        from bot.login import user_states
+
+        team = await primary_team(uid)
+        if not team:
+            await q.answer(T.TEAM_ADMIN_RENAME_NO_TEAM, show_alert=True)
+            return
+        user_states[uid] = {"step": "team_admin_rename", "ts": time.time()}
+        await q.edit_message_text(
+            T.TEAM_ADMIN_RENAME_ASK,
+            reply_markup=KB.kb_input_cancel(),
+        )
+        return
+
     if action == "link":
         team = await primary_team(uid)
         if not team:
             await q.answer(T.TEAM_ADMIN_NO_TEAM, show_alert=True)
             return
         await q.edit_message_text(
-            "🔗 <b>Jamoangiz havolalari</b>\n\n"
+            "🔗 <b>Jamoangiz havolasi</b>\n\n"
             "Do'stlaringizga yuboring — ular avtomatik sizning jamoangizga "
             "birikadi va siz tasdiqlaysiz.\n\n"
-            f"🔗 Jamoa havolasi:\n{team_link(int(team['id']))}\n\n"
-            f"🔗 Shaxsiy havolangiz:\n{admin_link(uid)}",
+            f"🔗 Jamoa havolasi:\n{team_link(int(team['id']))}",
             parse_mode="HTML",
             reply_markup=KB.kb_team_admin_panel(),
         )
@@ -803,6 +870,9 @@ async def handle_team_admin_callback(update: Update, uid: int, data: str) -> Non
             await q.answer(T.TEAM_ADMIN_NO_TEAM, show_alert=True)
             return
         members = await db.get_team_members(int(team["id"]))
+        # Jamoa asosi (jamoa admini) o'z ro'yxatida ko'rinmaydi — u jamoaning
+        # egasi, xabarni allaqachon o'zi yuboradi.
+        members = [m for m in members if int(m.get("uid") or 0) != int(uid)]
         await q.edit_message_text(
             T.team_members_text(members),
             reply_markup=KB.kb_team_members(members, page=page),

@@ -187,10 +187,13 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def _auto_assign_team_from_link(
     update: Update, uid: int, arg: str
 ) -> bool:
-    """``/start team_<id>`` yoki ``/start adm_<uid>`` havolasidan kelgan user.
+    """``/start team_<id>`` havolasidan kelgan user.
 
     Jamoa avtomatik tanlanadi (tasdiq admin tomonidan beriladi). Muvaffaqiyat
     bo'lsa ``True`` qaytaradi.
+
+    Eslatma: ``adm_<uid>`` (shaxsiy jamoa havolasi) olib tashlangan —
+    jamoalar faqat **umumiy** referal havolasi orqali to'ldiriladi.
     """
     if not isinstance(arg, str):
         return False
@@ -200,12 +203,6 @@ async def _auto_assign_team_from_link(
 
     if arg.startswith("team_") and arg[5:].isdigit():
         team_id = int(arg[5:])
-    elif arg.startswith("adm_") and arg[4:].isdigit():
-        owner_uid = int(arg[4:])
-        teams = await db.get_teams(owner_uid)
-        if teams:
-            team_id = int(teams[0]["id"])
-            owner_uid = int(teams[0]["owner_admin_uid"])
     else:
         return False
 
@@ -422,18 +419,21 @@ async def _on_message_locked(
         "team_admin_size",
         "team_admin_name",
         "team_admin_message",
+        "team_admin_rename",
         "team_add_friend",
     ):
         if time.time() - state.get("ts", 0) > LOGIN_TIMEOUT_S:
             Login.user_states.pop(uid, None)
             await msg.reply_text(
                 "⏰ Kiritish oynasi eskirdi. Amalni qaytadan boshlang.",
-                reply_markup=KB.kb_login(),
+                reply_markup=await get_menu(uid),
             )
             return
         if text == T.BTN_BACK:
             Login.user_states.pop(uid, None)
-            await msg.reply_text(T.ACTION_CANCELLED, reply_markup=KB.kb_login())
+            await msg.reply_text(
+                T.ACTION_CANCELLED, reply_markup=await get_menu(uid)
+            )
             return
         if not rate_limiter.is_allowed(uid, "message"):
             await msg.reply_text(
@@ -451,6 +451,9 @@ async def _on_message_locked(
             return
         if step == "team_admin_message":
             await Teams.send_team_message(update, uid, text)
+            return
+        if step == "team_admin_rename":
+            await Teams.handle_team_admin_rename(update, uid, text)
             return
 
     # ── SUPER ADMIN: yangi jamoa admini qo'shish ──
