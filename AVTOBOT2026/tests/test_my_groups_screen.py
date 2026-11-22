@@ -171,15 +171,19 @@ class MyGroupsScreenTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn(r"1. https://t.me/taxi\_tashkent", text)
         self.assertNotIn("-1001234567890", text)
 
-    async def test_groups_list_has_find_button_only(self) -> None:
-        """Ro'yxatda qidiruv tugmasi bor; interval tugmasi yo'q."""
+    async def test_groups_list_has_no_find_button(self) -> None:
+        """Ro'yxatda takror qidiruv tugmasi yo'q; interval tugmasi ham yo'q.
+
+        Skaner tugmasi faqat asosiy menyuda — bir xil amal ikki joyda
+        bo'lmasligi kerak.
+        """
         await db.add_chat(UID, "@g1")
         update, _status = self._update()
         await MG.show_my_groups(update, UID)
 
         markup = update.message.reply_text.await_args.kwargs["reply_markup"]
         datas = [btn.callback_data for btn in _buttons(markup)]
-        self.assertIn("mg:find", datas)
+        self.assertNotIn("mg:find", datas)
         self.assertNotIn("mg:global", datas)
         self.assertFalse(any(d.startswith("mg:gint:") for d in datas))
 

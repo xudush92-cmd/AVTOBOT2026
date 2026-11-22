@@ -257,20 +257,18 @@ def kb_my_groups(
 ) -> InlineKeyboardMarkup:
     """Foydalanuvchining o'z guruhlari — bitta boshqaruv oynasi.
 
-    Yuqorida — guruh qo'shish (avtomatik qidiruv). Pastda — har bir
-    guruh uchun **faqat** o'chirish tugmasi (``🗑 N. guruh``).
-    Interval o'zgartirish ``⏱ Interval`` oynasidan amalga oshadi.
+    Pastda — har bir guruh uchun **faqat** o'chirish tugmasi
+    (``🗑 N. guruh``). Interval o'zgartirish ``⏱ Interval`` oynasidan
+    amalga oshadi.
+
+    ``🔍 Guruhlarni topish`` tugmasi bu yerga **qo'yilmaydi** — u asosiy
+    menyuda mavjud. Shu yerda takror bo'lsa, foydalanuvchi bir xil
+    amalni ikki joyda topadi va chalkashadi.
     """
     max_page = max(0, (len(groups) - 1) // page_size)
     page = min(max(page, 0), max_page)
     start = page * page_size
-    rows: list[list[InlineKeyboardButton]] = [
-        [
-            InlineKeyboardButton(
-                "🔍 Guruhlarni topish", callback_data="mg:find"
-            ),
-        ]
-    ]
+    rows: list[list[InlineKeyboardButton]] = []
     for offset, item in enumerate(groups[start : start + page_size], start):
         group_id = int(item["id"])
         value = str(item["value"])
