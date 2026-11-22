@@ -18,21 +18,26 @@ from bot import keyboards as KB
 from bot import texts as T
 from core import database as db
 from core.logger import log
-from core.utils import is_valid_interval
+from core.utils import is_valid_interval, reply_text_safe
 
 
 # ─────────────────────────────────────────────────────────────────────────
 # BOSHLASH
 # ─────────────────────────────────────────────────────────────────────────
 async def begin_set_interval(update: Update) -> None:
-    """⏰ Vaqt tugmasi bosilganda."""
+    """⏰ Vaqt tugmasi bosilganda.
+
+    Bu oyna ham matnli xabardan, ham inline tugmadan («mg:global»)
+    ochilishi mumkin — shuning uchun `reply_text_safe` ishlatiladi.
+    """
     uid = update.effective_user.id
     from bot.login import user_states
 
     current = await db.get_interval(uid)
     user_states[uid] = {"step": "set_interval", "ts": time.time()}
 
-    await update.message.reply_text(
+    await reply_text_safe(
+        update,
         T.ask_interval(current),
         reply_markup=KB.kb_input_cancel(),
     )

@@ -126,6 +126,21 @@ def kb_input_cancel() -> ReplyKeyboardMarkup:
     )
 
 
+def kb_input_cancel_inline() -> InlineKeyboardMarkup:
+    """Matn kiritish oynasi uchun **inline** bekor tugmasi.
+
+    ``kb_input_cancel()`` — Reply klaviatura. Uni ``edit_message_text``
+    bilan ishlatib bo'lmaydi: Telegram faqat ``InlineKeyboardMarkup``
+    qabul qiladi va aks holda ``BadRequest: Inline keyboard expected``
+    xatosini beradi.
+
+    Shu sabab inline kontekstda (tugma bosilganda) shu variant ishlatiladi.
+    """
+    return InlineKeyboardMarkup(
+        [[InlineKeyboardButton(T.BTN_BACK, callback_data="adm:back")]]
+    )
+
+
 def kb_auth_cancel() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [[InlineKeyboardButton(T.ACTION_CANCEL, callback_data="auth:cancel")]]

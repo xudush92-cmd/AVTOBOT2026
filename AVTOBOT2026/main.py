@@ -61,6 +61,7 @@ from config.config import (
 
 # Core
 from core import database as db
+from core.errlog import log_error, log_gap
 from core.logger import log
 from core.rate_limit import RateLimiter
 from core.update_locks import user_operation_lock, user_update_lock
@@ -347,9 +348,24 @@ async def _cmd_start_locked(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 # MESSAGE HANDLER
 # ─────────────────────────────────────────────────────────────────────────
 async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Private chatdagi xabarlar.
+
+    Xato yuz bersa — foydalanuvchi javob olmay qolmasin: logga to'liq
+    traceback yoziladi va foydalanuvchiga «Xatolik yuz berdi» yuboriladi.
+    """
     uid = update.effective_user.id
-    async with user_update_lock(uid):
-        await _on_message_locked(update, context)
+    try:
+        async with user_update_lock(uid):
+            await _on_message_locked(update, context)
+    except Exception as exc:  # noqa: BLE001
+        log_error(
+            uid,
+            "Matnli xabarni qayta ishlash",
+            exc,
+            action=(update.message.text or "")[:40] if update.message else None,
+        )
+        with contextlib.suppress(Exception):
+            await update.effective_message.reply_text(T.GENERIC_ERROR)
 
 
 async def _on_message_locked(
@@ -369,6 +385,7 @@ async def _on_message_locked(
         # «👑 Admin bo'lish» — jamoa yaratish oqimini boshladi).
         if text in MENU_BUTTONS:
             Login.user_states.pop(uid, None)
+            log_gap(uid, "Kiritish oynasi bekor qilindi", action="login_fsm")
             await msg.reply_text("ℹ️ Oldingi kiritish oynasi bekor qilindi.")
             handled = await Menu.route_menu_button(update, text)
             if not handled:
@@ -378,6 +395,7 @@ async def _on_message_locked(
             return
         if time.time() - state.get("ts", 0) > LOGIN_TIMEOUT_S:
             admin_flow = bool(state.get("admin_add_user")) or uid == SUPER_ADMIN
+            log_gap(uid, "Kiritish oynasi vaqti tugadi", action="login_fsm")
             await Login.cleanup_login(uid)
             await msg.reply_text(
                 T.CODE_TIMEOUT,
@@ -431,6 +449,7 @@ async def _on_message_locked(
             return
         if text == T.BTN_BACK:
             Login.user_states.pop(uid, None)
+            log_gap(uid, "Amal bekor qilindi", action="menu_fsm")
             await msg.reply_text(
                 T.ACTION_CANCELLED, reply_markup=await get_menu(uid)
             )
@@ -467,6 +486,7 @@ async def _on_message_locked(
             return
         if text == T.BTN_BACK:
             Login.user_states.pop(uid, None)
+            log_gap(uid, "Amal bekor qilindi", action="admin_fsm")
             await msg.reply_text(T.ACTION_CANCELLED, reply_markup=KB.kb_admin_back())
             return
         if not rate_limiter.is_allowed(uid, "message"):
@@ -620,6 +640,7 @@ async def _on_message_locked(
             return
         if text == T.BTN_BACK:
             Login.user_states.pop(uid, None)
+            log_gap(uid, "Amal bekor qilindi", action="menu_fsm")
             await msg.reply_text(
                 T.ACTION_CANCELLED, reply_markup=await get_menu(uid)
             )
@@ -1459,11 +1480,20 @@ async def restore_running_workers() -> None:
 # ERROR HANDLER
 # ─────────────────────────────────────────────────────────────────────────
 async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """PTB handler xatosi — to'liq traceback bilan yoziladi.
+
+    Bu — oxirgi himoya chizig'i: handler'ning ichida xato ushlanmagan
+    bo'lsa, shu yerda qayd etiladi va foydalanuvchiga javob beriladi.
+    """
     error = context.error
-    log(
-        f"💥 Handler xato: {type(error).__name__}: {error}",
-        "error",
-    )
+    uid = None
+    with contextlib.suppress(Exception):
+        if update is not None and getattr(update, "effective_user", None):
+            uid = update.effective_user.id
+    log_error(uid, "PTB handler xatosi", error, action="handler")
+    with contextlib.suppress(Exception):
+        if update is not None and getattr(update, "effective_message", None):
+            await update.effective_message.reply_text(T.GENERIC_ERROR)
 
 
 # ─────────────────────────────────────────────────────────────────────────

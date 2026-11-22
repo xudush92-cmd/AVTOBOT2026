@@ -32,6 +32,7 @@ from telegram import Update
 from bot import keyboards as KB
 from bot import texts as T
 from core import database as db
+from core.errlog import log_gap
 from core.logger import log
 from core.utils import is_valid_interval
 
@@ -351,6 +352,7 @@ async def handle_my_groups_callback(
         group = await db.get_chat_record(uid, group_id)
         if not group:
             await q.answer("Bu guruh topilmadi", show_alert=True)
+            log_gap(uid, "Guruh topilmadi yoki o'chirilgan", action=data)
             return
         removed = await db.remove_chat_by_id(uid, group_id)
         await q.answer(

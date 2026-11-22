@@ -27,6 +27,7 @@ from config.config import (
     SUPER_ADMIN,
 )
 from core import database as db
+from core.errlog import log_gap
 from core.logger import log
 
 
@@ -114,10 +115,12 @@ async def register_referral(uid: int, ref_arg: str) -> bool:
     # Foydalanuvchi allaqachon mavjudmi?
     existing = await db.get_user(uid)
     if existing:
+        log_gap(uid, "Foydalanuvchi allaqachon ro'yxatda — referal qayd etilmadi")
         return False
 
     saved = await db.set_referrer(uid, referrer_uid)
     if not saved:
+        log_gap(uid, "Referal qayd etilmadi (referrer tasdiqlanmagan yoki bloklangan)")
         return False
 
     # Referrer jamoa admini bo'lsa — kelgan foydalanuvchi uning jamoasiga

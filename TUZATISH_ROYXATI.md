@@ -1,13 +1,78 @@
 # 🔧 TUZATISHLAR RO'YXATI — AVTOBOT2026
 
 > **Holat:** ✅ **BARCHA TUZATISHLAR BAJARILDI** (2026-11-14)
-> **Filial:** `main` — PR #37 merge qilingan (merge commit `20f82e5`)
-> **Testlar:** `597 passed, 62 subtests passed` (bazadagi 574 + 23 yangi)
+> **Filial:** `arena/b9856db3-avtobot2026` (asosiy: `main`, commit `ce45026`)
+> **Testlar:** `613 passed, 62 subtests passed` (bazadagi 597 + 16 yangi)
 > **Deploy:** ⏳ VPS'ga o'tkazilishi kutilmoqda (buyruq quyida)
 
 ---
 
 ## ✅ BAJARILGAN TUZATISHLAR
+
+### 🔴 X1. «🔍 Guruhlarni topish» tugmasi ishlamaydi ✅
+
+**Boshqaruv:** `bot/groups.py` — `discover_groups()`, `bot/my_groups.py` — `mg:find`.
+
+**Sabab:** `mg:find` — **inline callback**, lekin `discover_groups` butunlay
+`update.message.reply_text(...)` ishlatardi. Inline kontekstda
+`update.message` = `None` → `AttributeError: 'NoneType' object has no
+attribute 'reply_text'` (VPS logida tasdiqlangan).
+
+**Hozir:** barcha `update.message.reply_text` → `reply_text_safe(...)`
+ga o'tkazildi (inline kontekstda `callback_query.message` ga qaytadi).
+`status_msg` ham xavfsiz olinadi (`want_message=True`) va `None` bo'lsa
+`_status_edit` jim qoladi.
+
+### 🔴 X2/X3. «✏️ Jamoa nomi» va «📨 Xabar yuborish» ishlamaydi ✅
+
+**Boshqaruv:** `bot/keyboards.py`, `bot/teams.py`.
+
+**Sabab:** `edit_message_text` faqat **InlineKeyboardMarkup** qabul qiladi,
+lekin `KB.kb_input_cancel()` — **ReplyKeyboardMarkup** →
+`BadRequest: Inline keyboard expected` (VPS logida tasdiqlangan).
+
+**Hozir:** `kb_input_cancel_inline()` yaratildi (Inline variant) va
+` tadm:rename` / `tadm:message` da ishlatiladi. Reply klaviatura
+(matnli xabar) uchun `kb_input_cancel()` o'zgarishsiz qoldi.
+
+### 🟡 X4. «⏰ Vaqt» (interval) oynasi inline kontekstda buziladi ✅
+
+**Boshqaruv:** `bot/timer.py` — `begin_set_interval()`.
+
+**Sabab:** `mg:global` inline dan chaqiriladi, funksiya esa
+`update.message.reply_text` ishlatardi.
+
+**Hozir:** `reply_text_safe(...)` ishlatiladi.
+
+### 🟡 X6. Xato va kamchiliklar logga yozilmaydi ✅
+
+**Boshqaruv:** `core/errlog.py` (yangi), `main.py`, `bot/callbacks.py`,
+`bot/teams.py`, `bot/groups.py`, `bot/my_groups.py`, `bot/menu.py`,
+`bot/referral.py`, `bot/login.py`.
+
+**Yangi modul:** `core/errlog.py` — 3 ta funksiya:
+- `log_error(uid, context, exc, action=...)` — 💥 to'liq traceback;
+- `log_gap(uid, reason, action=...)` — ⚠️ kamchilik (xato emas);
+- `log_event(uid, event, action=...)` — ℹ️ oddiy voqea.
+
+**Qo'shilgan xato ushlash:**
+- `main.py::on_message` — matnli xabarda xato → log + foydalanuvchiga javob;
+- `main.py::on_error` — PTB handler xatosi → to'liq traceback;
+- `bot/callbacks.py` — inline tugma xatosi (avvalgi kuchliroq yozuv bilan);
+- `bot/teams.py` — jamoa admini paneli xatosi.
+
+**Kamchilik yozuvlari** (faqat gapsiz natija holatlariga):
+sessiya yo'q · FloodWait · Cooldown · skaner allaqachon ishlayapti ·
+guruh topilmadi · taklif boshqa jamoada · a'zo topilmadi · jamoa topilmadi ·
+admin huquqi yo'q · login oynasi vaqti tugadi · amal bekor qilindi ·
+noma'lum menyu tugmasi · referal qayd etilmadi.
+
+**Yuklama:** log aylanmasi 5 MB × 4 = **20 MB doimiy chegara**. Xato yozuvi
+~2 KB; 100 xato/kun → ~200 KB/kun (**ta'sir ~0.3%**). Kamchilik yozuvi
+faqat gapsiz natijalarda — normal oqimda yozilmaydi, shuning uchun log
+shovqin bilan to'lmaydi.
+
+---
 
 ### 🔴 A9. Jamoa statistikasi «Xatolik yuz berdi» berardi ✅
 
@@ -198,8 +263,9 @@ Endi paneldagi son (`Foydalanuvchilar: 1/5 ta`) ro'yxatdagi son bilan
 | `tests/test_team_contact_and_naming.py` | 23 | A1, A2, A3, A6, A8 |
 | `tests/test_login_pending_contact.py` | 4 | A7 (3 holat + jamoa asosi arizasi) |
 | `tests/test_team_panel_stats_and_referral.py` | 23 | **A9, A10, A11, A12** + A1 kengaytirilishi |
+| `tests/test_inline_fixes_and_error_logging.py` | **16** (yangi) | **X1, X2, X3, X4, X6** |
 
-**Jami:** 547 → **597 test**, hammasi o'tadi (`pytest` va `unittest`).
+**Jami:** 547 → **613 test**, hammasi o'tadi (`pytest` va `unittest`).
 
 ---
 

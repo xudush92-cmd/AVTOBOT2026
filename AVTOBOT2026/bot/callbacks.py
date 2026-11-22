@@ -12,6 +12,7 @@ from telegram.ext import ContextTypes
 from bot import action_tokens
 from bot import keyboards as KB
 from bot import texts as T
+from core.errlog import log_error, log_gap
 from bot.login import (
     attempt_signin,
     begin_qr_login,
@@ -290,13 +291,12 @@ async def _handle_callback_locked(update: Update, uid: int) -> None:
     except Exception as exc:
         # Traceback va callback ma'lumoti logga yoziladi — xato sababsiz
         # qolmasligi uchun (qaysi tugma bosilgani ham ko'rinadi).
-        log(
-            f"callback xatolik {uid}: data={data!r} "
-            f"{type(exc).__name__}: {exc}\n"
-            + "".join(
-                traceback.format_exception(type(exc), exc, exc.__traceback__)
-            ),
-            "error",
+        log_error(
+            uid,
+            "Inline tugma",
+            exc,
+            action=data,
+            extra=f"data={data!r}",
         )
         with contextlib.suppress(Exception):
             await q.edit_message_text(T.GENERIC_ERROR)
@@ -326,6 +326,7 @@ async def handle_numpad(update: Update, uid: int, data: str) -> None:
         is_admin_flow = bool(state.get("admin_add_user"))
         target = state.get("admin_session_target")
         await cleanup_login(uid)
+        log_gap(uid, "Kod oynasi vaqti tugadi", action=data)
         await q.edit_message_text(T.CODE_TIMEOUT)
         if target:
             from admin.admin_actions import user_card_markup
@@ -453,6 +454,7 @@ async def _handle_start_confirmation_locked(
         await q.edit_message_text("⚠️ Bu Start tasdiqlash oynasi eskirgan.")
         return
     if action == "no":
+        log_gap(uid, "Amal bekor qilindi", action=data)
         await q.edit_message_text(T.ACTION_CANCELLED)
         return
     if action != "yes":
@@ -532,6 +534,7 @@ async def _handle_intv_confirmation_locked(
     user_states.pop(uid, None)
     user = await db.get_user(uid)
     if action == "no":
+        log_gap(uid, "Amal bekor qilindi", action=data)
         await q.edit_message_text(T.ACTION_CANCELLED)
         from bot.menu import current_state
 
@@ -580,6 +583,7 @@ async def _handle_del_group_locked(update: Update, uid: int, data: str) -> None:
         await q.edit_message_text("❌ Sessiya yoki ruxsat topilmadi.")
         return
     if data == "delg:cancel":
+        log_gap(uid, "Amal bekor qilindi", action=data)
         await q.edit_message_text(T.ACTION_CANCELLED)
         return
     parts = data.split(":")
@@ -623,6 +627,7 @@ async def _handle_del_post_locked(update: Update, uid: int, data: str) -> None:
         await q.edit_message_text("❌ Sessiya yoki ruxsat topilmadi.")
         return
     if data == "delp:cancel":
+        log_gap(uid, "Amal bekor qilindi", action=data)
         await q.edit_message_text(T.ACTION_CANCELLED)
         return
     parts = data.split(":")

@@ -18,6 +18,7 @@ from bot import action_tokens
 from bot import keyboards as KB
 from bot import texts as T
 from core import database as db
+from core.errlog import log_gap
 from core.logger import log
 from core.utils import reply_text_safe, start_of_local_day_ts
 from worker.client_pool import PoolBusyError, SessionInvalidError
@@ -440,4 +441,7 @@ async def route_menu_button(update: Update, text: str) -> bool:
         await show_home(update, update.effective_user.id)
         return True
 
+    # Noma'lum tugma — bu kamchilik: eski klaviatura matni yoki
+    # boshqa savol. Logga yoziladi (text qisqa qilib).
+    log_gap(uid, f"Noma'lum menyu tugmasi: {text[:40]!r}", action="menu")
     return False
