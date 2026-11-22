@@ -83,18 +83,16 @@ async def _back_markup(uid: int):
     return await KB.kb_main_for(uid)
 
 
-async def render_groups_inline(
-    update: Update,
+async def build_groups_window(
     uid: int,
-    edit: bool = False,
     note: str = "",
     page: int = 0,
-) -> None:
-    """``💬 Guruhlar`` inline oynasini ko'rsatadi (xabar yoki tahrirlash).
+) -> tuple[str, object]:
+    """``💬 Guruhlar`` oynasining matni va klaviaturasini qaytaradi.
 
-    Eski ``kb_groups_menu()`` o'rniga ishlatiladi — foydalanuvchiga
-    eski tugmalar (qo'shish/tekshirish/guruh intervali) ko'rinmaydi,
-    faqat yangi bitta boshqaruv oynasi: havolalar + ``🗑 N. guruh``.
+    ``render_groups_inline`` va boshqa joylar (masalan, skaner natijasi
+    qo'shilgandan keyin) bir xil oynani ko'rsatishi kerak — shuning uchun
+    matn/markup yig'ish mantiği bitta joyga chiqarilgan.
     """
     groups = await db.get_chat_records(uid)
 
@@ -107,17 +105,7 @@ async def render_groups_inline(
         )
         if note:
             text = f"{note}\n\n{text}"
-        markup = KB.kb_my_groups([], 0)
-        if edit and update.callback_query is not None:
-            with contextlib.suppress(Exception):
-                await update.callback_query.edit_message_text(
-                    text, parse_mode="HTML", reply_markup=markup
-                )
-                return
-        await update.message.reply_text(
-            text, parse_mode="HTML", reply_markup=markup
-        )
-        return
+        return text, KB.kb_my_groups([], 0)
 
     max_page = max(0, (len(groups) - 1) // PAGE_SIZE)
     page = min(max(page, 0), max_page)
@@ -144,7 +132,23 @@ async def render_groups_inline(
     )
     if note:
         text = f"{note}\n\n{text}"
-    markup = KB.kb_my_groups(groups, page)
+    return text, KB.kb_my_groups(groups, page)
+
+
+async def render_groups_inline(
+    update: Update,
+    uid: int,
+    edit: bool = False,
+    note: str = "",
+    page: int = 0,
+) -> None:
+    """``💬 Guruhlar`` inline oynasini ko'rsatadi (xabar yoki tahrirlash).
+
+    Eski ``kb_groups_menu()`` o'rniga ishlatiladi — foydalanuvchiga
+    eski tugmalar (qo'shish/tekshirish/guruh intervali) ko'rinmaydi,
+    faqat yangi bitta boshqaruv oynasi: havolalar + ``🗑 N. guruh``.
+    """
+    text, markup = await build_groups_window(uid, note=note, page=page)
     if edit and update.callback_query is not None:
         with contextlib.suppress(Exception):
             await update.callback_query.edit_message_text(
@@ -306,8 +310,16 @@ async def handle_my_groups_callback(
 
     if action == "back":
         await q.answer()
+        # ✅ Oyna yopilganda eskirgan "yopildi" xabari qolmasligi kerak —
+        # aks holda foydalanuvchi guruhlar yo'q deb o'ylaydi.
+        # Xabar o'chiriladi; asosiy menyu alohida xabarda ochiladi.
+        deleted = False
         with contextlib.suppress(Exception):
-            await q.edit_message_text("💬 Guruhlar yopildi.")
+            await q.delete_message()
+            deleted = True
+        if not deleted:
+            with contextlib.suppress(Exception):
+                await q.edit_message_reply_markup(reply_markup=None)
         from bot.menu import show_home
 
         await show_home(update, uid)
@@ -319,12 +331,14 @@ async def handle_my_groups_callback(
         except (ValueError, IndexError):
             return
         await q.answer()
-        groups = await db.get_chat_records(uid)
+        # ✅ Sahifa almashganda ham to'liq oyna ko'rsatiladi —
+        # guruhlar ro'yxati va havolalari yo'qolmasligi kerak.
+        text, markup = await build_groups_window(uid, page=page)
         with contextlib.suppress(Exception):
             await q.edit_message_text(
-                "💬 <b>GURUHLAR</b>",
+                text,
                 parse_mode="HTML",
-                reply_markup=KB.kb_my_groups(groups, page),
+                reply_markup=markup,
             )
         return
 
@@ -367,11 +381,14 @@ async def handle_my_groups_callback(
                     reply_markup=await _back_markup(uid),
                 )
             return
+        # ✅ Oyna to'liq yangilanadi — guruhlar ro'yxati va havolalari
+        # ham ko'rinib turishi kerak (avval faqat sarlavha qolardi).
+        text, markup = await build_groups_window(uid)
         with contextlib.suppress(Exception):
             await q.edit_message_text(
-                "💬 <b>GURUHLAR</b>",
+                text,
                 parse_mode="HTML",
-                reply_markup=KB.kb_my_groups(groups, 0),
+                reply_markup=markup,
             )
         return
 

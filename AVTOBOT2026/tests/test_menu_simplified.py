@@ -186,8 +186,9 @@ class SimplifiedMenuTests(unittest.IsolatedAsyncioTestCase):
         datas = [b.callback_data for b in _inline_buttons(markup)]
         labels = [b.text for b in _inline_buttons(markup)]
 
-        # Faqat qidiruv va o'chirish — interval tugmasi yo'q.
-        self.assertIn("mg:find", datas)
+        # Faqat o'chirish va orqaga — interval tugmasi va takror
+        # qidiruv tugmasi yo'q (skaner asosiy menyuda).
+        self.assertNotIn("mg:find", datas)
         self.assertFalse(any(d.startswith("mg:gint:") for d in datas))
         self.assertNotIn("mg:global", datas)
         # O'chirish tugmalari guruh nomi bilan.

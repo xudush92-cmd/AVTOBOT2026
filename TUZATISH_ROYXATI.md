@@ -1,8 +1,8 @@
 # 🔧 TUZATISHLAR RO'YXATI — AVTOBOT2026
 
 > **Holat:** ✅ **BARCHA TUZATISHLAR BAJARILDI** (2026-11-14)
-> **Filial:** `arena/609111f9-avtobot2026` (asosiy: `main`, commit `73946d6`)
-> **Testlar:** `624 passed, 62 subtests passed` (bazadagi 613 + 11 yangi)
+> **Filial:** `arena/bd8a5e1f-avtobot2026` (asosiy: `main`, commit `390b38e`)
+> **Testlar:** `638 passed, 62 subtests passed` (bazadagi 624 + 14 yangi)
 > **Deploy:** ⏳ VPS'ga o'tkazilishi kutilmoqda (buyruq quyida)
 
 ---
@@ -292,6 +292,101 @@ Endi paneldagi son (`Foydalanuvchilar: 1/5 ta`) ro'yxatdagi son bilan
 
 ---
 
+## ✅ TUZATISHLAR — PR #40 (2026-11-14) — «💬 Guruhlar» oynasi UX
+
+> **Filial:** `arena/bd8a5e1f-avtobot2026` (asosiy: `main`, commit `390b38e`)
+> **Testlar:** `638 passed, 62 subtests passed` (bazadagi 624 + 14 yangi)
+
+### 🟡 U1. Qo'shilgan guruhlar ko'rinmaydi
+
+**Boshqaruv:** `bot/my_groups.py` — `handle_my_groups_callback` (`mg:del`,
+`mg:page` amallari).
+
+**Sabab:** oyna yangilanganda faqat sarlavha qoldirilardi:
+
+```python
+await q.edit_message_text(
+    "💬 <b>GURUHLAR</b>",        # ← ro'yxat va havolalar YO'Q
+    parse_mode="HTML",
+    reply_markup=KB.kb_my_groups(groups, 0),
+)
+```
+
+Ya'ni **biror guruhni o'chirsangiz yoki sahifa almashsa**, oyna bo'sh
+ko'rinib qolardi — foydalanuvchi "gurchilar ko'rinmaydi" deb shikoyat
+qilardi.
+
+**Hozir:** matn/markup yig'ish mantiği `build_groups_window()` funksiyasiga
+chiqarildi; `mg:del`, `mg:page` va `disc:apply` — hammasi **bir xil to'liq
+oynani** ko'rsatadi (soni + havolalar + o'chirish tugmalari).
+
+### 🟡 U2. «🔍 Guruhlarni topish» tugmasi ikki joyda
+
+**Boshqaruv:** `bot/keyboards.py` — `kb_my_groups()`.
+
+**Sabab:** inline oynada ham, asosiy menyuda ham bor edi — bir xil amal
+ikki joyda, chalkashlik keltiradi.
+
+**Hozir:** `kb_my_groups()` da olib tashlandi. Tugma **faqat asosiy
+menyuda** qoldi. (`mg:find` handler o'zicha saqlanadi — eski xabarlardan
+bosilsa ham ishlasin.)
+
+### 🟡 U3. «🚫 Bekor qilish» oynani yopmaydi
+
+**Boshqaruv:** `bot/groups.py` — `handle_discover_callback`, `disc:cancel`.
+
+**Sabab:** xabar tahrirlanardi va «🚫 Bekor qilindi...» deb qoldirilardi —
+foydalanuvchi uchun oyna yopilgan emas.
+
+**Hozir:** xabar **o'chiriladi**. O'chirish imkoni bo'lmasa (eskirgan
+xabar), hech narsa qoldirilmaydi — faqat klaviatura olib tashlanadi.
+Xuddi shunday `mg:back` ham oynani o'chiradi («💬 Guruhlar yopildi»
+xabari qolmaydi).
+
+### 🟡 U4. Skaner allaqachon qo'shilgan guruhlarni takror taklif qiladi
+
+**Boshqaruv:** `bot/groups.py` — `discover_groups()`.
+
+**Holat:** filtr allaqachon bor edi va **ishlaydi**:
+
+```python
+existing_keys = {build_key(v) for v in await db.get_chats(uid)}
+...
+if key in existing_keys:
+    duplicate_count += 1
+    continue          # ← allaqachon qo'shilgan guruh chiqmaydi
+```
+
+**Bu yerda:** mavjud xatti-harakatni **o'zgartirmadik**, faqat
+**regressiya testlari** qo'shdik (`test_already_added_groups_excluded_from_next_scan`)
+— kelgusi o'zgarishlarda buzilmasligi uchun.
+
+### 🟡 U5. «✅ Qo'shish»dan keyin guruhlar ko'rinmaydi
+
+**Boshqaruv:** `bot/groups.py` — `handle_discover_callback`, `disc:apply`.
+
+**Sabab:** faqat hisobot («Qo'shildi: N ta») ko'rsatilardi va asosiy
+menyu klaviaturasi qo'yilardi — qo'shilgan guruhlar ro'yxati ko'rinmardi.
+
+**Hozir:** hisobot **va** yangilangan «💬 Guruhlar» oynasi bir xil xabarda
+chiqadi. Agar xabar tahrirlab bo'lmasa, yangi xabar yuboriladi.
+
+### 🔧 U6. Eskirgan skaner xabari chatda qolib ketardi
+
+**Boshqaruv:** `bot/groups.py` — `handle_discover_callback`, `disc:apply`.
+
+**Kamchilik (review'da topildi):** agar skaner xabarini tahrirlab bo'lmasa
+(eskirgan yoki klaviyaturasiz), yangi guruhlar oynasi xabari yuborilardi —
+lekin **eskirgan skaner xabari ham o'rnida qolardi**. Chatda ikkita xabar
+qolib ketardi.
+
+**Hozir:** yangi xabar yuborilgandan keyin eskirgan skaner xabari ham
+**o'chiriladi** (`q.delete_message()`).
+
+**Tekshiruv:** `test_apply_deletes_stale_scanner_when_new_message_sent`
+
+---
+
 ## 📋 YANGI TESTLAR
 
 | Fayl | Testlar | Qamrov |
@@ -301,8 +396,12 @@ Endi paneldagi son (`Foydalanuvchilar: 1/5 ta`) ro'yxatdagi son bilan
 | `tests/test_team_panel_stats_and_referral.py` | 23 | **A9, A10, A11, A12** + A1 kengaytirilishi |
 | `tests/test_inline_fixes_and_error_logging.py` | 16 | **X1, X2, X3, X4, X6** |
 | `tests/test_callback_router_coverage.py` | **11** (yangi) | **X5** — belgilanish + router qamrovi |
+| `tests/test_discover_group_window_ux.py` | **14** (yangi) | **U1, U2, U3, U4, U5** |
 
-**Jami:** 547 → **624 test**, hammasi o'tadi (`pytest` va `unittest`).
+**Jami:** 547 → **638 test**, hammasi o'tadi (`pytest` va `unittest`).
+
+> Eski testlar (`test_menu_simplified.py`, `test_my_groups_screen.py`)
+> `mg:find` mavjudligini talab qilardi — yangi UX ga moslab yangilandi.
 
 ---
 

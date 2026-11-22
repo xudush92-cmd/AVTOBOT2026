@@ -14,7 +14,21 @@ qaytish rejasini beradi.
 | Worker yuborish | 🟡 o'rta | Endi albom `send_file([...])` orqali, matnli post `link_preview` bayrog'i bilan ketadi. Kunlik limit/faol soat yoqilsa, yuborishlar o'sha oynaga moslashadi |
 | Media disk | 🟡 o'rta | Albomlar bilan fayllar soni o'sadi. Har user uchun kvota: `MAX_MEDIA_FILES_PER_USER` (standart 200) |
 
-Barcha yangi funksiya testlangan: **624 test** (`python -m unittest discover -s tests -t tests`).
+Barcha yangi funksiya testlangan: **638 test** (`python -m unittest discover -s tests -t tests`).
+
+### 🆕 «💬 Guruhlar» oynasi UX tuzatishlari (PR #40)
+
+| Qism | Xavf | Izoh |
+| ---- | ---- | ---- |
+| **Qo'shilgan guruhlar ko'rinmaydi** | 🟢 past | Oyna yangilanganda faqat «💬 GURUHLAR» sarlavhasi qolardi — ro'yxat va havolalar yo'qolardi. Endi matn/markup `build_groups_window()` da yig'iladi va `mg:del`, `mg:page`, `disc:apply` — hammasi **bir xil to'liq oynani** ko'rsatadi |
+| **«🔍 Guruhlarni topish» ikki joyda** | 🟢 past | Inline oynadagi takror tugma olib tashlandi. Endi skaner **faqat asosiy menyuda**. (`mg:find` handler saqlanadi — eski xabarlardan bosilsa ham ishlasin) |
+| **«🚫 Bekor qilish» oynani yopmaydi** | 🟢 past | Xabar endi **o'chiriladi**, «Bekor qilindi» deb qolmaydi. Xuddi shunday `mg:back` ham oynani o'chiradi |
+| **Qo'shishdan keyin guruhlar ko'rinmaydi** | 🟢 past | `disc:apply` endi hisobot bilan birga **yangilangan «💬 Guruhlar» oynasini** ko'rsatadi (agar xabar tahrirlab bo'lmasa — yangi xabar yuboriladi) |
+| **Skaner takror guruh ko'rsatadi** | 🟢 past | Filtr allaqachon ishlaydi (`existing_keys`); bu PR da o'zgartirilmadi, faqat **regressiya testi** qo'shildi |
+
+> 📌 **Yangi sozlamalar yo'q** — `.env` ga hech narsa qo'shish shart emas.
+> 📌 **Baza sxemasi o'zgarmadi** — yangi jadval/ustun qo'shilmadi.
+> 📌 **Worker / Start / Stop / admin-jamoa izolyatsiyasi** tegilmadi.
 
 ### 🆕 Guruhni belgilash (✅) tugmasi tuzatildi (PR #39)
 
@@ -420,6 +434,27 @@ shuning uchun xato bo'lsa sabov izlang, o'chirmang).
 3. **«✅ Tanlanganlarni qo'shish»** ni bosing — guruhlar bazaga qo'shiladi
    va hisobot chiqadi: `✅ 2 ta guruh qo'shildi`.
 4. **«💬 Guruhlar»** oynasida tanlangan guruhlar ko'rinishi kerak.
+
+### «💬 Guruhlar» oynasi UX (PR #40)
+
+1. **«💬 Guruhlar»** — oynada **faqat** o'chirish tugmalari va
+   «⬅️ Asosiy menyu» bo'lishi kerak. **«🔍 Guruhlarni topish» tugmasi
+   bu yerde BO'LMASLIGI kerak** — u faqat asosiy menyuda.
+2. Oynada guruh soni va **`https://t.me/...` havolalari** ko'rinishi kerak
+   (avval faqat sarlavha ko'rinardi).
+3. Biror guruhni **🗑** bilan o'chiring — oyna **to'liq yangilanishi** kerak:
+   qolgan guruhlar va havolalar ko'rinib tursin (avval oyna bo'sh qolardi).
+4. Sahifalash tugmalari (**📄 1/2**) bosilsa — oyna ham to'liq yangilansin
+   (ro'yxat va havolalar saqlansin).
+5. **«⬅️ Asosiy menyu»** — eskirgan oyna xabari **o'chirilsin**,
+   «💬 Guruhlar yopildi» deb qolmasin.
+6. Asosiy menyudagi **«🔍 Guruhlarni topish»** → skaner ro'yxatida
+   **allaqachon qo'shilgan guruhlar chiqmasligi** kerak.
+7. Skaner ro'yxatida **«🚫 Bekor qilish»** — skaner xabari **to'liq
+   o'chirilsin**, «Bekor qilindi» deb qolmasin.
+8. Skanerda guruhni **✅ belgilang** → **«✅ Tanlanganlarni qo'shish (N)»** —
+   qo'shishdan keyin **«💬 Guruhlar» oynasi** (soni + havolalar + o'chirish
+   tugmalari) ko'rinsin, faqat hisobot emas.
 
 ### Inline tugmalar va xato logi (PR #38)
 

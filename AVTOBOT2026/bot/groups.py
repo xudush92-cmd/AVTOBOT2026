@@ -34,6 +34,7 @@ from telethon.tl.functions.messages import CheckChatInviteRequest
 
 from bot import discover_sessions
 from bot import keyboards as KB
+from bot import my_groups as MY_GROUPS
 from bot import texts as T
 from bot.discover_sessions import (
     GROUPS_PAGE_SIZE,
@@ -1035,11 +1036,17 @@ async def handle_discover_callback(update: Update, uid: int, data: str) -> None:
     if action == "cancel":
         discover_sessions.clear_session(uid)
         await q.answer("Bekor qilindi")
+        # ✅ Xabar to'liq o'chiriladi — eskirgan oyna qolmasligi kerak.
+        # Agar o'chirish imkoni bo'lmasa (masalan, eskirgan xabar),
+        # hech qanday "Bekor qilindi" qoldirmay o'zgartirish ham yo'q —
+        # foydalanuvchi uchun toza yopilish.
+        deleted = False
         with contextlib.suppress(Exception):
-            await q.edit_message_text(
-                "🚫 Bekor qilindi. Hech qanday guruh qo'shilmadi.",
-                reply_markup=await KB.kb_main_for(uid),
-            )
+            await q.delete_message()
+            deleted = True
+        if not deleted:
+            with contextlib.suppress(Exception):
+                await q.edit_message_reply_markup(reply_markup=None)
         return
 
     if action == "apply":
@@ -1082,12 +1089,61 @@ async def handle_discover_callback(update: Update, uid: int, data: str) -> None:
             f"✅ {len(added)} ta guruh qo'shildi",
             show_alert=True,
         )
-        with contextlib.suppress(Exception):
-            await q.edit_message_text(
-                report,
-                parse_mode="HTML",
-                reply_markup=await KB.kb_main_for(uid),
+
+        # ✅ Qo'shilgan guruhlar foydalanuvchiga darhol ko'rinishi kerak —
+        # shuning uchun hisobot va yangilangan «💬 Guruhlar» oynasi
+        # bir xil xabarda chiqadi.
+        try:
+            groups_text, groups_markup = await MY_GROUPS.build_groups_window(
+                uid, note=report
             )
+        except Exception as exc:  # noqa: BLE001 — himoya
+            log(
+                f"discover_groups apply window xatosi: {uid} "
+                f"({type(exc).__name__})",
+                "warning",
+            )
+            groups_text, groups_markup = None, None
+
+        shown = False
+        if groups_text:
+            # Birinchi urinish — skaner xabarini shu oyna bilan almashtirish.
+            with contextlib.suppress(Exception):
+                await q.edit_message_text(
+                    groups_text,
+                    parse_mode="HTML",
+                    reply_markup=groups_markup,
+                )
+                shown = True
+            if not shown:
+                # Xabar tahrirlab bo'lmasa (eskirgan/klaviyurasiz) —
+                # yangi xabar yuboramiz, shunda foydalanuvchi guruhlarini
+                # ko'ra oladi. Eskirgan skaner xabari esa o'chiriladi —
+                # aks holda chatda ikkita xabar qolib ketadi.
+                with contextlib.suppress(Exception):
+                    await q.message.reply_text(
+                        groups_text,
+                        parse_mode="HTML",
+                        reply_markup=groups_markup,
+                    )
+                    shown = True
+                with contextlib.suppress(Exception):
+                    await q.delete_message()
+
+        if not shown:
+            # Hisobotni ko'rsatishning oxirgi urinishlari.
+            with contextlib.suppress(Exception):
+                await q.edit_message_text(
+                    report,
+                    parse_mode="HTML",
+                    reply_markup=await KB.kb_main_for(uid),
+                )
+            with contextlib.suppress(Exception):
+                await q.message.reply_text(
+                    report,
+                    parse_mode="HTML",
+                    reply_markup=await KB.kb_main_for(uid),
+                )
         log(
             f"✅ Tanlangan guruhlar qo'shildi: {uid} → +{len(added)} "
             f"(takror {duplicates}, o'tkazildi {skipped})"
