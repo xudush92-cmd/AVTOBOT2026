@@ -156,11 +156,25 @@ class MyGroupsScreenTests(unittest.IsolatedAsyncioTestCase):
         text = update.message.reply_text.await_args.args[0]
         self.assertIn("🔗 Guruh havolalari", text)
         # Telegram HTML: "_" italic belgisi — escape qilingan bo'lishi kerak.
-        self.assertIn(r"1. https://t.me/taxi\_tashkent", text)
-        self.assertIn(r"2. https://t.me/avtoelon\_uz", text)
+        self.assertIn(r"https://t.me/taxi\_tashkent", text)
+        self.assertIn(r"https://t.me/avtoelon\_uz", text)
+        # ✅ Nomi yo'q guruh — username ko'rsatiladi (raqam bilan birga).
+        self.assertIn(r"1. @taxi\_tashkent", text)
+        self.assertIn(r"2. @avtoelon\_uz", text)
+
+    async def test_groups_list_shows_group_title_with_link(self) -> None:
+        """✅ Guruh nomi (title) ro'yxatda havola yonida ko'rinadi."""
+        await db.add_chat(UID, "@taxi_tashkent", title="Taxi Toshkent")
+
+        update, _status = self._update()
+        await MG.show_my_groups(update, UID)
+
+        text = update.message.reply_text.await_args.args[0]
+        self.assertIn("Taxi Toshkent", text)
+        self.assertIn(r"https://t.me/taxi\_tashkent", text)
 
     async def test_groups_list_skips_link_for_closed_group(self) -> None:
-        """Yopiq guruhda ochiq havola yo'q — u ro'yxatda chiqmaydi."""
+        """Yopiq guruhda ochiq havola yo'q — u ro'yxatda havola bilan chiqmaydi."""
         await db.add_chat(UID, "@taxi_tashkent")
         await db.add_chat(UID, "-1001234567890")
 
@@ -168,7 +182,8 @@ class MyGroupsScreenTests(unittest.IsolatedAsyncioTestCase):
         await MG.show_my_groups(update, UID)
 
         text = update.message.reply_text.await_args.args[0]
-        self.assertIn(r"1. https://t.me/taxi\_tashkent", text)
+        self.assertIn(r"https://t.me/taxi\_tashkent", text)
+        # ✅ Yopiq guruhning ID'si ko'rinmaydi (faqat nomi — agar bo'lsa).
         self.assertNotIn("-1001234567890", text)
 
     async def test_groups_list_has_no_find_button(self) -> None:

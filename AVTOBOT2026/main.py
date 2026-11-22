@@ -868,6 +868,8 @@ async def handle_admin_fsm(update: Update, uid: int, step: str, text: str) -> No
                 duplicates.append(group)
                 continue
             # Formatdan tashqari Telegram tarmog'i bu bosqichda tekshirilmaydi.
+            # Guruh nomi (title) bu yerda bo'sh qoladi — foydalanuvchining
+            # «💬 Guruhlar» oynasi ochilganda nomi fon task'da to'ldiriladi.
             saved, save_reason = await db.add_chat(target, group)
             if saved:
                 added.append(group)

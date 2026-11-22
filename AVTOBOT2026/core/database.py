@@ -181,6 +181,10 @@ async def _migrate_schema() -> None:
         ("last_attempt_at", "REAL"),
         ("next_send_at", "REAL"),
         ("flood_wait_until", "REAL"),
+        # Guruh nomi (Telegram display name) — foydalanuvchi guruhni
+        # tanib olishi uchun. Eski yozuvlarda bo'sh bo'ladi va
+        # keyinchalik Telegram'dan to'ldiriladi.
+        ("title", "TEXT DEFAULT ''"),
     ):
         if name not in group_columns:
             await conn.execute(f"ALTER TABLE groups ADD COLUMN {name} {sql_type}")
@@ -936,7 +940,7 @@ async def get_all_running() -> list[int]:
 # ─────────────────────────────────────────
 async def get_chat_records(uid: int) -> list[dict]:
     async with _conn().execute(
-        "SELECT id, uid, value, created_at, interval_min, last_attempt_at, "
+        "SELECT id, uid, value, title, created_at, interval_min, last_attempt_at, "
         "next_send_at, flood_wait_until FROM groups WHERE uid = ? ORDER BY id",
         (uid,),
     ) as cur:
@@ -955,6 +959,32 @@ async def get_chat_record(uid: int, group_id: int) -> dict | None:
 
 async def get_chats(uid: int) -> list[str]:
     return [row["value"] for row in await get_chat_records(uid)]
+
+
+async def set_chat_title(uid: int, group_id: int, title: str) -> bool:
+    """Guruh nomini (Telegram display name) saqlaydi.
+
+    Faqat **bo'sh** nomni to'ldiradi — mavjud nomni qayta yozmaydi
+    (Telegram'dagi nom o'zgargan bo'lsa, yangilash alohida amal).
+
+    Nom bo'sh bo'lsa yoki allaqachon to'ldirilgan bo'lsa — ``False``.
+    """
+    clean = (title or "").strip()
+    if not clean:
+        return False
+    async with _write_lock:
+        try:
+            cur = await _conn().execute(
+                "UPDATE groups SET title = ? WHERE id = ? AND uid = ? "
+                "AND (title IS NULL OR title = '')",
+                (clean, group_id, uid),
+            )
+            await _conn().commit()
+            return cur.rowcount > 0
+        except Exception as exc:  # noqa: BLE001 — nom foydalanuvchiga muhim emas
+            await _conn().rollback()
+            log(f"set_chat_title xatolik: {exc}", "warning")
+            return False
 
 
 async def set_chat_interval(
@@ -1048,11 +1078,14 @@ async def record_chat_attempt(
             raise
 
 
-async def add_chat(uid: int, value: str) -> tuple[bool, str]:
+async def add_chat(uid: int, value: str, title: str = "") -> tuple[bool, str]:
     """Guruh qo'shadi. Paket limiti bosilsa ``(False, "limit")`` qaytadi.
 
     Sanash va INSERT bitta yozuv locki ichida — parallel bulk qo'shishlar
     limitdan o'tib keta olmaydi. Limit 0 bo'lsa cheksiz (paketsiz userlar).
+
+    ``title`` — guruhning nomi (Telegram'dagi display name). Bo'sh bo'lsa
+    keyinchalik to'ldirilishi mumkin (qarang: ``set_chat_title``).
     """
     limit = await max_groups_for(uid)
     async with _write_lock:
@@ -1066,8 +1099,9 @@ async def add_chat(uid: int, value: str) -> tuple[bool, str]:
                     await _conn().commit()
                     return False, "limit"
             await _conn().execute(
-                "INSERT INTO groups (uid, value, created_at) VALUES (?, ?, ?)",
-                (uid, value, iso_now()),
+                "INSERT INTO groups (uid, value, created_at, title) "
+                "VALUES (?, ?, ?, ?)",
+                (uid, value, iso_now(), (title or "").strip()),
             )
             await _conn().commit()
             return True, "ok"

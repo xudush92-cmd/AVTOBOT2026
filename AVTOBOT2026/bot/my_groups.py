@@ -24,13 +24,17 @@ boshqaradi.
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import time
 
 from telegram import Update
+from telethon import TelegramClient
+from telethon.sessions import StringSession
 
 from bot import keyboards as KB
 from bot import texts as T
+from config.config import API_HASH, API_ID
 from core import database as db
 from core.errlog import log_gap
 from core.logger import log
@@ -83,6 +87,43 @@ async def _back_markup(uid: int):
     return await KB.kb_main_for(uid)
 
 
+def group_label(item: dict) -> str:
+    """Guruh uchun ko'rsatiladigan nom.
+
+    Telegram'dagi display name (baza ``title``) afzal — foydalanuvchi
+    guruhni nomidan tanib oladi. Nomi yo'q bo'lsa — username.
+
+    Yopiq guruh (marked ID, masalan ``-100123...``) uchun ID **ko'rsatilmaydi** —
+    u maxfiy ma'lumot. Nomi bo'lmasa — umumiy matn qo'yiladi.
+    """
+    title = str(item.get("title") or "").strip()
+    value = str(item.get("value") or "").strip()
+    if title and title != value:
+        return title
+    if value.startswith("@"):
+        return value
+    # Yopiq guruh — ID ko'rsatilmaydi.
+    return "Yopiq guruh"
+
+
+def group_label_with_handle(item: dict) -> str:
+    """``🗑`` tugmasi uchun matn: nom + username.
+
+    Telegram tugma matni 64 belgi bilan cheklangan — shuning uchun
+    ikkalasi ham qisqartiriladi. Yopiq guruh ID'si ko'rsatilmaydi.
+    """
+    title = str(item.get("title") or "").strip()
+    value = str(item.get("value") or "").strip()
+    if title and title != value:
+        if value.startswith("@"):
+            return f"{title} ({value})"[:60]
+        # Yopiq guruh — ID ko'rsatilmaydi.
+        return title[:60]
+    if value.startswith("@"):
+        return value[:60]
+    return (title or "Yopiq guruh")[:60]
+
+
 async def build_groups_window(
     uid: int,
     note: str = "",
@@ -111,18 +152,19 @@ async def build_groups_window(
     page = min(max(page, 0), max_page)
 
     # Guruh havolalari — raqam bilan. Yopiq guruhlarda havola yo'q.
-    links: list[str] = []
-    for item in groups:
+    # Guruhlar ro'yxati — nom (Telegram display name) va ochiq havola.
+    # Nomi yo'q bo'lsa — username ko'rsatiladi.
+    lines: list[str] = []
+    for idx, item in enumerate(groups, start=1):
+        label = escape_html(group_label(item)[:50])
         link = public_link(str(item.get("value") or ""))
         if link:
-            links.append(link)
+            lines.append(f"{idx}. {label} — {escape_html(link)}")
+        else:
+            lines.append(f"{idx}. {label}")
     links_block = ""
-    if links:
-        numbered = "\n".join(
-            f"{idx}. {escape_html(link)}"
-            for idx, link in enumerate(links, start=1)
-        )
-        links_block = f"\n\n<b>🔗 Guruh havolalari:</b>\n\n{numbered}"
+    if lines:
+        links_block = "\n\n<b>🔗 Guruh havolalari:</b>\n\n" + "\n".join(lines)
 
     text = (
         "💬 <b>GURUHLAR</b>\n\n"
@@ -162,6 +204,92 @@ async def render_groups_inline(
 # «Qo'lda kiritish» uchun state step nomi.
 STEP_MANUAL_INTERVAL = "my_group_interval_manual"
 
+# Bir foydalanuvchi uchun nom to'ldirish fon tasklari (takrorlanmasligi uchun).
+_title_fill_tasks: dict[int, asyncio.Task] = {}
+
+
+async def _fetch_group_title(client, reference: str) -> str:
+    """Telegram'dan guruh nomini oladi (bo'sh bo'lsa — topilmadi)."""
+    from bot.groups import GroupResolveError, resolve_group_entity
+
+    try:
+        entity = await asyncio.wait_for(
+            resolve_group_entity(client, reference), timeout=20
+        )
+    except GroupResolveError:
+        return ""
+    except Exception as exc:  # noqa: BLE001 — nom ixtiyoriy
+        log(
+            f"guruh nomi olinmadi {reference}: {type(exc).__name__}",
+            "warning",
+        )
+        return ""
+    return str(getattr(entity, "title", "") or "").strip()
+
+
+async def _fill_missing_titles(uid: int) -> None:
+    """Nomi yo'q guruhlar uchun Telegram'dan nom so'raydi va saqlaydi.
+
+    Fon task sifatida ishlaydi — foydalanuvchi kutmaydi.
+    """
+    try:
+        session = await db.get_session(uid)
+        if not session:
+            return
+        groups = await db.get_chat_records(uid)
+        missing = [
+            item
+            for item in groups
+            if not str(item.get("title") or "").strip()
+        ]
+        if not missing:
+            return
+
+        client = TelegramClient(StringSession(session), API_ID, API_HASH)
+        await asyncio.wait_for(client.connect(), timeout=20)
+        try:
+            me = await asyncio.wait_for(client.get_me(), timeout=15)
+            if me is None:
+                return
+            for item in missing:
+                title = await _fetch_group_title(client, str(item.get("value") or ""))
+                if not title:
+                    continue
+                await db.set_chat_title(
+                    uid, int(item["id"]), title
+                )
+                log(
+                    f"📝 Guruh nomi saqlandi: {uid} → "
+                    f"{item.get('value')} = {title}"
+                )
+        finally:
+            with contextlib.suppress(Exception):
+                await client.disconnect()
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:  # noqa: BLE001 — fon task, xato jim qoldiriladi
+        log(f"guruh nomi to'ldirilmadi {uid}: {type(exc).__name__}", "warning")
+    finally:
+        _title_fill_tasks.pop(uid, None)
+
+
+def schedule_title_fill(uid: int) -> None:
+    """Nomi yo'q guruhlar uchun fon task ishga tushiradi.
+
+    Xavfsiz: bir foydalanuvchi uchun faqat **bitta** task ishlaydi.
+    """
+    if not uid or uid in _title_fill_tasks:
+        return
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:  # pragma: no cover — loop yo'q
+        return
+    task = loop.create_task(
+        _fill_missing_titles(uid), name=f"group-title-fill-{uid}"
+    )
+    _title_fill_tasks[uid] = task
+    task.add_done_callback(lambda _t: _title_fill_tasks.pop(uid, None))
+
 
 async def show_my_groups(
     update: Update,
@@ -177,6 +305,8 @@ async def show_my_groups(
         )
         return
 
+    # ✅ Nomi yo'q guruhlar uchun nom fon task'da to'ldiriladi.
+    schedule_title_fill(uid)
     await render_groups_inline(update, uid, edit=False, note=note, page=page)
 
 

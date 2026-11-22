@@ -317,7 +317,8 @@ class GroupFlowTests(unittest.IsolatedAsyncioTestCase):
         finally:
             bot_login.user_states.pop(uid, None)
 
-        get_session.assert_awaited_once_with(uid)
+        # ✅ Asosiy oqim Telegram'ga ULANMAYDI — guruh nomi fon task'da
+        # olinadi (qo'lda kiritish tez va xavfsiz qoladi).
         check_access.assert_not_awaited()
         del_session.assert_not_awaited()
         self.assertEqual(
