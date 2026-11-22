@@ -786,6 +786,12 @@ async def get_admins() -> list[int]:
 
 
 async def delete_user(uid: int) -> bool:
+    # ``groups.uid`` → ``users(uid) ON DELETE CASCADE`` bog'lanishi bor.
+    # Shuning uchun ``DELETE FROM users`` guruhlarni (va postlarni) ham
+    # jinsiy olib tashlardi. Endi bog'liq yozuvlarni aniq o'chiramiz va
+    # keyin users qatorini — natija oldingi kabi, lekin nazorat ostida.
+    await _execute_write("DELETE FROM groups WHERE uid = ?", (uid,))
+    await _execute_write("DELETE FROM referrals WHERE referred_uid = ?", (uid,))
     cur = await _execute_write("DELETE FROM users WHERE uid = ?", (uid,))
     return cur.rowcount > 0
 
@@ -1104,9 +1110,31 @@ async def add_chat(uid: int, value: str, title: str = "") -> tuple[bool, str]:
                 (uid, value, iso_now(), (title or "").strip()),
             )
             await _conn().commit()
+            # Qo'shildi deb hisoblanmasligi uchun yozuv bazada borini
+            # tekshiramiz — commitdan keyingi nosozliklar (masalan, boshqa
+            # kodning rollback'i) yozuvni yo'qotsa, bu yerda aniqlanadi.
+            async with _conn().execute(
+                "SELECT 1 FROM groups WHERE uid = ? AND value = ?",
+                (uid, value),
+            ) as cur:
+                saved_row = await cur.fetchone()
+            if not saved_row:
+                log(
+                    f"add_chat: yozuv commitdan keyin topilmadi "
+                    f"(uid={uid}, value={value})",
+                    "error",
+                )
+                return False, "error"
             return True, "ok"
-        except aiosqlite.IntegrityError:
+        except aiosqlite.IntegrityError as exc:
             await _conn().rollback()
+            # UNIQUE(uid, value) buzilishi — haqiqiy takror.
+            # FOREIGN KEY (uid) REFERENCES users(uid) buzilishi esa boshqa
+            # narsa: oldin "duplicate" deb yolg'on qaytarilardi, shuning uchun
+            # haqiqiy sabab logda ko'rinmasdi. Endi alohida ajratiladi.
+            if "FOREIGN KEY" in str(exc).upper():
+                log(f"add_chat xatolik (FK): {exc}", "error")
+                return False, "foreign_key"
             return False, "duplicate"
         except Exception as exc:
             await _conn().rollback()

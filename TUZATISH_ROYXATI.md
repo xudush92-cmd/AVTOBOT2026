@@ -1,8 +1,8 @@
 # 🔧 TUZATISHLAR RO'YXATI — AVTOBOT2026
 
-> **Holat:** ✅ **BARCHA TUZATISHLAR BAJARILDI** (2026-11-14)
-> **Filial:** `arena/c7a82447-avtobot2026` (asosiy: `main`, commit `f53be05` — **PR #41 merged**)
-> **Testlar:** `656 passed, 62 subtests passed` (bazadagi 638 + 18 yangi)
+> **Holat:** ✅ **BARCHA TUZATISHLAR BAJARILDI** (2026-11-22)
+> **Filial:** `arena/361ef30e-avtobot2026` (asosiy: `main`, commit `267cb6d` — **PR #42 ochilmoqda**)
+> **Testlar:** `667 passed, 62 subtests passed` (bazadagi 656 + 11 yangi)
 > **Deploy:** ⏳ VPS'ga o'tkazilishi kutilmoqda (buyruq quyida)
 
 ---
@@ -431,6 +431,65 @@ saqlangan. Nomi bo'lsa faqat nomi chiqadi.
 
 ---
 
+## 🔴 TUZATISHLAR — PR #42 (2026-11-22) — «Guruhlar yo'q» muammosi
+
+> **Filial:** `arena/361ef30e-avtobot2026` (asosiy: `main`, commit `267cb6d`)
+> **Testlar:** `667 passed, 62 subtests passed` (bazadagi 656 + 11 yangi)
+> **Holat:** ⏳ PR yaratilish kutilmoqda
+
+### 🔴 W1. Guruhlar qo'shilgan deb ko'rsatiladi, lekin bazada yo'q
+
+**Boshqaruv:** `core/database.py` — `add_chat()`; `bot/groups.py` —
+`disc:apply`; `bot/my_groups.py` — `build_groups_window()`;
+`bot/callbacks.py` — o'chirish tugmasi.
+
+**Belgilari (production'da `6169018469` bo'yicha tekshirilgan):**
+
+| Vaqt | Natija |
+|---|---|
+| 17:30:05 | log: `✅ Tanlangan guruhlar qo'shildi: 6169018469 → +3` |
+| 18:28:10 | skaner: 0 ta yangi guruh (dedup ishladi — bazada 3 ta bor edi) |
+| 19:12:03 | skaner: 3 ta topildi, `takror 0` — bazada **yo'q** |
+| hozir | `groups` jadvalida `uid=6169018469` uchun **0 ta** qator |
+
+`sqlite_sequence.groups = 560` — demak 3 ta qator (558–560) **yaratilgan**,
+keyin **o'chirilgan** (AUTOINCREMENT qiymati saqlanadi).
+
+**Sabab zanjiri:**
+
+1. `groups.uid → users(uid) ON DELETE CASCADE` + `PRAGMA foreign_keys=ON`
+   — `users` qatori o'chsa, guruhlar ham **jinsiy** yo'qoladi.
+2. `db.add_chat()` — FK xatosi (`IntegrityError`) va UNIQUE xatosi
+   **bir xil** klassda; FK xatosi ham **«duplicate»** deb yolg'on
+   qaytarilardi → haqiqiy sabab logda ko'rinmasdi.
+3. `add_chat()` `commit()` dan keyin **tekshirmaydi** — yozuv commitdan
+   keyin yo'qolsa, u ham `True, "ok"` qaytarib, logda `+3` yozilardi.
+4. Guruh o'chirishda (`my_groups.py`, `callbacks.py`) **`log()` yo'q** —
+   faqat Telegram'ga xabar yuborilardi, iz qolmaydi.
+5. `disc:apply` — natija bazadagi haqiqiy ro'yxat bilan **tekshirilmasdi**.
+
+**Hozir:**
+
+1. **`add_chat()`** — FK xatosi `duplicate` dan ajratiladi, alohida
+   `foreign_key` qaytariladi va **logda** ko'rinadi.
+2. **`add_chat()`** — `commit()` dan keyin yozuv bazada borini
+   tekshiradi; yo'q bo'lsa `False, "error"` qaytaradi (va log yozadi).
+3. **`delete_user()`** — bog'liq guruhlar va referallar **aniq**
+   o'chiriladi (FK CASCADE ishonchiga tayanmaydi).
+4. **O'chirishda log** — `my_groups.py` va `callbacks.py` da `log()`
+   qo'shildi: `🗑 <uid> guruh o'chirildi (foydalanuvchi/tugma)`.
+5. **`disc:apply`** — qo'shishdan keyin bazadagi haqiqiy ro'yxatni
+   tekshiradi; bazada 0 ta bo'lsa foydalanuvchiga **«❌ Guruhlar
+   qo'shilmadi»** xabari chiqadi (avval yolg'on «qo'shildi» deyardi).
+6. **Bo'sh «💬 Guruhlar» oynasi** — skanerda topilgan guruhlar bo'lsa,
+   «Tanlanganlarni qo'shish» eslatmasi chiqadi (foydalanuvchi nima
+   qilishini biladi).
+
+**Tekshiruv:** `tests/test_group_visibility_fix.py` (10 ta test) +
+`tests/test_live_flow_smoke.py` (1 ta to'liq oqim testi).
+
+---
+
 ## 📋 YANGI TESTLAR
 
 | Fayl | Testlar | Qamrov |
@@ -442,8 +501,10 @@ saqlangan. Nomi bo'lsa faqat nomi chiqadi.
 | `tests/test_callback_router_coverage.py` | **11** (yangi) | **X5** — belgilanish + router qamrovi |
 | `tests/test_discover_group_window_ux.py` | **14** (yangi) | **U1, U2, U3, U4, U5** |
 | `tests/test_group_titles.py` | **18** (yangi) | **V1** — guruh nomi (migratsiya, baza, ko'rsatish, fon task) |
+| `tests/test_group_visibility_fix.py` | **10** (yangi) | **W1** — «Guruhlar yo'q» tuzatishi (FK, commit tekshiruvi, o'chirish logi, bo'sh oyna eslatmasi) |
+| `tests/test_live_flow_smoke.py` | **1** (yangi) | **W1** — to'liq oqim: skaner → qo'shish → ko'rish → o'chirish |
 
-**Jami:** 547 → **656 test**, hammasi o'tadi (`pytest` va `unittest`).
+**Jami:** 547 → **667 test**, hammasi o'tadi (`pytest` va `unittest`).
 
 > Eski testlar (`test_menu_simplified.py`, `test_my_groups_screen.py`)
 > `mg:find` mavjudligini talab qilardi — yangi UX ga moslab yangilandi.

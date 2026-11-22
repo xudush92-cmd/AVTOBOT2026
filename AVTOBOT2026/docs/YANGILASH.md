@@ -485,6 +485,39 @@ shuning uchun xato bo'lsa sabov izlang, o'chirmang).
 5. Eski guruhlar (bazasida nomi yo'q) — «💬 Guruhlar» oynasini bir marta
    ochgandan keyin nomi **avtomatik to'ldiriladi** (fon task, Telegram'dan).
 
+### «Guruhlar yo'q» tuzatishi (PR #42)
+
+Production'da `6169018469` foydalanuvchisida aniqlangan muammo: guruhlar
+`+3` deb qo'shilgan deb ko'rsatilgan, lekin «💬 Guruhlar» oynasi bo'sh
+chiqqan.
+
+1. **Qo'shish tekshiruvi** — guruh qo'shishdan keyin bazada **haqiqatan**
+   turgani tekshiriladi. Yo'q bo'lsa foydalanuvchiga
+   **«❌ Guruhlar qo'shilmadi»** xabari chiqadi (avval yolg'on
+   «✅ 3 ta guruh qo'shildi» deyardi).
+2. **Sabab logda ko'rinadi** — FK xatosi va boshqa xatolar alohida
+   yoziladi:
+   ```
+   add_chat xatolik (FK): FOREIGN KEY constraint failed
+   add_chat: yozuv commitdan keyin topilmadi (uid=..., value=...)
+   ```
+3. **O'chirish izi** — guruh o'chirilganda logga yoziladi:
+   ```
+   🗑 6169018469 guruh o'chirildi (foydalanuvchi): @taxi_x
+   ```
+   (avval faqat Telegram'da xabar chiqardi, logda iz qolmasdi).
+4. **Bo'sh oyna eslatmasi** — skanerda topilgan guruhlar bo'lsa,
+   «💬 Guruhlar» oynasi «Tanlanganlarni qo'shish» eslatmasini beradi.
+5. **Foydalanuvchi o'chirilganda** — guruhlar FK CASCADE ga tayanib
+   yo'qolmasligi uchun **aniq** o'chiriladi (natija o'zgarmaydi, lekin
+   nazorat ostida bo'ladi).
+
+**Tekshirish (deploydan keyin):**
+
+```bash
+journalctl -u avtobot3.service --since "10 minutes ago" | grep -E "add_chat|guruh o'chirildi|bazada 0 ta"
+```
+
 ### Inline tugmalar va xato logi (PR #38)
 
 1. **«💬 Guruhlar»** → **«🔍 Guruhlarni topish»** — skaner ishlaydi va
