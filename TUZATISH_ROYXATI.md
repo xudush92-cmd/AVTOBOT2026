@@ -1,13 +1,49 @@
 # 🔧 TUZATISHLAR RO'YXATI — AVTOBOT2026
 
 > **Holat:** ✅ **BARCHA TUZATISHLAR BAJARILDI** (2026-11-14)
-> **Filial:** `arena/b9856db3-avtobot2026` (asosiy: `main`, commit `ce45026`)
-> **Testlar:** `613 passed, 62 subtests passed` (bazadagi 597 + 16 yangi)
+> **Filial:** `arena/609111f9-avtobot2026` (asosiy: `main`, commit `73946d6`)
+> **Testlar:** `624 passed, 62 subtests passed` (bazadagi 613 + 11 yangi)
 > **Deploy:** ⏳ VPS'ga o'tkazilishi kutilmoqda (buyruq quyida)
 
 ---
 
 ## ✅ BAJARILGAN TUZATISHLAR
+
+### 🔴 X5. Guruhni belgilash (✅) tugmasi umuman ishlamaydi ✅
+
+**Boshqaruv:** `bot/callbacks.py` — `ordinary_prefixes` ro'yxati.
+
+**Sabab:** callback router'da **«o'lik zona»** bor edi:
+
+```python
+ordinary_prefixes = (..., "disc:")        # ro'yxatda "disc:" bor
+
+if uid != SUPER_ADMIN and data.startswith(ordinary_prefixes):
+    if   data.startswith("go:"): ...
+    elif data.startswith("stop:"): ...
+    elif data.startswith("gchk:"): ...
+    return                                   # ← jimgina qaytadi
+
+if data.startswith("disc:"):                # ← HEQ QACHON yetib borMAYdi!
+    await G.handle_discover_callback(update, uid, data)
+```
+
+`disc:` ro'yxatda bor, lekin uning **`elif` branch'i zanjirda yo'q** →
+`disc:toggle` (guruhni ✅ belgilash) hech qanday handler'ga yetib bormadi.
+
+**Belgilari:**
+- ✅ belgi chiqmaydi;
+- alert (`q.answer`) chiqmaydi;
+- **logda ham xato bo'lmaydi** — xato yo'q, kod *yetib borilmagan*.
+
+**Hozir:** `"disc:"` `ordinary_prefixes` dan **chiqarilgan** → o'z
+handler'iga (`handle_discover_callback`) yetib boradi.
+
+**Qo'shimcha himoya:** `tests/test_callback_router_coverage.py` —
+router'dagi har bir prefix kamida bitta branch'da qamralganini
+**avtomatik** tekshiradi. Kelinglikda bu tipdagi «o'lik zona» qaytmaydi.
+
+---
 
 ### 🔴 X1. «🔍 Guruhlarni topish» tugmasi ishlamaydi ✅
 
@@ -263,9 +299,10 @@ Endi paneldagi son (`Foydalanuvchilar: 1/5 ta`) ro'yxatdagi son bilan
 | `tests/test_team_contact_and_naming.py` | 23 | A1, A2, A3, A6, A8 |
 | `tests/test_login_pending_contact.py` | 4 | A7 (3 holat + jamoa asosi arizasi) |
 | `tests/test_team_panel_stats_and_referral.py` | 23 | **A9, A10, A11, A12** + A1 kengaytirilishi |
-| `tests/test_inline_fixes_and_error_logging.py` | **16** (yangi) | **X1, X2, X3, X4, X6** |
+| `tests/test_inline_fixes_and_error_logging.py` | 16 | **X1, X2, X3, X4, X6** |
+| `tests/test_callback_router_coverage.py` | **11** (yangi) | **X5** — belgilanish + router qamrovi |
 
-**Jami:** 547 → **613 test**, hammasi o'tadi (`pytest` va `unittest`).
+**Jami:** 547 → **624 test**, hammasi o'tadi (`pytest` va `unittest`).
 
 ---
 

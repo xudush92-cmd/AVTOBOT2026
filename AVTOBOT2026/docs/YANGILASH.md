@@ -14,7 +14,17 @@ qaytish rejasini beradi.
 | Worker yuborish | 🟡 o'rta | Endi albom `send_file([...])` orqali, matnli post `link_preview` bayrog'i bilan ketadi. Kunlik limit/faol soat yoqilsa, yuborishlar o'sha oynaga moslashadi |
 | Media disk | 🟡 o'rta | Albomlar bilan fayllar soni o'sadi. Har user uchun kvota: `MAX_MEDIA_FILES_PER_USER` (standart 200) |
 
-Barcha yangi funksiya testlangan: **613 test** (`python -m unittest discover -s tests -t tests`).
+Barcha yangi funksiya testlangan: **624 test** (`python -m unittest discover -s tests -t tests`).
+
+### 🆕 Guruhni belgilash (✅) tugmasi tuzatildi (PR #39)
+
+| Qism | Xavf | Izoh |
+| ---- | ---- | ---- |
+| **✅ belgi chiqmaydi** | 🟢 past | `disc:` prefiksi `ordinary_prefixes` ro'yxatida bor, lekin uning `elif` branch'i zanjirda **yo'q** edi. Shu sabab `disc:toggle` hech qanday handler'ga yetib bormaydi — tugma umuman ishlamaydi. Endi `"disc:"` ro'yxatdan chiqarilgan |
+| **Xatolik belgisi yo'q** | 🟢 past | Sabab topildi: na ✅ belgi, na alert, na logda xato. Sabab — xato emas, kod **yetib borilmagan** |
+| Kelinglik uchun himoya | 🟢 past | `tests/test_callback_router_coverage.py` — router'dagi har bir prefix kamida bitta branch'da qamralganini **avtomatik** tekshiradi. Bu tipdagi «o'lik zona» qaytmaydi |
+
+> 📌 **Yangi sozlamalar yo'q** — `.env` ga hech narsa qo'shish shart emas.
 
 ### 🆕 Inline tugmalar va markaziy xato logi (PR #38)
 
@@ -398,6 +408,18 @@ shuning uchun xato bo'lsa sabov izlang, o'chirmang).
    **chiqmasin**.
 7. **Oddiy foydalanuvchi** → «👥 Referal» — avvalgi ko'rinish **saqlansin**
    (`start=ref_...` + statistika).
+
+### Guruhni belgilash va router qamrovi (PR #39)
+
+1. **«💬 Guruhlar»** → **«🔍 Guruhlarni topish»** → ro'yxatda guruhni
+   **✅ belgilang** — yuqorida **«✅ Tanlandi: <guruh nomi>»** ogohlantirishi
+   chiqishi va tugmada **✅** belgisi paydo bo'lishi kerak (avval
+   hech narsa chiqmasdi).
+2. **«✅ Tanlanganlarni qo'shish (N)»** tugmasi paydo bo'lishi kerak —
+   u faqat belgilangan guruhlar soni **> 0** bo'lganda chiqadi.
+3. **«✅ Tanlanganlarni qo'shish»** ni bosing — guruhlar bazaga qo'shiladi
+   va hisobot chiqadi: `✅ 2 ta guruh qo'shildi`.
+4. **«💬 Guruhlar»** oynasida tanlangan guruhlar ko'rinishi kerak.
 
 ### Inline tugmalar va xato logi (PR #38)
 
