@@ -1,8 +1,8 @@
 # 🔧 TUZATISHLAR RO'YXATI — AVTOBOT2026
 
 > **Holat:** ✅ **BARCHA TUZATISHLAR BAJARILDI** (2026-11-14)
-> **Filial:** `arena/bd8a5e1f-avtobot2026` (asosiy: `main`, commit `f226431` — **PR #40 merged**)
-> **Testlar:** `638 passed, 62 subtests passed` (bazadagi 624 + 14 yangi)
+> **Filial:** `arena/c7a82447-avtobot2026` (asosiy: `main`, commit `e9b2e5e` — **PR #41**)
+> **Testlar:** `656 passed, 62 subtests passed` (bazadagi 638 + 18 yangi)
 > **Deploy:** ⏳ VPS'ga o'tkazilishi kutilmoqda (buyruq quyida)
 
 ---
@@ -294,8 +294,8 @@ Endi paneldagi son (`Foydalanuvchilar: 1/5 ta`) ro'yxatdagi son bilan
 
 ## ✅ TUZATISHLAR — PR #40 (2026-11-14) — «💬 Guruhlar» oynasi UX
 
-> **Filial:** `arena/bd8a5e1f-avtobot2026` (asosiy: `main`, commit `f226431` — **PR #40 merged**)
-> **Testlar:** `638 passed, 62 subtests passed` (bazadagi 624 + 14 yangi)
+> **Filial:** `arena/c7a82447-avtobot2026` (asosiy: `main`, commit `e9b2e5e` — **PR #41**)
+> **Testlar:** `656 passed, 62 subtests passed` (bazadagi 638 + 18 yangi)
 
 ### 🟡 U1. Qo'shilgan guruhlar ko'rinmaydi
 
@@ -387,6 +387,50 @@ qolib ketardi.
 
 ---
 
+## ✅ TUZATISHLAR — PR #41 (2026-11-22) — Guruh nomi (title)
+
+> **Filial:** `arena/c7a82447-avtobot2026` (asosiy: `main`, commit `e9b2e5e`)
+> **Testlar:** `656 passed, 62 subtests passed` (bazadagi 638 + 18 yangi)
+
+### 🟡 V1. Guruh nomi ko'rinmaydi — qaysi guruh ekanini bilib bo'lmaydi
+
+**Boshqaruv:** `bot/keyboards.py` — `kb_my_groups()`; `bot/my_groups.py` —
+`build_groups_window()`.
+
+**Sabab:** bazada faqat `value` (username yoki ID) saqlanardi —
+guruhning **display name** (title) umuman yo'q edi. Shuning uchun:
+
+- `🗑` tugmasi `🗑 1. @taxi_xorazm_toshken_gruppasi` ko'rsatardi —
+  foydalanuvchi bu **username** ni ko'radi va guruhni tanib olmaydi
+  (asl nomi «Taxi Xorazm Toshken guruhi» bo'lishi mumkin);
+- ro'yxatda faqat `https://t.me/...` havola chiqardi, nomi yo'q.
+
+**Hozir:**
+
+1. **Baza** — `groups` jadvaliga `title TEXT DEFAULT ''` ustuni qo'shildi
+   (`ALTER TABLE` — xavfsiz migratsiya, eski ma'lumot o'chmaydi).
+2. **`db.add_chat(uid, value, title="")`** — yangi ixtiyoriy parametr.
+3. **`db.set_chat_title(uid, group_id, title)`** — faqat bo'sh nomni
+   to'ldiradi (mavjud nomni qayta yozmaydi).
+4. **Skaner** — topilgan guruh nomi (`group.title`) darhol bazaga saqlanadi.
+5. **Qo'lda kiritish** — nom **fon task**da Telegram'dan olinadi (asosiy
+   oqim tez va Telegram'siz ishlaydi — avvalgi kafolat saqlanadi).
+6. **«💬 Guruhlar» oynasi** — nomi yo'q guruhlar uchun fon task ishga
+   tushadi va nomni saqlaydi.
+7. **`🗑` tugmasi** — endi **nomni** ko'rsatadi:
+   `🗑 1. Taxi Xorazm Toshken`. Nomi yo'q bo'lsa — username.
+8. **Ro'yxat** — `1. Taxi Xorazm Toshken — https://t.me/taxi_x`.
+
+### 🔒 Yopiq guruhlar (maxfiylik saqlanadi)
+
+Marked ID (`-1001234567890`) **ko'rsatilmaydi** — avvalgi xatti-harakat
+saqlangan. Nomi bo'lsa faqat nomi chiqadi.
+
+**Tekshiruv:** `tests/test_group_titles.py` — 18 ta yangi test
+(migratsiya, baza API, ko'rsatish, skaner, fon task).
+
+---
+
 ## 📋 YANGI TESTLAR
 
 | Fayl | Testlar | Qamrov |
@@ -397,8 +441,9 @@ qolib ketardi.
 | `tests/test_inline_fixes_and_error_logging.py` | 16 | **X1, X2, X3, X4, X6** |
 | `tests/test_callback_router_coverage.py` | **11** (yangi) | **X5** — belgilanish + router qamrovi |
 | `tests/test_discover_group_window_ux.py` | **14** (yangi) | **U1, U2, U3, U4, U5** |
+| `tests/test_group_titles.py` | **18** (yangi) | **V1** — guruh nomi (migratsiya, baza, ko'rsatish, fon task) |
 
-**Jami:** 547 → **638 test**, hammasi o'tadi (`pytest` va `unittest`).
+**Jami:** 547 → **656 test**, hammasi o'tadi (`pytest` va `unittest`).
 
 > Eski testlar (`test_menu_simplified.py`, `test_my_groups_screen.py`)
 > `mg:find` mavjudligini talab qilardi — yangi UX ga moslab yangilandi.

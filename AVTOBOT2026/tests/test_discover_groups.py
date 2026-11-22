@@ -366,7 +366,7 @@ class DiscoverGroupsTestCase(unittest.IsolatedAsyncioTestCase):
             release=AsyncMock(),
         )
 
-        async def fake_add_chat(uid, value):
+        async def fake_add_chat(uid, value, title=""):
             return False, "limit"
 
         update, _status, _message = self._update()

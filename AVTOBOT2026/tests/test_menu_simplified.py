@@ -209,8 +209,8 @@ class SimplifiedMenuTests(unittest.IsolatedAsyncioTestCase):
         text = message.reply_text.await_args.args[0]
         self.assertIn("🔗 Guruh havolalari", text)
         # Telegram HTML: "_" italic belgisi — escape qilingan bo'lishi kerak.
-        self.assertIn(r"1. https://t.me/taxi\_tashkent", text)
-        self.assertIn(r"2. https://t.me/avtoelon\_uz", text)
+        self.assertIn(r"https://t.me/taxi\_tashkent", text)
+        self.assertIn(r"https://t.me/avtoelon\_uz", text)
 
     async def test_public_link_helper(self) -> None:
         """Ochiq havola yordamchisi to'g'ri ishlaydi."""

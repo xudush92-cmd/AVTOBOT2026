@@ -250,6 +250,28 @@ def kb_stop_confirm(token: str) -> InlineKeyboardMarkup:
 # ─────────────────────────────────────────
 # ODDIY USER GURUH/POST O'CHIRISH
 # ─────────────────────────────────────────
+def _group_button_label(item: dict) -> str:
+    """``🗑`` tugmasi uchun guruh nomi.
+
+    Telegram'dagi display name (``title``) afzal — foydalanuvchi guruhni
+    nomidan tanib oladi. Nomi yo'q bo'lsa — username.
+
+    Yopiq guruh (marked ID) uchun ID **ko'rsatilmaydi**.
+
+    Telegram tugma matni **64 belgi** bilan cheklangan — shuning uchun
+    matn qisqartiriladi.
+    """
+    title = str(item.get("title") or "").strip()
+    value = str(item.get("value") or "").strip()
+    if title and title != value:
+        # Nomi bor — faqat nomi ko'rsatamiz (joy tejaladi).
+        return title[:48]
+    if value.startswith("@"):
+        return value[:48]
+    # Yopiq guruh — ID ko'rsatilmaydi.
+    return (title or "Yopiq guruh")[:48]
+
+
 def kb_my_groups(
     groups: list[dict],
     page: int = 0,
@@ -271,11 +293,13 @@ def kb_my_groups(
     rows: list[list[InlineKeyboardButton]] = []
     for offset, item in enumerate(groups[start : start + page_size], start):
         group_id = int(item["id"])
-        value = str(item["value"])
+        # ✅ Tugmada guruhning **nomi** ko'rinadi (Telegram display name).
+        # Nomi yo'q bo'lsa — username. Limit 64 belgi.
+        label = _group_button_label(item)
         rows.append(
             [
                 InlineKeyboardButton(
-                    f"🗑 {offset + 1}. {value[:30]}",
+                    f"🗑 {offset + 1}. {label}",
                     callback_data=f"mg:del:{group_id}",
                 ),
             ]

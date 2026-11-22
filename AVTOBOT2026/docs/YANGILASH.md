@@ -14,7 +14,21 @@ qaytish rejasini beradi.
 | Worker yuborish | 🟡 o'rta | Endi albom `send_file([...])` orqali, matnli post `link_preview` bayrog'i bilan ketadi. Kunlik limit/faol soat yoqilsa, yuborishlar o'sha oynaga moslashadi |
 | Media disk | 🟡 o'rta | Albomlar bilan fayllar soni o'sadi. Har user uchun kvota: `MAX_MEDIA_FILES_PER_USER` (standart 200) |
 
-Barcha yangi funksiya testlangan: **638 test** (`python -m unittest discover -s tests -t tests`).
+Barcha yangi funksiya testlangan: **656 test** (`python -m unittest discover -s tests -t tests`).
+
+### 🆕 Guruh nomi (title) — bazadan tugma matnigacha (PR #41)
+
+| Qism | Xavf | Izoh |
+| ---- | ---- | ---- |
+| **Baza sxemasi** | 🟢 past | Faqat **bitta ustun** qo'shiladi: `ALTER TABLE groups ADD COLUMN title TEXT DEFAULT ''`. Eski guruhlar uchun `title` bo'sh bo'ladi — ma'lumot o'chmaydi, ko'chirilmaydi |
+| **`🗑` tugmasi** | 🟢 past | Endi guruh **nomi** ko'rinadi (`🗑 1. Taxi Xorazm Toshken`) — foydalanuvchi qaysi guruhni o'chirmoqchi ekanini aniq biladi. Nomi yo'q bo'lsa — username |
+| **Ro'yxat** | 🟢 past | `1. Taxi Xorazm Toshken — https://t.me/taxi_x` — nom va havola birga |
+| **Yopiq guruhlar** | 🟢 past | Marked ID (`-100123...`) **ko'rsatilmaydi** — avvalgi maxfiylik saqlanadi |
+| **Telegram so'rovi** | 🟢 past | Nom olish **fon task**da — foydalanuvchi kutmaydi. Qo'lda kiritish oqimi tez va Telegram'siz ishlaydi (avvalgi kafolat saqlanadi) |
+| **Skaner** | 🟢 past | Skanerda topilgan guruh nomi (`group.title`) **darhol** bazaga saqlanadi |
+
+> 📌 **Yangi sozlamalar yo'q** — `.env` ga hech narsa qo'shish shart emas.
+> 📌 **Worker / posting / Start / Stop** tegilmadi.
 
 ### 🆕 «💬 Guruhlar» oynasi UX tuzatishlari (PR #40)
 
@@ -455,6 +469,21 @@ shuning uchun xato bo'lsa sabov izlang, o'chirmang).
 8. Skanerda guruhni **✅ belgilang** → **«✅ Tanlanganlarni qo'shish (N)»** —
    qo'shishdan keyin **«💬 Guruhlar» oynasi** (soni + havolalar + o'chirish
    tugmalari) ko'rinsin, faqat hisobot emas.
+
+### Guruh nomi (title) — PR #41
+
+1. **«💬 Guruhlar»** — ro'yxatda guruh **nomi** va `https://t.me/...`
+   havolasi birga ko'rinishi kerak:
+   `1. Taxi Xorazm Toshken — https://t.me/taxi_x`.
+2. **🗑** tugmasi — guruh **nomini** ko'rsatishi kerak
+   (`🗑 1. Taxi Xorazm Toshken`), username emas.
+3. **Asosiy menyudagi «🔍 Guruhlarni topish»** → skaner → ✅ belgilang →
+   **«✅ Tanlanganlarni qo'shish»** — qo'shishdan keyin oynada **nom**
+   ko'rinishi kerak (skaner nomi saqlanadi).
+4. **Yopiq guruh** (marked ID) — ID ro'yxatda ham, tugmada ham
+   **ko'rinmasligi** kerak (maxfiylik).
+5. Eski guruhlar (bazasida nomi yo'q) — «💬 Guruhlar» oynasini bir marta
+   ochgandan keyin nomi **avtomatik to'ldiriladi** (fon task, Telegram'dan).
 
 ### Inline tugmalar va xato logi (PR #38)
 

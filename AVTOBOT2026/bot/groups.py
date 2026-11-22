@@ -430,10 +430,106 @@ async def begin_add_groups(update: Update) -> None:
 # ─────────────────────────────────────────────────────────────────────────
 # GURUH QO'SHISH — BULK
 # ─────────────────────────────────────────────────────────────────────────
+async def _fetch_titles_for_references(
+    uid: int, references: list[str]
+) -> dict[str, str]:
+    """Guruh nomlarini (Telegram display name) oladi.
+
+    Bir marta client ulanadi va barcha havolalar uchun nom so'raladi.
+    Nomi topilmasa yoki Telegram'da xato bo'lsa — bo'sh qaytariladi
+    (nom ixtiyoriy — foydalanuvchining ishi to'xtamasligi kerak).
+
+    Qaytaradi: ``{group_reference_key: title}``.
+    """
+    session = await db.get_session(uid)
+    if not session:
+        return {}
+
+    wanted = {group_reference_key(r): r for r in references}
+    wanted = {k: v for k, v in wanted.items() if k}
+    if not wanted:
+        return {}
+
+    titles: dict[str, str] = {}
+    client = None
+    try:
+        client = TelegramClient(StringSession(session), API_ID, API_HASH)
+        await asyncio.wait_for(client.connect(), timeout=20)
+        me = await asyncio.wait_for(client.get_me(), timeout=15)
+        if me is None:
+            return {}
+        for key, reference in wanted.items():
+            try:
+                entity = await asyncio.wait_for(
+                    resolve_group_entity(client, reference), timeout=20
+                )
+            except GroupResolveError:
+                continue
+            except Exception as exc:  # noqa: BLE001 — nom ixtiyoriy
+                log(
+                    f"guruh nomi olinmadi {uid} {reference}: "
+                    f"{type(exc).__name__}",
+                    "warning",
+                )
+                continue
+            title = str(getattr(entity, "title", "") or "").strip()
+            if title:
+                titles[key] = title
+    except Exception as exc:  # noqa: BLE001 — nom ixtiyoriy
+        log(
+            f"guruh nomlari olinmadi {uid}: {type(exc).__name__}",
+            "warning",
+        )
+    finally:
+        if client is not None:
+            with contextlib.suppress(Exception):
+                await client.disconnect()
+    return titles
+
+
+async def _fetch_and_store_titles(uid: int, references: list[str]) -> None:
+    """Guruh nomlarini olib, bazaga yozadi (fon task).
+
+    Xato bo'lsa — jim qoldiriladi: guruh nomi ixtiyoriy, oqim to'xtamasligi kerak.
+    """
+    try:
+        titles = await _fetch_titles_for_references(uid, references)
+        if not titles:
+            return
+        records = await db.get_chat_records(uid)
+        by_key = {group_reference_key(str(r.get("value") or "")): r for r in records}
+        for key, title in titles.items():
+            record = by_key.get(key)
+            if not record:
+                continue
+            if await db.set_chat_title(uid, int(record["id"]), title):
+                log(f"📝 Guruh nomi saqlandi: {uid} → {key} = {title}")
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:  # noqa: BLE001 — fon task
+        log(f"guruh nomlari saqlanmadi {uid}: {type(exc).__name__}", "warning")
+
+
+def _schedule_title_fetch(uid: int, references: list[str]) -> None:
+    """Nom olish fon task'ini ishga tushiradi (xavfsiz, bir marta)."""
+    if not uid or not references:
+        return
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:  # pragma: no cover — loop yo'q
+        return
+    task = loop.create_task(
+        _fetch_and_store_titles(uid, references),
+        name=f"group-title-fetch-{uid}",
+    )
+    task.add_done_callback(lambda _t: None)
+
+
 async def handle_add_groups(update: Update, text: str) -> None:
     """
     Foydalanuvchi bir yoki bir nechta guruh yuboradi.
-    Faqat formatni tekshirib saqlaymiz; Telegram'ga ulanmaymiz.
+    Formatni tekshirib saqlaymiz; imkon bo'lsa Telegram'dan guruh nomini
+    ham olib, bazaga saqlaymiz (foydalanuvchi guruhni nomidan tanisin).
     """
     from bot.login import user_states
 
@@ -464,6 +560,11 @@ async def handle_add_groups(update: Update, text: str) -> None:
     duplicates: list[str] = []
     errors = [f"{value} (noto'g'ri format)" for value in invalid]
     existing = {group_reference_key(value) for value in await db.get_chats(uid)}
+
+    # ✅ Guruh nomlari (Telegram display name) **fon task**da olinadi — asosiy
+    # oqim tez qoladi va Telegram'ga ulanib bo'lmasa ham guruhlar saqlanadi.
+    # Nom keyinchalik «💬 Guruhlar» oynasida ham to'ldirilishi mumkin.
+    _schedule_title_fetch(uid, groups)
 
     for i, group in enumerate(groups, 1):
         # Bir guruh URL va @username bilan qayta qo'shilmasin.
@@ -1063,7 +1164,11 @@ async def handle_discover_callback(update: Update, uid: int, data: str) -> None:
         max_groups = int(limits.get("max_groups") or 0)
 
         for group in selected:
-            saved, reason = await db.add_chat(uid, group.reference)
+            # ✅ Guruh nomi (Telegram display name) ham saqlanadi — foydalanuvchi
+            # keyinchalik guruhni tanib olishi uchun (``🗑 N. <nom>``).
+            saved, reason = await db.add_chat(
+                uid, group.reference, title=group.title or ""
+            )
             if saved:
                 added.append(group.reference)
             elif reason == "duplicate":
