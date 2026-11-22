@@ -1,7 +1,7 @@
 # 🔧 TUZATISHLAR RO'YXATI — AVTOBOT2026
 
 > **Holat:** ✅ **BARCHA TUZATISHLAR BAJARILDI** (2026-11-14)
-> **Filial:** `arena/c7a82447-avtobot2026` (asosiy: `main`, commit `e9b2e5e` — **PR #41**)
+> **Filial:** `arena/c7a82447-avtobot2026` (asosiy: `main`, commit `f53be05` — **PR #41 merged**)
 > **Testlar:** `656 passed, 62 subtests passed` (bazadagi 638 + 18 yangi)
 > **Deploy:** ⏳ VPS'ga o'tkazilishi kutilmoqda (buyruq quyida)
 
@@ -294,7 +294,7 @@ Endi paneldagi son (`Foydalanuvchilar: 1/5 ta`) ro'yxatdagi son bilan
 
 ## ✅ TUZATISHLAR — PR #40 (2026-11-14) — «💬 Guruhlar» oynasi UX
 
-> **Filial:** `arena/c7a82447-avtobot2026` (asosiy: `main`, commit `e9b2e5e` — **PR #41**)
+> **Filial:** `arena/c7a82447-avtobot2026` (asosiy: `main`, commit `f53be05` — **PR #41 merged**)
 > **Testlar:** `656 passed, 62 subtests passed` (bazadagi 638 + 18 yangi)
 
 ### 🟡 U1. Qo'shilgan guruhlar ko'rinmaydi
