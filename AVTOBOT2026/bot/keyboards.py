@@ -877,6 +877,13 @@ def kb_user_card(
             )
         ]
     )
+    rows.append(
+        [
+            InlineKeyboardButton(
+                "👥 Jamoaga biriktirish", callback_data=f"uc:teambind:{uid}"
+            )
+        ]
+    )
 
     block_text = "✅ Blokdan chiqarish" if blocked else "🚫 Bloklash"
     block_action = "unblock" if blocked else "blockask"
@@ -888,6 +895,31 @@ def kb_user_card(
     )
     rows.append([InlineKeyboardButton("📊 Batafsil", callback_data=f"uc:detail:{uid}")])
     rows.append([InlineKeyboardButton("⬅️ Orqaga", callback_data="adm:users")])
+    return InlineKeyboardMarkup(rows)
+
+
+def kb_team_bind_choose(target: int, admins: list[dict]) -> InlineKeyboardMarkup:
+    """Super admin uchun: jamoaga biriktirish — jamoa adminini tanlash."""
+    rows: list[list[InlineKeyboardButton]] = []
+    for admin in admins:
+        uid = int(admin.get("uid") or 0)
+        name = (admin.get("name") or str(uid))[:28]
+        icon = "👑" if not admin.get("is_blocked") else "🚫"
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    f"{icon} {name}",
+                    callback_data=f"uc:teambindgo:{target}:{uid}",
+                )
+            ]
+        )
+    if not rows:
+        rows.append(
+            [InlineKeyboardButton("👑 Jamoa admini yo'q", callback_data="adm:noop")]
+        )
+    rows.append(
+        [InlineKeyboardButton("⬅️ Orqaga", callback_data=f"uc:view:{target}")]
+    )
     return InlineKeyboardMarkup(rows)
 
 
@@ -1529,7 +1561,12 @@ def kb_team_admin_panel() -> InlineKeyboardMarkup:
                     "📨 Xabar yuborish", callback_data="tadm:message"
                 ),
             ],
-            [InlineKeyboardButton("🔗 Havola", callback_data="tadm:link")],
+            [
+                InlineKeyboardButton(
+                    "✏️ Jamoa nomi", callback_data="tadm:rename"
+                ),
+                InlineKeyboardButton("🔗 Havola", callback_data="tadm:link"),
+            ],
             [InlineKeyboardButton("⬅️ Orqaga", callback_data="tadm:back")],
         ]
     )

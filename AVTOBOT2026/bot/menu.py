@@ -19,7 +19,7 @@ from bot import keyboards as KB
 from bot import texts as T
 from core import database as db
 from core.logger import log
-from core.utils import start_of_local_day_ts
+from core.utils import reply_text_safe, start_of_local_day_ts
 from worker.client_pool import PoolBusyError, SessionInvalidError
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -53,13 +53,16 @@ async def show_home(update: Update, uid: int, note: str = "") -> None:
 
     Barcha "🏠 Asosiy menyu" chiqarish joylari shu funksiyadan
     foydalanadi — holat har doim bir xil ko'rinadi.
+
+    ``reply_text_safe`` ishlatiladi — funksiya inline tugma bosilganda
+    ham chaqiriladi (u yerda ``update.message`` bo'lmasligi mumkin).
     """
     text = "🏠 Asosiy menyu"
     if note:
         text = f"{note}\n\n{text}"
-    await update.message.reply_text(
+    await reply_text_safe(
+        update,
         f"{text}\n\n{state_line(uid)}",
-        parse_mode="Markdown",
         reply_markup=await KB.kb_main_for(uid, running=current_state(uid)),
     )
 

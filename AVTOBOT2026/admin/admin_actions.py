@@ -397,6 +397,16 @@ async def _handle_user_card_target_locked(
     if action == "msg":
         await action_send_message(update, admin_uid, target)
         return
+    if action == "teambind":
+        await action_team_bind_choose(update, target)
+        return
+    if action == "teambindgo":
+        try:
+            owner_uid = int(parts[3])
+        except (IndexError, ValueError):
+            return
+        await action_team_bind_go(update, target, owner_uid)
+        return
     if action == "approve":
         await action_approve(update, admin_uid, target)
         return
@@ -1943,6 +1953,138 @@ async def action_send_message(update: Update, admin_uid: int, target: int) -> No
         f"Yubormoqchi bo'lgan matnni shu yerning o'ziga yozing.\n"
         f"Xabar to'g'ridan-to'g'ri foydalanuvchiga boradi.",
         reply_markup=KB.kb_admin_section_back(target, "back"),
+    )
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# JAMOAGA BIRIKTIRISH (super admin → jamoa admini tasdiqlaydi)
+# ─────────────────────────────────────────────────────────────────────────
+async def action_team_bind_choose(update: Update, target: int) -> None:
+    """Super admin foydalanuvchini jamoaga yo'naltirishni tanlaydi.
+
+    Super admin tasdiqlaydi emas — u faqat **yo'naltiradi**. Tasdiqlashni
+    jamoa admini bajaradi (shuning uchun a'zo o'sha jamoa adminining
+    telefoniga murojaat qiladi).
+    """
+    q = update.callback_query
+    admins = await db.get_team_admins()
+    if not admins:
+        await q.edit_message_text(
+            T.ADMIN_TEAMBIND_NO_ADMINS,
+            reply_markup=KB.kb_admin_back(),
+        )
+        return
+
+    await q.edit_message_text(
+        T.ADMIN_TEAMBIND_CHOOSE,
+        reply_markup=KB.kb_team_bind_choose(target, admins),
+    )
+
+
+async def action_team_bind_go(
+    update: Update, target: int, owner_uid: int
+) -> None:
+    """Foydalanuvchini tanlangan jamoa adminining jamoasiga yo'naltiradi."""
+    q = update.callback_query
+
+    user = await db.get_user(target)
+    if not user:
+        await q.edit_message_text(
+            "❌ Foydalanuvchi endi mavjud emas.",
+            reply_markup=KB.kb_admin_back(),
+        )
+        return
+
+    owner = await db.get_user(owner_uid)
+    if not owner or not owner.get("is_team_admin"):
+        await q.edit_message_text(
+            "👑 Bu jamoa admini topilmadi.",
+            reply_markup=KB.kb_admin_back(),
+        )
+        return
+
+    team_id = int(owner.get("team_id") or 0)
+    if not team_id:
+        await q.edit_message_text(
+            "👑 Bu jamoa adminining jamoasi yo'q.",
+            reply_markup=KB.kb_admin_back(),
+        )
+        return
+
+    team = await db.get_team(team_id)
+    if not team:
+        await q.edit_message_text(
+            "👑 Jamoa topilmadi.",
+            reply_markup=KB.kb_admin_back(),
+        )
+        return
+
+    # Allaqachon boshqa jamoaga biriktirilganmi?
+    current_team_id = int(user.get("team_id") or 0)
+    if current_team_id and current_team_id != team_id:
+        old = await db.get_team(current_team_id)
+        await q.edit_message_text(
+            T.ADMIN_TEAMBIND_ALREADY.format(
+                team=(old or {}).get("name") or "boshqa jamoa"
+            ),
+            reply_markup=await user_card_markup(target),
+        )
+        return
+
+    if not await db.team_has_free_slot(team_id):
+        await q.edit_message_text(
+            T.ADMIN_TEAMBIND_NO_SLOT.format(
+                team=team.get("name") or "Jamoa"
+            ),
+            reply_markup=await user_card_markup(target),
+        )
+        return
+
+    # Jamoa admini tasdiqlashi uchun ariza holati.
+    saved = await db.set_team_pending(
+        target,
+        team_id,
+        owner_uid,
+        name=user.get("name") or "",
+        username=user.get("username") or "",
+    )
+    if not saved:
+        await q.edit_message_text(
+            "❌ Jamoaga biriktirib bo'lmadi. Qayta urinib ko'ring.",
+            reply_markup=await user_card_markup(target),
+        )
+        return
+
+    # Jamoa adminiga ariza yuboriladi (fon task — foydalanuvchi kutmasin).
+    from bot.login import schedule_notify_super_for_approval
+
+    schedule_notify_super_for_approval(target)
+
+    # Foydalanuvchiga ham xabar boradi — kim tasdiqlashini bilishi uchun
+    # (jamoa adminining telefon raqami ko'rsatiladi).
+    with contextlib.suppress(Exception):
+        from bot.login import _team_admin_contact
+
+        contact = await _team_admin_contact(owner_uid)
+        await application.bot.send_message(
+            target,
+            T.TEAM_PENDING_APPROVAL_CONTACT.format(
+                name=team.get("name") or "Jamoangiz",
+                contact=contact,
+            ),
+        )
+
+    log(
+        f"👥 Super admin a'zoni jamoaga yo'naltirdi: {target} → "
+        f"jamoa #{team_id} (admin {owner_uid})"
+    )
+
+    await q.edit_message_text(
+        T.ADMIN_TEAMBIND_DONE.format(
+            name=user.get("name") or f"uid {target}",
+            team=team.get("name") or "Jamoangiz",
+        ),
+        reply_markup=await user_card_markup(target),
     )
 
 
