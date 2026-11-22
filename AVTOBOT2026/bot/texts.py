@@ -737,6 +737,25 @@ DISCOVER_APPLY_NONE = (
     "Avval kerakli guruhlarni ✅ belgilaning."
 )
 
+# ── Tanlangan, lekin qo'shilmagan guruhlar (bo'sh «Guruhlar» oynasi) ──
+GROUPS_PENDING_SELECTED = (
+    "ℹ️ Skanerda <b>{found}</b> ta guruh topilgan, <b>{selected}</b> tasi "
+    "tanlangan — lekin ular hali qo'shilmagan.\n\n"
+    "Qo'shish uchun «✅ Tanlanganlarni qo'shish» tugmasini bosing."
+)
+
+GROUPS_PENDING_NOT_SELECTED = (
+    "ℹ️ Skanerda <b>{found}</b> ta guruh topilgan.\n\n"
+    "Ularni ✅ belgilab, «✅ Tanlanganlarni qo'shish» tugmasini bosing."
+)
+
+GROUPS_PENDING_NONE = (
+    "💬 <b>GURUHLAR</b>\n\n"
+    "Sizda hali guruh yo'q.\n\n"
+    "«🔍 Guruhlarni topish» tugmasi orqali Telegram'dagi "
+    "guruhlaringizni avtomatik toping va qo'shing."
+)
+
 DISCOVER_LIMIT_HIT = (
     "\n🧱 Paket chegarasi: {limit} ta guruh. Qolganlari qo'shilmadi — "
     "keraksizlarini ➖ Guruh o'chirish bilan o'chiring yoki paketni kengaytiring."

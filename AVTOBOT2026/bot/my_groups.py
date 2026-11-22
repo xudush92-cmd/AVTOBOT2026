@@ -138,35 +138,33 @@ async def build_groups_window(
     """
     groups = await db.get_chat_records(uid)
 
+    # ⚠️ Skanerda topilgan, lekin hali qo'shilmagan guruhlar.
+    # Foydalanuvchi ularni ✅ bilan belgilab, "Tanlanganlarni qo'shish"
+    # tugmasini bosmasdan oyna yopsa — ular yo'qolib qoladi. Shuning uchun
+    # bo'sh oynada ham, to'ldirilgan oynada ham bu holat ko'rsatiladi va
+    # "qo'shish" tugmasi beriladi.
+    pending = DS.get_session(uid)
+    pending_selected = 0
+    pending_found = 0
+    if pending is not None and getattr(pending, "groups", None):
+        pending_found = len(pending.groups)
+        pending_selected = len(getattr(pending, "selected", set()) or set())
+
     if not groups:
-        text = (
-            "💬 <b>GURUHLAR</b>\n\n"
-            "Sizda hali guruh yo'q.\n\n"
-            "«🔍 Guruhlarni topish» tugmasi orqali Telegram'dagi "
-            "guruhlaringizni avtomatik toping va qo'shing."
-        )
-        # Skanerda topilgan, lekin hali qo'shilmagan guruhlar bo'lsa —
-        # foydalanuvchi "guruhlar yo'q" deb xato tushunmasligi uchun
-        # aniq eslatma beriladi.
-        pending = DS.get_session(uid)
-        if pending is not None and getattr(pending, "groups", None):
-            found = len(pending.groups)
-            selected = len(getattr(pending, "selected", set()) or set())
-            if selected:
-                text += (
-                    f"\n\nℹ️ Skanerda <b>{found}</b> ta guruh topilgan, "
-                    f"<b>{selected}</b> tasi tanlangan. "
-                    "Ro'yxatda «Tanlanganlarni qo'shish» tugmasini bosib, "
-                    "guruhlarni shu yerda qo'shing."
+        text = T.GROUPS_PENDING_NONE
+        if pending_found:
+            if pending_selected:
+                text += "\n\n" + T.GROUPS_PENDING_SELECTED.format(
+                    found=pending_found,
+                    selected=pending_selected,
                 )
             else:
-                text += (
-                    f"\n\nℹ️ Skanerda <b>{found}</b> ta guruh topilgan. "
-                    "Ularni tanlab, «Tanlanganlarni qo'shish» tugmasini bosing."
+                text += "\n\n" + T.GROUPS_PENDING_NOT_SELECTED.format(
+                    found=pending_found,
                 )
         if note:
             text = f"{note}\n\n{text}"
-        return text, KB.kb_my_groups([], 0)
+        return text, KB.kb_my_groups([], 0, pending_selected=pending_selected)
 
     max_page = max(0, (len(groups) - 1) // PAGE_SIZE)
     page = min(max(page, 0), max_page)
@@ -192,9 +190,17 @@ async def build_groups_window(
         f"{links_block}\n\n"
         "Quyidagi <b>🗑</b> tugmalari orqali guruhni o'chirish mumkin."
     )
+    if pending_selected:
+        # ⚠️ Tanlangan guruhlar hali qo'shilmagan — ogohlantirish.
+        text += "\n\n" + T.GROUPS_PENDING_SELECTED.format(
+            found=pending_found,
+            selected=pending_selected,
+        )
     if note:
         text = f"{note}\n\n{text}"
-    return text, KB.kb_my_groups(groups, page)
+    return text, KB.kb_my_groups(
+        groups, page, pending_selected=pending_selected
+    )
 
 
 async def render_groups_inline(
@@ -456,6 +462,27 @@ async def handle_my_groups_callback(
 
     if action == "noop":
         await q.answer()
+        return
+
+    if action == "apply":
+        # ⚠️ Skanerda tanlangan, lekin hali qo'shilmagan guruhlarni
+        # to'g'ridan-to'g'ri qo'shamiz. Foydalanuvchi "Tanlanganlarni
+        # qo'shish" tugmasini skaner oynasida topib bosmasdan, bu
+        # oynadan ham qo'shishi mumkin bo'ladi.
+        from bot import groups as G
+
+        session = DS.get_session(uid)
+        if session is None:
+            await q.answer(T.DISCOVER_PICK_EXPIRED, show_alert=True)
+            return
+        selected = session.selected_groups()
+        if not selected:
+            await q.answer(T.DISCOVER_APPLY_NONE, show_alert=True)
+            return
+        # Javob ``apply_selected_groups`` ichida beriladi — bu yerda
+        # ``q.answer()`` qo'shimcha chaqirilmaydi (Telegram bitta javobga
+        # ruxsat beradi).
+        await G.apply_selected_groups(update, uid, selected)
         return
 
     if action == "back":

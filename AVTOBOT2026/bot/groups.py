@@ -1087,6 +1087,153 @@ async def _render_discover_list(
     )
 
 
+async def apply_selected_groups(update: Update, uid: int, selected) -> None:
+    """Tanlangan guruhlarni bazaga qo'shadi va natijani ko'rsatadi.
+
+    Ikki yo'l bir xil funksiyani ishlatadi:
+    - skaner oynasidagi «✅ Tanlanganlarni qo'shish» tugmasi;
+    - «💬 Guruhlar» oynasidagi «✅ Tanlanganlarni qo'shish» tugmasi.
+
+    Foydalanuvchi tanlagan guruhlarni yo'qotib qo'ymasligi uchun natija
+    **doim** tekshiriladi: bazada qancha guruh turgani solishtiriladi va
+    foydalanuvchiga aniq xabar beriladi.
+    """
+    q = update.callback_query
+    added: list[str] = []
+    duplicates = 0
+    skipped = 0
+    limit_hit = False
+    limits = await db.get_limits(uid)
+    max_groups = int(limits.get("max_groups") or 0)
+
+    for group in selected:
+        # ✅ Guruh nomi (Telegram display name) ham saqlanadi — foydalanuvchi
+        # keyinchalik guruhni tanib olishi uchun (``🗑 N. <nom>``).
+        saved, reason = await db.add_chat(
+            uid, group.reference, title=group.title or ""
+        )
+        if saved:
+            added.append(group.reference)
+        elif reason == "duplicate":
+            duplicates += 1
+        elif reason == "limit":
+            limit_hit = True
+            break
+        else:
+            skipped += 1
+            log(
+                f"discover_groups: guruh qo'shilmadi "
+                f"(uid={uid}, value={group.reference}, sabab={reason})",
+                "warning",
+            )
+
+    # ✅ Qo'shishdan keyin bazada qancha guruh turganini tekshiramiz.
+    # Agar ``add_chat`` "muvaffaqiyatli" deb hisoblanib, lekin yozuv
+    # bazada bo'lmasa — foydalanuvchiga xato yoki to'g'ri natijani
+    # ko'rsatish kerak (avval "guruhlar yo'q" xabari chiqardi).
+    try:
+        stored = await db.get_chat_records(uid)
+    except Exception as exc:  # noqa: BLE001 — himoya
+        stored = []
+        log(
+            f"discover_groups: ro'yxatni tekshirishda xato "
+            f"({uid}: {type(exc).__name__})",
+            "warning",
+        )
+    stored_count = len(stored)
+
+    discover_sessions.clear_session(uid)
+
+    limits = await db.get_limits(uid)
+    max_groups = int(limits.get("max_groups") or 0)
+    report = T.DISCOVER_APPLY_HEADER.format(
+        added=len(added),
+        duplicates=duplicates,
+        skipped=skipped,
+    )
+    if limit_hit:
+        report += T.DISCOVER_LIMIT_HIT.format(limit=max_groups)
+
+    # ✅ Qo'shilgan deb hisoblangan guruhlar bazada yo'q bo'lsa —
+    # foydalanuvchiga xato yubormasligimiz kerak. Bunday holatda
+    # "qo'shildi" xabari o'rniga aniq tushuntirish beriladi.
+    if added and not stored_count:
+        report += (
+            "\n\n⚠️ Guruhlar bazaga yozilmadi. "
+            "Xatoni muammoni yozing, biz tuzatamiz."
+        )
+        log(
+            f"discover_groups: {uid} — {len(added)} ta guruh "
+            f"'qo'shildi' deb hisoblandi, lekin bazada 0 ta bor",
+            "error",
+        )
+        await q.answer("❌ Guruhlar qo'shilmadi", show_alert=True)
+    else:
+        await q.answer(
+            f"✅ {len(added)} ta guruh qo'shildi",
+            show_alert=True,
+        )
+
+    # ✅ Qo'shilgan guruhlar foydalanuvchiga darhol ko'rinishi kerak —
+    # shuning uchun hisobot va yangilangan «💬 Guruhlar» oynasi
+    # bir xil xabarda chiqadi.
+    try:
+        groups_text, groups_markup = await MY_GROUPS.build_groups_window(
+            uid, note=report
+        )
+    except Exception as exc:  # noqa: BLE001 — himoya
+        log(
+            f"discover_groups apply window xatosi: {uid} "
+            f"({type(exc).__name__})",
+            "warning",
+        )
+        groups_text, groups_markup = None, None
+
+    shown = False
+    if groups_text:
+        # Birinchi urinish — skaner xabarini shu oyna bilan almashtirish.
+        with contextlib.suppress(Exception):
+            await q.edit_message_text(
+                groups_text,
+                parse_mode="HTML",
+                reply_markup=groups_markup,
+            )
+            shown = True
+        if not shown:
+            # Xabar tahrirlab bo'lmasa (eskirgan/klaviyurasiz) —
+            # yangi xabar yuboramiz, shunda foydalanuvchi guruhlarini
+            # ko'ra oladi. Eskirgan skaner xabari esa o'chiriladi —
+            # aks holda chatda ikkita xabar qolib ketadi.
+            with contextlib.suppress(Exception):
+                await q.message.reply_text(
+                    groups_text,
+                    parse_mode="HTML",
+                    reply_markup=groups_markup,
+                )
+                shown = True
+            with contextlib.suppress(Exception):
+                await q.delete_message()
+
+    if not shown:
+        # Hisobotni ko'rsatishning oxirgi urinishlari.
+        with contextlib.suppress(Exception):
+            await q.edit_message_text(
+                report,
+                parse_mode="HTML",
+                reply_markup=await KB.kb_main_for(uid),
+            )
+        with contextlib.suppress(Exception):
+            await q.message.reply_text(
+                report,
+                parse_mode="HTML",
+                reply_markup=await KB.kb_main_for(uid),
+            )
+    log(
+        f"✅ Tanlangan guruhlar qo'shildi: {uid} → +{len(added)} "
+        f"(takror {duplicates}, o'tkazildi {skipped}, bazada {stored_count})"
+    )
+
+
 async def handle_discover_callback(update: Update, uid: int, data: str) -> None:
     """Guruh tanlash inline callback'lari."""
     q = update.callback_query
@@ -1095,6 +1242,45 @@ async def handle_discover_callback(update: Update, uid: int, data: str) -> None:
 
     if action == "noop":
         await q.answer()
+        return
+
+    if action == "groups":
+        # ⚠️ Skanerdan «💬 Guruhlar» oynasiga o'tish — tanlanish
+        # SAQLANADI (sessiya tozalanmaydi), shuning uchun foydalanuvchi
+        # keyinchalik qo'shish tugmasini «Guruhlar» oynasidan bosadi.
+        # Sessiya allaqachon o'chgan bo'lsa ham oyna ochiladi.
+        await q.answer()
+        try:
+            groups_text, groups_markup = await MY_GROUPS.build_groups_window(uid)
+        except Exception as exc:  # noqa: BLE001 — himoya
+            log(
+                f"discover_groups → groups oynasi xatosi: {uid} "
+                f"({type(exc).__name__})",
+                "warning",
+            )
+            groups_text, groups_markup = None, None
+        if groups_text:
+            with contextlib.suppress(Exception):
+                await q.edit_message_text(
+                    groups_text,
+                    parse_mode="HTML",
+                    reply_markup=groups_markup,
+                )
+                return
+            with contextlib.suppress(Exception):
+                await q.message.reply_text(
+                    groups_text,
+                    parse_mode="HTML",
+                    reply_markup=groups_markup,
+                )
+                return
+        # Xabar tahrirlab bo'lmasa — asosiy menyuni ko'rsatamiz.
+        with contextlib.suppress(Exception):
+            await q.edit_message_text(
+                "💬 <b>GURUHLAR</b>",
+                parse_mode="HTML",
+                reply_markup=await KB.kb_main_for(uid),
+            )
         return
 
     selection = discover_sessions.get_session(uid)
@@ -1160,138 +1346,6 @@ async def handle_discover_callback(update: Update, uid: int, data: str) -> None:
         if not selected:
             await q.answer(T.DISCOVER_APPLY_NONE, show_alert=True)
             return
-
-        added: list[str] = []
-        duplicates = 0
-        skipped = 0
-        limit_hit = False
-        limits = await db.get_limits(uid)
-        max_groups = int(limits.get("max_groups") or 0)
-
-        for group in selected:
-            # ✅ Guruh nomi (Telegram display name) ham saqlanadi — foydalanuvchi
-            # keyinchalik guruhni tanib olishi uchun (``🗑 N. <nom>``).
-            saved, reason = await db.add_chat(
-                uid, group.reference, title=group.title or ""
-            )
-            if saved:
-                added.append(group.reference)
-            elif reason == "duplicate":
-                duplicates += 1
-            elif reason == "limit":
-                limit_hit = True
-                break
-            else:
-                skipped += 1
-                log(
-                    f"discover_groups: guruh qo'shilmadi "
-                    f"(uid={uid}, value={group.reference}, sabab={reason})",
-                    "warning",
-                )
-
-        # ✅ Qo'shishdan keyin bazada qancha guruh turganini tekshiramiz.
-        # Agar ``add_chat`` "muvaffaqiyatli" deb hisoblanib, lekin yozuv
-        # bazada bo'lmasa — foydalanuvchiga xato yoki to'g'ri natijani
-        # ko'rsatish kerak (avval "guruhlar yo'q" xabari chiqardi).
-        try:
-            stored = await db.get_chat_records(uid)
-        except Exception as exc:  # noqa: BLE001 — himoya
-            stored = []
-            log(
-                f"discover_groups: ro'yxatni tekshirishda xato "
-                f"({uid}: {type(exc).__name__})",
-                "warning",
-            )
-        stored_count = len(stored)
-
-        discover_sessions.clear_session(uid)
-
-        limits = await db.get_limits(uid)
-        max_groups = int(limits.get("max_groups") or 0)
-        report = T.DISCOVER_APPLY_HEADER.format(
-            added=len(added),
-            duplicates=duplicates,
-            skipped=skipped,
-        )
-        if limit_hit:
-            report += T.DISCOVER_LIMIT_HIT.format(limit=max_groups)
-
-        # ✅ Qo'shilgan deb hisoblangan guruhlar bazada yo'q bo'lsa —
-        # foydalanuvchiga xato yubormasligimiz kerak. Bunday holatda
-        # "qo'shildi" xabari o'rniga aniq tushuntirish beriladi.
-        if added and not stored_count:
-            report += (
-                "\n\n⚠️ Guruhlar bazaga yozilmadi. "
-                "Xatoni muammoni yozing, biz tuzatamiz."
-            )
-            log(
-                f"discover_groups: {uid} — {len(added)} ta guruh "
-                f"'qo'shildi' deb hisoblandi, lekin bazada 0 ta bor",
-                "error",
-            )
-            await q.answer("❌ Guruhlar qo'shilmadi", show_alert=True)
-        else:
-            await q.answer(
-                f"✅ {len(added)} ta guruh qo'shildi",
-                show_alert=True,
-            )
-
-        # ✅ Qo'shilgan guruhlar foydalanuvchiga darhol ko'rinishi kerak —
-        # shuning uchun hisobot va yangilangan «💬 Guruhlar» oynasi
-        # bir xil xabarda chiqadi.
-        try:
-            groups_text, groups_markup = await MY_GROUPS.build_groups_window(
-                uid, note=report
-            )
-        except Exception as exc:  # noqa: BLE001 — himoya
-            log(
-                f"discover_groups apply window xatosi: {uid} "
-                f"({type(exc).__name__})",
-                "warning",
-            )
-            groups_text, groups_markup = None, None
-
-        shown = False
-        if groups_text:
-            # Birinchi urinish — skaner xabarini shu oyna bilan almashtirish.
-            with contextlib.suppress(Exception):
-                await q.edit_message_text(
-                    groups_text,
-                    parse_mode="HTML",
-                    reply_markup=groups_markup,
-                )
-                shown = True
-            if not shown:
-                # Xabar tahrirlab bo'lmasa (eskirgan/klaviyurasiz) —
-                # yangi xabar yuboramiz, shunda foydalanuvchi guruhlarini
-                # ko'ra oladi. Eskirgan skaner xabari esa o'chiriladi —
-                # aks holda chatda ikkita xabar qolib ketadi.
-                with contextlib.suppress(Exception):
-                    await q.message.reply_text(
-                        groups_text,
-                        parse_mode="HTML",
-                        reply_markup=groups_markup,
-                    )
-                    shown = True
-                with contextlib.suppress(Exception):
-                    await q.delete_message()
-
-        if not shown:
-            # Hisobotni ko'rsatishning oxirgi urinishlari.
-            with contextlib.suppress(Exception):
-                await q.edit_message_text(
-                    report,
-                    parse_mode="HTML",
-                    reply_markup=await KB.kb_main_for(uid),
-                )
-            with contextlib.suppress(Exception):
-                await q.message.reply_text(
-                    report,
-                    parse_mode="HTML",
-                    reply_markup=await KB.kb_main_for(uid),
-                )
-        log(
-            f"✅ Tanlangan guruhlar qo'shildi: {uid} → +{len(added)} "
-            f"(takror {duplicates}, o'tkazildi {skipped}, bazada {stored_count})"
-        )
+        await apply_selected_groups(update, uid, selected)
         return
+
