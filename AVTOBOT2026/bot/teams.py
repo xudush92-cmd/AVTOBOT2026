@@ -650,7 +650,9 @@ async def show_team_admin_panel(update: Update, admin_uid: int) -> None:
         await begin_team_admin_register(update, admin_uid)
         return
 
-    members = await db.count_team_members(int(team["id"]))
+    # Panelda ko'rsatiladigan a'zolar soni — admin o'z ro'yxatida
+    # ko'rinmaydi (sig'im hisobida esa admin hisobga olinadi).
+    members = await db.count_team_members(int(team["id"]), include_admin=False)
     expires = await db.get_user(admin_uid) or {}
 
     # Muddati tugagan jamoa admini — ogohlantiriladi.
@@ -672,6 +674,7 @@ async def show_team_admin_panel(update: Update, admin_uid: int) -> None:
             expires=_expiry_text(expires.get("admin_expires_at") or team.get("expires_at")),
         ),
         reply_markup=KB.kb_team_admin_panel(),
+        in_place=True,
     )
 
 
@@ -807,7 +810,14 @@ async def handle_team_admin_callback(update: Update, uid: int, data: str) -> Non
         from bot.menu import show_home
 
         await q.answer()
-        await show_home(update, uid)
+        await show_home(update, uid, in_place=True)
+        return
+
+    if action == "panel":
+        # Ichki oynalardan (a'zolar, takliflar, statistika) asosiy
+        # jamoa admini paneliga qaytish.
+        await q.answer()
+        await show_team_admin_panel(update, uid)
         return
 
     if action == "addfriend":
@@ -1057,17 +1067,27 @@ async def handle_team_admin_callback(update: Update, uid: int, data: str) -> Non
             await q.answer(T.TEAM_ADMIN_NO_TEAM, show_alert=True)
             return
         members = await db.get_team_members(int(team["id"]))
+        # Jamoa asosi (admin) statistikada oddiy a'zo sifatida hisoblanmasin.
+        plain = [m for m in members if not m.get("is_team_admin")]
+        # `await` async generator ichida ishlatib bo'lmaydi —
+        # ketma-ket hisoblaymiz (aks holda TypeError: 'async_generator'
+        # object is not iterable chiqadi).
+        groups_total = 0
+        posts_total = 0
+        for m in members:
+            groups_total += await db.count_chats(int(m["uid"]))
+            posts_total += await db.count_posts(int(m["uid"]))
         stats = {
-            "total": len(members),
-            "running": sum(1 for m in members if m.get("running")),
-            "waiting": sum(1 for m in members if m.get("awaiting_approval")),
-            "blocked": sum(1 for m in members if m.get("is_blocked")),
-            "groups": sum(await db.count_chats(int(m["uid"])) for m in members),
-            "posts": sum(await db.count_posts(int(m["uid"])) for m in members),
+            "total": len(plain),
+            "running": sum(1 for m in plain if m.get("running")),
+            "waiting": sum(1 for m in plain if m.get("awaiting_approval")),
+            "blocked": sum(1 for m in plain if m.get("is_blocked")),
+            "groups": groups_total,
+            "posts": posts_total,
         }
         await q.edit_message_text(
             T.TEAM_ADMIN_STATS.format(**stats),
-            reply_markup=KB.kb_team_admin_panel(),
+            reply_markup=KB.kb_team_stats_back(),
         )
         return
 

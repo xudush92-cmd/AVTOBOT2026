@@ -946,6 +946,20 @@ def referral_share_text(link: str) -> str:
     )
 
 
+def team_link_text(link: str) -> str:
+    """Jamoa admini uchun referal oynasi — faqat umumiy jamoa havolasi.
+
+    Shaxsiy referal statistikasi va tugmalari jamoa adminiga kerak
+    emas: jamoa a'zolari jamoa havolasi orqali keladi.
+    """
+    return (
+        "🔗 <b>Jamoangiz havolasi</b>\n\n"
+        "Do'stlaringizga yuboring — ular avtomatik ravishda sizning "
+        "jamoangizga birikadi va siz tasdiqlaysiz.\n\n"
+        f"🔗 Jamoa havolasi:\n{link}"
+    )
+
+
 def referral_counted_text(
     name: str, total: int, bonus_days: int, min_sends: int
 ) -> str:

@@ -89,22 +89,34 @@ async def kb_main_for(uid: int, running: bool = False) -> ReplyKeyboardMarkup:
     )
 
 
-def kb_referral(link: str, team_link: str = "") -> InlineKeyboardMarkup:
-    """Referal sahifasi tugmalari: havolani ochish va do'stga yuborish."""
-    rows: list[list[InlineKeyboardButton]] = [
+def kb_referral(link: str) -> InlineKeyboardMarkup:
+    """Referal sahifasi tugmalari: havolani ochish va do'stga yuborish.
+
+    Jamoa admini uchun bu oyna ishlatilmaydi — u
+    :func:`kb_team_link_only` ni ishlatadi (faqat jamoa havolasi).
+    """
+    return InlineKeyboardMarkup(
         [
-            InlineKeyboardButton("🔗 Havolani ochish", url=link),
-            InlineKeyboardButton(
-                "📨 Do'stlarga yuborish", callback_data="ref:share"
-            ),
-        ],
-    ]
-    # Jamoa admini — jamoasining havolasini ham ko'rsatadi.
-    if team_link:
-        rows.append(
-            [InlineKeyboardButton("🎯 Jamoa havolasi", url=team_link)]
-        )
-    return InlineKeyboardMarkup(rows)
+            [
+                InlineKeyboardButton("🔗 Havolani ochish", url=link),
+                InlineKeyboardButton(
+                    "📨 Do'stlarga yuborish", callback_data="ref:share"
+                ),
+            ],
+        ]
+    )
+
+
+def kb_team_link_only(link: str) -> InlineKeyboardMarkup:
+    """Jamoa admini referal oynasi — faqat umumiy jamoa havolasi.
+
+    Jamoa adminida shaxsiy (``ref_<uid>``) referal tugmalari va
+    statistikasi kerak emas: jamoa a'zolari jamoa havolasi orqali
+    keladi, shuning uchun faqat bitta havola yetarli.
+    """
+    return InlineKeyboardMarkup(
+        [[InlineKeyboardButton("🔗 Jamoa havolasi", url=link)]]
+    )
 
 
 def kb_input_cancel() -> ReplyKeyboardMarkup:
@@ -1572,6 +1584,13 @@ def kb_team_admin_panel() -> InlineKeyboardMarkup:
     )
 
 
+def kb_team_stats_back() -> InlineKeyboardMarkup:
+    """Statistika oynasidan jamoa admini paneliga qaytish."""
+    return InlineKeyboardMarkup(
+        [[InlineKeyboardButton("⬅️ Orqaga", callback_data="tadm:panel")]]
+    )
+
+
 def kb_team_invites(invites: list[dict]) -> InlineKeyboardMarkup:
     """Admin qo'shgan do'stlar ro'yxati."""
     rows: list[list[InlineKeyboardButton]] = []
@@ -1592,7 +1611,7 @@ def kb_team_invites(invites: list[dict]) -> InlineKeyboardMarkup:
                     )
                 ]
             )
-    rows.append([InlineKeyboardButton("⬅️ Orqaga", callback_data="tadm:back")])
+    rows.append([InlineKeyboardButton("⬅️ Orqaga", callback_data="tadm:panel")])
     return InlineKeyboardMarkup(rows)
 
 
@@ -1640,7 +1659,7 @@ def kb_team_members(members: list[dict], page: int = 0, page_size: int = 10) -> 
             )
         if nav:
             rows.append(nav)
-    rows.append([InlineKeyboardButton("⬅️ Orqaga", callback_data="tadm:back")])
+    rows.append([InlineKeyboardButton("⬅️ Orqaga", callback_data="tadm:panel")])
     return InlineKeyboardMarkup(rows)
 
 

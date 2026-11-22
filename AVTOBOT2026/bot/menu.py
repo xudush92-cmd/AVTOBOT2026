@@ -48,7 +48,9 @@ def state_line(uid: int) -> str:
     return T.STATE_ON if current_state(uid) else T.STATE_OFF
 
 
-async def show_home(update: Update, uid: int, note: str = "") -> None:
+async def show_home(
+    update: Update, uid: int, note: str = "", *, in_place: bool = False
+) -> None:
     """Asosiy menyuni holat qatori bilan ko'rsatadi.
 
     Barcha "🏠 Asosiy menyu" chiqarish joylari shu funksiyadan
@@ -56,6 +58,9 @@ async def show_home(update: Update, uid: int, note: str = "") -> None:
 
     ``reply_text_safe`` ishlatiladi — funksiya inline tugma bosilganda
     ham chaqiriladi (u yerda ``update.message`` bo'lmasligi mumkin).
+
+    ``in_place=True`` — inline kontekstda mavjud xabarni o'zida
+    tahrirlaydi (yangi xabar yubormaydi).
     """
     text = "🏠 Asosiy menyu"
     if note:
@@ -64,6 +69,7 @@ async def show_home(update: Update, uid: int, note: str = "") -> None:
         update,
         f"{text}\n\n{state_line(uid)}",
         reply_markup=await KB.kb_main_for(uid, running=current_state(uid)),
+        in_place=in_place,
     )
 
 
