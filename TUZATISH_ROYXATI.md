@@ -1,7 +1,7 @@
 # 🔧 TUZATISHLAR RO'YXATI — AVTOBOT2026
 
 > **Holat:** ✅ **BARCHA TUZATISHLAR BAJARILDI** (2026-11-22)
-> **Filial:** `arena/361ef30e-avtobot2026` (asosiy: `main`, commit `267cb6d` — **PR #42 ochilmoqda**)
+> **Filial:** `arena/361ef30e-avtobot2026` (asosiy: `main`, commit `5de3380` — **PR #42 merged**)
 > **Testlar:** `667 passed, 62 subtests passed` (bazadagi 656 + 11 yangi)
 > **Deploy:** ⏳ VPS'ga o'tkazilishi kutilmoqda (buyruq quyida)
 
@@ -433,9 +433,9 @@ saqlangan. Nomi bo'lsa faqat nomi chiqadi.
 
 ## 🔴 TUZATISHLAR — PR #42 (2026-11-22) — «Guruhlar yo'q» muammosi
 
-> **Filial:** `arena/361ef30e-avtobot2026` (asosiy: `main`, commit `267cb6d`)
+> **Filial:** `arena/361ef30e-avtobot2026` (asosiy: `main`, commit `5de3380` — **PR #42 merged**)
 > **Testlar:** `667 passed, 62 subtests passed` (bazadagi 656 + 11 yangi)
-> **Holat:** ⏳ PR yaratilish kutilmoqda
+> **Holat:** ✅ PR #42 merged — deploy kutilmoqda
 
 ### 🔴 W1. Guruhlar qo'shilgan deb ko'rsatiladi, lekin bazada yo'q
 
