@@ -14,7 +14,22 @@ qaytish rejasini beradi.
 | Worker yuborish | 🟡 o'rta | Endi albom `send_file([...])` orqali, matnli post `link_preview` bayrog'i bilan ketadi. Kunlik limit/faol soat yoqilsa, yuborishlar o'sha oynaga moslashadi |
 | Media disk | 🟡 o'rta | Albomlar bilan fayllar soni o'sadi. Har user uchun kvota: `MAX_MEDIA_FILES_PER_USER` (standart 200) |
 
-Barcha yangi funksiya testlangan: **547 test** (`python -m unittest discover -s tests -t tests`).
+Barcha yangi funksiya testlangan: **574 test** (`python -m unittest discover -s tests -t tests`).
+
+### 🆕 Jamoa kontakti, nomlash va havola tuzatishlari (PR #36)
+
+| Qism | Xavf | Izoh |
+| ---- | ---- | ---- |
+| Kim tasdiqlaydi | 🟢 past | **O'zgarmadi** — jamoa a'zosini **jamoa admini** tasdiqlaydi, jamoasiz foydalanuvchini **super admin**. Super admin jamoa admini funksiyalariga aralashmaydi |
+| A'zoga ko'rsatiladigan telefon | 🟢 past | Avval **har kimga** super adminning raqami ko'rsatilardi (`LOGIN_SUCCESS_PENDING` — bitta matn). Endi uch holat bor: jamoa a'zosiga **jamoa adminining** raqami, jamoasiz foydalanuvchiga super admin raqami, jamoa asosiga **umuman raqam ko'rsatilmaydi** |
+| Jamoa asosining xabari | 🟢 past | Jamoa asosi (jamoa admini) allaqachon tasdiqlangan — avval unga «admin tasdiqini kutilmoqda + super admin raqami» xabari bor edi. Endi «👑 Siz jamoa admini bo'ldingiz!» xabari + jamoa havolasi bor. Unga «yangi ariza» xabari ham yuborilmaydi |
+| Shaxsiy jamoa havolasi | 🟢 past | `admin_link()` va `adm_<uid>` deep link **olib tashlandi**. Jamoalarda faqat **umumiy** `team_<id>` havolasi qoldi. Jamoa admini boshqa jamoaga a'zo qo'sha olmaydi (`owner_admin_uid` tekshiruvi saqlanadi) |
+| Super admin → jamoa yo'naltirish | 🟢 past | Yangi: **«👥 Jamoaga biriktirish»** tugmasi. Super admin faqat **yo'naltiradi**, tasdiqlaydi emas — jamoa admini tasdiqlaydi (shuning uchun a'zo o'sha jamoa adminining raqamiga murojaat qiladi) |
+| Jamoa nomini o'zgartirish | 🟢 past | Super admin yaratgan jamoalar avval `Jamoa #<uid>` nomi bilan qolardi va admin uni o'zgartira olmasdi. Endi jamoa admini panelida **«✏️ Jamoa nomi»** tugmasi bor (2–40 belgi, o'z jamoalari orasida band bo'lmasligi tekshiriladi) |
+| Jamoa admini o'z ro'yxatida | 🟢 past | Jamoa asosi endi «👥 Foydalanuvchilar» ro'yxatida **ko'rinmaydi**. Statistika va sig'im hisobida jamoa asosi jamoaning a'zosi sifatida hisobga olinadi |
+| Jamoa admini «Orqaga» tugmasi | 🟢 past | Avval `tadm:back` → o'z-o'ziga qaytardi (ko'rinish o'zgarmasdi). Endi **asosiy menyuga** qaytaradi |
+
+> 📌 **Yangi sozlamalar yo'q** — `.env` ga hech narsa qo'shish shart emas.
 
 ### 🆕 Restartda posting to'xtamaydi — worker avtomatik tiklanadi
 
@@ -297,6 +312,7 @@ Baza fayli yozish uchun yoziladigan holatda bo'lishi kerak (`data/` va
 
 ```
 Baza tayyor                                  ← migratsiya muvaffaqiyatli
+🔁 N ta worker tiklandi                      ← restartda avtomatik tiklanganlar
 🟢 Worker:<uid> ishga tushdi                 ← workerlar qayta tiklandi
 ⚡ Avto-tasdiq o'chirilgan (admin navbati)    ← AUTO_APPROVE_ENABLED=0 (standart)
 ```
@@ -318,6 +334,25 @@ shuning uchun xato bo'lsa sabov izlang, o'chirmang).
 6. **📈 Hisobot** va **📊 Status** — «Bugun ✅/❌» sonlari `logs`dagi
    `📊 <uid> ✅N ❌M` qatori bilan mos kelishi kerak.
 7. **⚙️ Hisob → 🔑 sessiya** — eski sessiyalar ishlamoqda (login talab qilinmaydi).
+
+### Jamoa bo'yicha qo'shimcha tekshirish (PR #36)
+
+1. **Jamoa admini** → «👥 Jamoam» → **«✏️ Jamoa nomi»** → nom kiriting →
+   yangi nom saqlansin va a'zolar ro'yxatida yangi nom ko'rinsin.
+2. **Jamoa admini** → «👥 Jamoam» → «🔗 Havola» — faqat **bitta** havola
+   (`start=team_...`) chiqsin, `start=adm_...` **chiqmasin**.
+3. **Jamoa admini** → «👥 Jamoam» → «👥 Foydalanuvchilar» — jamoa asosi
+   (admin) o'z ro'yxatida **ko'rinmasin**.
+4. **Jamoa admini** → panel → «⬅️ Orqaga» — **asosiy menyuga** qaytsin
+   (o'z-o'ziga qaytmasin).
+5. **Yangi a'zo** (havola orqali) ro'yxatdan o'tsa — «⏳ Endi jamoa
+   adminingiz sizni tasdiqlashni kutilmoqda» va **jamoa adminining**
+   telefon raqami chiqsin (super adminning emas).
+6. **Super admin** → foydalanuvchi kartasi → «👥 Jamoaga biriktirish» →
+   jamoa adminini tanlang → a'zo jamoa adminiga **ariza** olsin va a'zoga
+   jamoa adminining telefon raqami yuborilsin.
+7. **To'g'ridan to'g'ri kelgan** (jamoasiz) foydalanuvchi ro'yxatdan o'tsa —
+   **super admin** raqami chiqsin (o'zgarmasligi kerak).
 
 ## 5. Limitlarni bosqichma-bosqich yoqish (tavsiya)
 
