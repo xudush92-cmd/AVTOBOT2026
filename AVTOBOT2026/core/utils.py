@@ -710,7 +710,9 @@ def media_kind_label(post: dict | None) -> str:
 # ─────────────────────────────────────────────────────────────────────────
 # TELEGRAM XABAR YUBORISH YORDAMCHISI
 # ─────────────────────────────────────────────────────────────────────────
-async def reply_text_safe(update, text: str, reply_markup=None) -> bool:
+async def reply_text_safe(
+    update, text: str, reply_markup=None, *, in_place: bool = False
+) -> bool:
     """Xabar yuboradi — inline tugma bosilgan holatda ham ishlaydi.
 
     ``update.message`` faqat oddiy xabar kelganda mavjud bo'ladi. Inline
@@ -718,16 +720,23 @@ async def reply_text_safe(update, text: str, reply_markup=None) -> bool:
     chaqirilsa ``AttributeError`` chiqadi. Shu sabab avval xabar, keyin
     inline xabar (agar mavjud bo'lsa) tekshiriladi.
 
-    ``True`` — xabar yuborildi, ``False`` — yuborilmadi.
+    ``in_place=True`` — inline kontekstda mavjud xabarni **tahrirlaydi**
+    (yangi xabar yubormaydi). Bu «Orqaga» tugmalari uchun kerak:
+    eski oyna chatda qolmasin, o'rniga yangisi yozilsin.
+
+    ``True`` — xabar yuborildi/tahrirlandi, ``False`` — yuborilmadi.
     """
     message = getattr(update, "message", None)
+    query = getattr(update, "callback_query", None)
     if message is None:
-        query = getattr(update, "callback_query", None)
         message = getattr(query, "message", None) if query else None
     if message is None:
         return False
     try:
-        await message.reply_text(text, reply_markup=reply_markup)
+        if in_place and query is not None:
+            await query.edit_message_text(text, reply_markup=reply_markup)
+        else:
+            await message.reply_text(text, reply_markup=reply_markup)
     except Exception:
         return False
     return True

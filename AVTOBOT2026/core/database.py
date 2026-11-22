@@ -2251,10 +2251,24 @@ async def delete_team(team_id: int) -> bool:
     return cur.rowcount > 0
 
 
-async def count_team_members(team_id: int) -> int:
-    """Jamoadagi foydalanuvchilar soni (jamoa admini ham hisobga olinadi)."""
+async def count_team_members(team_id: int, *, include_admin: bool = True) -> int:
+    """Jamoadagi foydalanuvchilar soni.
+
+    ``include_admin=True`` (standart) — jamoa admini ham hisobga olinadi.
+    Bu sig'im (capacity) hisobi uchun kerak: admin ham jamoaning bir a'zosi.
+
+    ``include_admin=False`` — jamoa admini hisobdan chiqariladi. Bu
+    panelda ko'rsatiladigan a'zolar soni uchun kerak (admin o'z
+    ro'yxatida ko'rinmasligi kerak).
+    """
+    if include_admin:
+        return await _scalar(
+            "SELECT COUNT(*) AS n FROM users WHERE team_id = ?", (int(team_id),)
+        )
     return await _scalar(
-        "SELECT COUNT(*) AS n FROM users WHERE team_id = ?", (int(team_id),)
+        "SELECT COUNT(*) AS n FROM users WHERE team_id = ? "
+        "AND COALESCE(is_team_admin, 0) = 0",
+        (int(team_id),),
     )
 
 

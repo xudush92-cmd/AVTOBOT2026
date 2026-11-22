@@ -14,7 +14,21 @@ qaytish rejasini beradi.
 | Worker yuborish | 🟡 o'rta | Endi albom `send_file([...])` orqali, matnli post `link_preview` bayrog'i bilan ketadi. Kunlik limit/faol soat yoqilsa, yuborishlar o'sha oynaga moslashadi |
 | Media disk | 🟡 o'rta | Albomlar bilan fayllar soni o'sadi. Har user uchun kvota: `MAX_MEDIA_FILES_PER_USER` (standart 200) |
 
-Barcha yangi funksiya testlangan: **574 test** (`python -m unittest discover -s tests -t tests`).
+Barcha yangi funksiya testlangan: **597 test** (`python -m unittest discover -s tests -t tests`).
+
+### 🆕 Jamoa statistikasi, navigatsiya va referal tozalash (PR #37)
+
+| Qism | Xavf | Izoh |
+| ---- | ---- | ---- |
+| **Statistika «Xatolik yuz berdi»** | 🟢 past | `tadm:stats` da `sum(await db.count_chats(...) for m in members)` ishlatilgan — bu **async generator** yaratadi va `TypeError: 'async_generator' object is not iterable` beradi. Endi aniq `await` sikli bilan ketma-ket hisoblanadi. **Bu live'da kuzatilgan xatoning eng ehtimoliy sababi** |
+| Statistika sonlari | 🟢 past | «Foydalanuvchilar» soni endi jamoa asosisiz — panel va ro'yxat bilan mos keladi |
+| Ichki oynalardan «Orqaga» | 🟢 past | A'zolar / takliflar / statistika oynalaridagi «Orqaga» endi `tadm:back` (asosiy menyu) emas, **`tadm:panel` → jamoa admini paneli**. Panelning o'zidagi «Orqaga» esa asosiy menyuga qaytadi |
+| Eski oyna chatda qolishi | 🟢 past | `reply_text_safe()` ga **`in_place=True`** (keyword-only) parametri qo'shildi — inline kontekstda mavjud xabarni **o'zida tahrirlaydi**. Panel va asosiy menyu eski oynani almashtiradi. Standart `reply` semantikasi saqlanadi |
+| Jamoa admini referal oynasi | 🟢 past | Jamoa adminida endi **faqat umumiy jamoa havolasi** ko'rsatiladi — shaxsiy `ref_<uid>` havolasi, «Havolani ochish»/«Do'stlarga yuborish» tugmalari va referal statistikasi olib tashlandi. **Oddiy foydalanuvchilar o'zgarishsiz** |
+| Ro'yxatdagi son | 🟢 past | `count_team_members(team_id, *, include_admin=True)` — standart holatda **sig'im** hisobi o'zgarmaydi (admin hisobda), `include_admin=False` esa **ko'rsatiladigan** son uchun |
+
+> 📌 **Yangi sozlamalar yo'q** — `.env` ga hech narsa qo'shish shart emas.
+> 📌 **Worker / Start / Stop** logikasi tegilmadi — `running` o'zgarishlari yo'q.
 
 ### 🆕 Jamoa kontakti, nomlash va havola tuzatishlari (PR #36)
 
@@ -353,6 +367,24 @@ shuning uchun xato bo'lsa sabov izlang, o'chirmang).
    jamoa adminining telefon raqami yuborilsin.
 7. **To'g'ridan to'g'ri kelgan** (jamoasiz) foydalanuvchi ro'yxatdan o'tsa —
    **super admin** raqami chiqsin (o'zgarmasligi kerak).
+
+### Jamoa paneli va statistikasi (PR #37)
+
+1. **Jamoa admini** → «👥 Jamoam» → **«📊 Statistika»** — oyna **xatosiz**
+   ochilsin (avval «Xatolik yuz berdi» berardi). Guruh/post sonlari
+   raqam ko'rinishi kerak.
+2. **Statistika** → «⬅️ Orqaga» — **jamoa admini paneliga** qaytsin
+   (asosiy menyuga emas).
+3. **«👥 Foydalanuvchilar»** → «⬅️ Orqaga» — **jamoa admini paneliga**
+   qaytsin; **«📋 Do'stlar ro'yxati»** → «⬅️ Orqaga» — ham panelga.
+4. **Panel** → «⬅️ Orqaga» — **asosiy menyuga** qaytsin.
+5. **Orqaga bosilganda** eski oyna chatda **qolmasin** — o'rniga yangisi
+   yozilsin (inline xabar tahrirlansin).
+6. **Jamoa admini** → «👥 Referal» — faqat **bitta** tugma: «🔗 Jamoa
+   havolasi». Shaxsiy referal statistikasi va `start=ref_...` havolasi
+   **chiqmasin**.
+7. **Oddiy foydalanuvchi** → «👥 Referal» — avvalgi ko'rinish **saqlansin**
+   (`start=ref_...` + statistika).
 
 ## 5. Limitlarni bosqichma-bosqich yoqish (tavsiya)
 

@@ -38,9 +38,25 @@ async def show_referral(update: Update) -> None:
     uid = update.effective_user.id
     link = f"https://t.me/{BOT_USERNAME}?start=ref_{uid}"
 
+    user = await db.get_user(uid) or {}
+
+    # Jamoa admini — faqat umumiy jamoa havolasi ko'rsatiladi.
+    # Shaxsiy referal tugmalari va statistikasi kerak emas: jamoa
+    # a'zolari jamoa havolasi orqali keladi.
+    if user.get("is_team_admin") and user.get("team_id"):
+        from bot.teams import team_link as make_team_link
+
+        team_url = make_team_link(int(user["team_id"]))
+        await update.message.reply_text(
+            T.team_link_text(team_url),
+            parse_mode="HTML",
+            reply_markup=KB.kb_team_link_only(team_url),
+        )
+        return
+
     total = await db.count_referrals(uid)
     refs = await db.get_referrals(uid)
-    granted = int((await db.get_user(uid) or {}).get("referral_bonus_days") or 0)
+    granted = int(user.get("referral_bonus_days") or 0)
     today = await db.count_referrals_today(uid)
 
     text = T.referral_text(
@@ -53,22 +69,22 @@ async def show_referral(update: Update) -> None:
         today=today,
     )
 
-    # Jamoa admini — o'z jamoasining havolasini ham ko'rsatadi.
-    user = await db.get_user(uid) or {}
-    team_link = ""
-    if user.get("is_team_admin") and user.get("team_id"):
-        from bot.teams import team_link as make_team_link
-
-        team_link = make_team_link(int(user["team_id"]))
-
     await update.message.reply_text(
         text,
-        reply_markup=KB.kb_referral(link, team_link=team_link),
+        reply_markup=KB.kb_referral(link),
     )
 
 
 async def share_referral_message(uid: int) -> str:
-    """Do'stlarga yuborish uchun tayyor matn (bilan birga havola)."""
+    """Do'stlarga yuborish uchun tayyor matn (bilan birga havola).
+
+    Jamoa admini uchun — jamoa havolasi (shaxsiy havola emas).
+    """
+    user = await db.get_user(uid) or {}
+    if user.get("is_team_admin") and user.get("team_id"):
+        from bot.teams import team_link as make_team_link
+
+        return T.referral_share_text(make_team_link(int(user["team_id"])))
     link = f"https://t.me/{BOT_USERNAME}?start=ref_{uid}"
     return T.referral_share_text(link)
 
