@@ -1,8 +1,9 @@
 # 🔧 TUZATISHLAR RO'YXATI — AVTOBOT2026
 
 > **Holat:** ✅ **BARCHA TUZATISHLAR BAJARILDI** (2026-11-14)
-> **Filial:** `arena/b87385e2-avtobot2026` (asosiy: `main`, commit `f10c9f9`)
+> **Filial:** `main` — PR #37 merge qilingan (merge commit `20f82e5`)
 > **Testlar:** `597 passed, 62 subtests passed` (bazadagi 574 + 23 yangi)
+> **Deploy:** ⏳ VPS'ga o'tkazilishi kutilmoqda (buyruq quyida)
 
 ---
 
