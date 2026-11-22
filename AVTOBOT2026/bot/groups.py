@@ -1118,7 +1118,8 @@ async def handle_discover_callback(update: Update, uid: int, data: str) -> None:
             if not shown:
                 # Xabar tahrirlab bo'lmasa (eskirgan/klaviyurasiz) —
                 # yangi xabar yuboramiz, shunda foydalanuvchi guruhlarini
-                # ko'ra oladi.
+                # ko'ra oladi. Eskirgan skaner xabari esa o'chiriladi —
+                # aks holda chatda ikkita xabar qolib ketadi.
                 with contextlib.suppress(Exception):
                     await q.message.reply_text(
                         groups_text,
@@ -1126,6 +1127,8 @@ async def handle_discover_callback(update: Update, uid: int, data: str) -> None:
                         reply_markup=groups_markup,
                     )
                     shown = True
+                with contextlib.suppress(Exception):
+                    await q.delete_message()
 
         if not shown:
             # Hisobotni ko'rsatishning oxirgi urinishlari.

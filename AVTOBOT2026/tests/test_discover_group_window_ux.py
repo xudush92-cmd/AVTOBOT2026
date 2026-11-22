@@ -199,7 +199,7 @@ class DiscoverGroupWindowUXTests(unittest.IsolatedAsyncioTestCase):
             edit_message_text=AsyncMock(),
             delete_message=AsyncMock(),
             edit_message_reply_markup=AsyncMock(),
-            message=SimpleNamespace(edit_text=AsyncMock()),
+            message=SimpleNamespace(edit_text=AsyncMock(), reply_text=AsyncMock()),
         )
         return (
             SimpleNamespace(
@@ -324,6 +324,32 @@ class DiscoverGroupWindowUXTests(unittest.IsolatedAsyncioTestCase):
 
         text = q.edit_message_text.await_args.args[0]
         self.assertIn("Qo'shildi: 1 ta", text)
+
+    async def test_apply_deletes_stale_scanner_when_new_message_sent(self) -> None:
+        """Xabar tahrirlab bo'lmasa — eskirgan skaner xabari o'chiriladi.
+
+        Aks holda chatda ikkita xabar qolib ketadi: eskirgan skaner
+        ro'yxati va yangi guruhlar oynasi.
+        """
+        pool = self._scan(["aaa"])
+        update, _status, _message = self._update()
+        with patch.object(W, "client_pool", pool):
+            await G.discover_groups(update)
+
+        selection = discover_sessions.get_session(UID)
+        selection.toggle(selection.groups[0].key)
+
+        cb_update, q = self._callback("disc:apply")
+        # Xabar tahrirlab bo'lmaydi (eskirgan/klaviyurasiz).
+        q.edit_message_text = AsyncMock(side_effect=RuntimeError("can't edit"))
+        await G.handle_discover_callback(cb_update, UID, "disc:apply")
+
+        # Yangi xabar yuborilishi kerak.
+        q.message.reply_text.assert_awaited()
+        sent_text = q.message.reply_text.await_args.args[0]
+        self.assertIn("GURUHLAR", sent_text)
+        # Va eskirgan skaner xabari to'liq o'chirilishi kerak.
+        q.delete_message.assert_awaited_once()
 
     async def test_groups_visible_in_window_after_add(self) -> None:
         """Guruh qo'shilgachin u «💬 Guruhlar» oynasida ko'rinadi."""

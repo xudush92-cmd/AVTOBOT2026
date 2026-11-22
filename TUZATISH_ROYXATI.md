@@ -2,7 +2,7 @@
 
 > **Holat:** ✅ **BARCHA TUZATISHLAR BAJARILDI** (2026-11-14)
 > **Filial:** `arena/bd8a5e1f-avtobot2026` (asosiy: `main`, commit `390b38e`)
-> **Testlar:** `637 passed, 62 subtests passed` (bazadagi 624 + 13 yangi)
+> **Testlar:** `638 passed, 62 subtests passed` (bazadagi 624 + 14 yangi)
 > **Deploy:** ⏳ VPS'ga o'tkazilishi kutilmoqda (buyruq quyida)
 
 ---
@@ -295,7 +295,7 @@ Endi paneldagi son (`Foydalanuvchilar: 1/5 ta`) ro'yxatdagi son bilan
 ## ✅ TUZATISHLAR — PR #40 (2026-11-14) — «💬 Guruhlar» oynasi UX
 
 > **Filial:** `arena/bd8a5e1f-avtobot2026` (asosiy: `main`, commit `390b38e`)
-> **Testlar:** `637 passed, 62 subtests passed` (bazadagi 624 + 13 yangi)
+> **Testlar:** `638 passed, 62 subtests passed` (bazadagi 624 + 14 yangi)
 
 ### 🟡 U1. Qo'shilgan guruhlar ko'rinmaydi
 
@@ -371,6 +371,20 @@ menyu klaviaturasi qo'yilardi — qo'shilgan guruhlar ro'yxati ko'rinmardi.
 **Hozir:** hisobot **va** yangilangan «💬 Guruhlar» oynasi bir xil xabarda
 chiqadi. Agar xabar tahrirlab bo'lmasa, yangi xabar yuboriladi.
 
+### 🔧 U6. Eskirgan skaner xabari chatda qolib ketardi
+
+**Boshqaruv:** `bot/groups.py` — `handle_discover_callback`, `disc:apply`.
+
+**Kamchilik (review'da topildi):** agar skaner xabarini tahrirlab bo'lmasa
+(eskirgan yoki klaviyaturasiz), yangi guruhlar oynasi xabari yuborilardi —
+lekin **eskirgan skaner xabari ham o'rnida qolardi**. Chatda ikkita xabar
+qolib ketardi.
+
+**Hozir:** yangi xabar yuborilgandan keyin eskirgan skaner xabari ham
+**o'chiriladi** (`q.delete_message()`).
+
+**Tekshiruv:** `test_apply_deletes_stale_scanner_when_new_message_sent`
+
 ---
 
 ## 📋 YANGI TESTLAR
@@ -382,9 +396,9 @@ chiqadi. Agar xabar tahrirlab bo'lmasa, yangi xabar yuboriladi.
 | `tests/test_team_panel_stats_and_referral.py` | 23 | **A9, A10, A11, A12** + A1 kengaytirilishi |
 | `tests/test_inline_fixes_and_error_logging.py` | 16 | **X1, X2, X3, X4, X6** |
 | `tests/test_callback_router_coverage.py` | **11** (yangi) | **X5** — belgilanish + router qamrovi |
-| `tests/test_discover_group_window_ux.py` | **13** (yangi) | **U1, U2, U3, U4, U5** |
+| `tests/test_discover_group_window_ux.py` | **14** (yangi) | **U1, U2, U3, U4, U5** |
 
-**Jami:** 547 → **637 test**, hammasi o'tadi (`pytest` va `unittest`).
+**Jami:** 547 → **638 test**, hammasi o'tadi (`pytest` va `unittest`).
 
 > Eski testlar (`test_menu_simplified.py`, `test_my_groups_screen.py`)
 > `mg:find` mavjudligini talab qilardi — yangi UX ga moslab yangilandi.
