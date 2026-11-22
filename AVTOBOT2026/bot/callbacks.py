@@ -89,6 +89,15 @@ async def _handle_callback_locked(update: Update, uid: int) -> None:
             )
             return
 
+        # ``ordinary_prefixes`` — oddiy foydalanuvchining inline
+        # callbacklari. DIQQAT: bu ro'yxatdagi **har bir prefiks** quyidagi
+        # ``if/elif`` zanjirida kamida bitta branch bilan qamralishi SHART.
+        # Aks holda callback shu yerda ushlanib, jimgina ``return`` qilinadi
+        # va o'sha tugma umuman ishlamaydi (belgi chiqmaydi, alert chiqmaydi,
+        # logda ham xato bo'lmaydi).
+        #
+        # Shu sabab ``"disc:"`` bu ro'yxatdan **chiqarilgan** — u quyidagi
+        # alohida ``if data.startswith("disc:")`` branch'ida boshqariladi.
         ordinary_prefixes = (
             "go:",
             "stop:",
@@ -106,7 +115,6 @@ async def _handle_callback_locked(update: Update, uid: int) -> None:
             "lp:",
             "gchk:",
             "ref:",
-            "disc:",
         )
         # ``int:`` — ⏱ Interval oynasi (umumiy yoki bitta guruh uchun).
         # Oddiy foydalanuvchilarga tegishli; super admin ``uc:`` orqali
