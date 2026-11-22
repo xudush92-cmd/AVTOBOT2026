@@ -711,8 +711,14 @@ def media_kind_label(post: dict | None) -> str:
 # TELEGRAM XABAR YUBORISH YORDAMCHISI
 # ─────────────────────────────────────────────────────────────────────────
 async def reply_text_safe(
-    update, text: str, reply_markup=None, *, in_place: bool = False
-) -> bool:
+    update,
+    text: str,
+    reply_markup=None,
+    *,
+    in_place: bool = False,
+    want_message: bool = False,
+    parse_mode: str | None = None,
+):
     """Xabar yuboradi — inline tugma bosilgan holatda ham ishlaydi.
 
     ``update.message`` faqat oddiy xabar kelganda mavjud bo'ladi. Inline
@@ -724,19 +730,27 @@ async def reply_text_safe(
     (yangi xabar yubormaydi). Bu «Orqaga» tugmalari uchun kerak:
     eski oyna chatda qolmasin, o'rniga yangisi yozilsin.
 
-    ``True`` — xabar yuborildi/tahrirlandi, ``False`` — yuborilmadi.
+    ``want_message=True`` — yuborilgan xabar obyektini qaytaradi
+    (keyinchalik ``.edit_text(...)`` chaqirish uchun). Boshqa holatda
+    ``True``/``False`` qaytaradi.
+
+    ``True``/xabar obyekti — yuborildi, ``False``/``None`` — yuborilmadi.
     """
     message = getattr(update, "message", None)
     query = getattr(update, "callback_query", None)
     if message is None:
         message = getattr(query, "message", None) if query else None
     if message is None:
-        return False
+        return None if want_message else False
     try:
         if in_place and query is not None:
-            await query.edit_message_text(text, reply_markup=reply_markup)
-        else:
-            await message.reply_text(text, reply_markup=reply_markup)
+            await query.edit_message_text(
+                text, reply_markup=reply_markup, parse_mode=parse_mode
+            )
+            return message if want_message else True
+        sent = await message.reply_text(
+            text, reply_markup=reply_markup, parse_mode=parse_mode
+        )
+        return sent if want_message else True
     except Exception:
-        return False
-    return True
+        return None if want_message else False

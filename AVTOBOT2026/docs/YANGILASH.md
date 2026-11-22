@@ -14,7 +14,20 @@ qaytish rejasini beradi.
 | Worker yuborish | 🟡 o'rta | Endi albom `send_file([...])` orqali, matnli post `link_preview` bayrog'i bilan ketadi. Kunlik limit/faol soat yoqilsa, yuborishlar o'sha oynaga moslashadi |
 | Media disk | 🟡 o'rta | Albomlar bilan fayllar soni o'sadi. Har user uchun kvota: `MAX_MEDIA_FILES_PER_USER` (standart 200) |
 
-Barcha yangi funksiya testlangan: **597 test** (`python -m unittest discover -s tests -t tests`).
+Barcha yangi funksiya testlangan: **613 test** (`python -m unittest discover -s tests -t tests`).
+
+### 🆕 Inline tugmalar va markaziy xato logi (PR #38)
+
+| Qism | Xavf | Izoh |
+| ---- | ---- | ---- |
+| **«🔍 Guruhlarni topish» ishlamaydi** | 🟢 past | `mg:find` — inline callback, lekin `discover_groups` `update.message.reply_text` ishlatardi. Inline kontekstda `update.message` = `None` → `AttributeError`. VPS logida tasdiqlangan. Endi `reply_text_safe` ishlatiladi |
+| **«✏️ Jamoa nomi» / «📨 Xabar yuborish» ishlamaydi** | 🟢 past | `edit_message_text` faqat Inline klaviatura qabul qiladi, lekin Reply klaviatura berilardi → `BadRequest: Inline keyboard expected`. Endi `kb_input_cancel_inline()` ishlatiladi |
+| **«⏰ Vaqt» oynasi inline kontekstda** | 🟢 past | `mg:global` → `begin_set_interval` — xuddi shu tipdagi xato. `reply_text_safe` bilan tuzatildi |
+| **Xatolar logga to'liq yozilmaydi** | 🟢 past | Yangi `core/errlog.py`: `log_error()` (to'liq traceback), `log_gap()` (kamchilik), `log_event()`. Matnli xabar va PTB handler xatolari ham ushlanadi |
+| Log hajmi | 🟢 past | Aylanma 5 MB × 4 = **20 MB chegara**. Xato ~2 KB; 100 xato/kun → ~200 KB/kun (**~0.3%**) |
+
+> 📌 **Yangi sozlamalar yo'q** — `.env` ga hech narsa qo'shish shart emas.
+> 📌 **Worker / Start / Stop** logikasi tegilmadi — `running` o'zgarishlari yo'q.
 
 ### 🆕 Jamoa statistikasi, navigatsiya va referal tozalash (PR #37)
 
@@ -385,6 +398,27 @@ shuning uchun xato bo'lsa sabov izlang, o'chirmang).
    **chiqmasin**.
 7. **Oddiy foydalanuvchi** → «👥 Referal» — avvalgi ko'rinish **saqlansin**
    (`start=ref_...` + statistika).
+
+### Inline tugmalar va xato logi (PR #38)
+
+1. **«💬 Guruhlar»** → **«🔍 Guruhlarni topish»** — skaner ishlaydi va
+   ro'yxat chiqadi (avval «Xatolik yuz berdi» berardi).
+2. **Skaner natijasi** → guruhni **✅ belgilang** → **«✅ Tanlanganlarni
+   qo'shish (N)»** — guruhlar qo'shiladi.
+3. **«💬 Guruhlar»** → **«⏰ Vaqt»** — interval oynasi ochiladi (avval
+   inline kontekstda buzilgan).
+4. **Jamoa admini** → panel → **«✏️ Jamoa nomi»** — nom kiritish oynasi
+   ochiladi (avval `Inline keyboard expected` berardi).
+5. **Jamoa admini** → panel → **«📨 Xabar yuborish»** — xabar yuborish
+   oynasi ochiladi (avval `Inline keyboard expected` berardi).
+6. **Log tekshiruvi** — xato yuzsa, logda shunday yoziladi:
+   ```
+   💥 XATO: Inline tugma │ uid=6169018469 │ action=mg:find │ TypeError: ...
+   ```
+   va kamchilik shunday:
+   ```
+   ⚠️ KAMCHILIK: Guruh topilmadi yoki o'chirilgan │ uid=6169018469 │ action=tadm:member:123
+   ```
 
 ## 5. Limitlarni bosqichma-bosqich yoqish (tavsiya)
 

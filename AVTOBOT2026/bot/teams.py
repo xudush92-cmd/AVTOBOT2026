@@ -31,6 +31,7 @@ from config.config import (
     TEAM_MIN_MEMBERS,
 )
 from core import database as db
+from core.errlog import log_error, log_gap
 from core.logger import log
 from core.utils import format_expires, reply_text_safe
 
@@ -791,13 +792,42 @@ async def handle_team_member_callback(update: Update, uid: int, data: str) -> No
 
 
 async def handle_team_admin_callback(update: Update, uid: int, data: str) -> None:
-    """Jamoa admini paneli callback'lari."""
+    """Jamoa admini paneli callback'lari.
+
+    Xato yuz bersa — logga to'liq traceback yoziladi va foydalanuvchiga
+    «Xatolik yuz berdi» yuboriladi (javobsiz qolmasin).
+    """
+    try:
+        await _handle_team_admin_callback_inner(update, uid, data)
+    except Exception as exc:  # noqa: BLE001
+        log_error(
+            uid,
+            "Jamoa admini paneli",
+            exc,
+            action=data,
+            extra=f"data={data!r}",
+        )
+        with contextlib.suppress(Exception):
+            await update.callback_query.edit_message_text(T.GENERIC_ERROR)
+
+
+async def _handle_team_admin_callback_inner(
+    update: Update, uid: int, data: str
+) -> None:
+    """Jamoa admini paneli callback'lari (asosiy logika)."""
     q = update.callback_query
     parts = data.split(":")
     action = parts[1] if len(parts) > 1 else ""
 
     user = await db.get_user(uid) or {}
     if not await _is_team_admin(user):
+        # Normal emas (jamoa admini o'z panelida) — kamchilik sifatida
+        # yoziladi: kim, qaysi tugma bilan urinib ko'rgan.
+        log_gap(
+            uid,
+            "Jamoa admini huquqi yo'q foydalanuvchi panelga kirdi",
+            action=data,
+        )
         await q.answer("Bu oynadan foydalanish huquqingiz yo'q", show_alert=True)
         return
 
@@ -835,6 +865,7 @@ async def handle_team_admin_callback(update: Update, uid: int, data: str) -> Non
             await q.answer(
                 "Bu taklif sizning jamoangizga tegishli emas", show_alert=True
             )
+            log_gap(uid, "Taklif boshqa jamoaga tegishli", action=data)
             return
         await db.delete_team_invite(phone, kind="member")
         await q.answer(f"🗑 {phone} bekor qilindi", show_alert=True)
@@ -851,13 +882,16 @@ async def handle_team_admin_callback(update: Update, uid: int, data: str) -> Non
         user_states[uid] = {"step": "team_admin_rename", "ts": time.time()}
         await q.edit_message_text(
             T.TEAM_ADMIN_RENAME_ASK,
-            reply_markup=KB.kb_input_cancel(),
+            # Inline kontekstda Reply klaviatura qabul qilinmaydi
+            # ("BadRequest: Inline keyboard expected") — inline variant.
+            reply_markup=KB.kb_input_cancel_inline(),
         )
         return
 
     if action == "link":
         team = await primary_team(uid)
         if not team:
+            log_gap(uid, "Jamoa topilmadi", action=data)
             await q.answer(T.TEAM_ADMIN_NO_TEAM, show_alert=True)
             return
         await q.edit_message_text(
@@ -877,6 +911,7 @@ async def handle_team_admin_callback(update: Update, uid: int, data: str) -> Non
             page = 0
         team = await primary_team(uid)
         if not team:
+            log_gap(uid, "Jamoa topilmadi", action=data)
             await q.answer(T.TEAM_ADMIN_NO_TEAM, show_alert=True)
             return
         members = await db.get_team_members(int(team["id"]))
@@ -896,6 +931,7 @@ async def handle_team_admin_callback(update: Update, uid: int, data: str) -> Non
             return
         member = await db.get_user(target)
         if not member:
+            log_gap(uid, "A'zo topilmadi", action=data)
             await q.answer("Foydalanuvchi topilmadi", show_alert=True)
             return
         # Faqat o'z jamoasining a'zosiga murojaat qila oladi.
@@ -1064,6 +1100,7 @@ async def handle_team_admin_callback(update: Update, uid: int, data: str) -> Non
     if action == "stats":
         team = await primary_team(uid)
         if not team:
+            log_gap(uid, "Jamoa topilmadi", action=data)
             await q.answer(T.TEAM_ADMIN_NO_TEAM, show_alert=True)
             return
         members = await db.get_team_members(int(team["id"]))
@@ -1096,12 +1133,15 @@ async def handle_team_admin_callback(update: Update, uid: int, data: str) -> Non
 
         team = await primary_team(uid)
         if not team:
+            log_gap(uid, "Jamoa topilmadi", action=data)
             await q.answer(T.TEAM_ADMIN_NO_TEAM, show_alert=True)
             return
         user_states[uid] = {"step": "team_admin_message", "ts": time.time()}
         await q.edit_message_text(
             T.TEAM_ADMIN_MESSAGE,
-            reply_markup=KB.kb_input_cancel(),
+            # Inline kontekstda Reply klaviatura qabul qilinmaydi
+            # ("BadRequest: Inline keyboard expected") — inline variant.
+            reply_markup=KB.kb_input_cancel_inline(),
         )
         return
 
@@ -1160,6 +1200,7 @@ async def approve_team_member(
     q = update.callback_query
     member = await db.get_user(target)
     if not member:
+        log_gap(admin_uid, "A'zo topilmadi", action=f"tadm:approveterm:{target}")
         await q.answer("Foydalanuvchi topilmadi", show_alert=True)
         return
 

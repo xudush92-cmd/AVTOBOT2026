@@ -51,11 +51,13 @@ from config.config import (
     DISCOVER_PROGRESS_EVERY as CONFIG_DISCOVER_PROGRESS_EVERY,
 )
 from core import database as db
+from core.errlog import log_gap
 from core.logger import log
 from core.utils import (
     group_reference_key,
     normalize_group_reference,
     parse_group_lines_with_errors,
+    reply_text_safe,
 )
 
 
@@ -617,7 +619,12 @@ async def discover_groups(update: Update) -> None:
     uid = update.effective_user.id
     session = await db.get_session(uid)
     if not session:
-        await update.message.reply_text(
+        # Bu oyna inline tugma («🔍 Guruhlarni topish») orqali ochiladi —
+        # `update.message` mavjud bo'lmasligi mumkin, shuning uchun
+        # `reply_text_safe` ishlatiladi.
+        log_gap(uid, "Telegram sessiyasi yo'q — skanerlash mumkin emas")
+        await reply_text_safe(
+            update,
             T.DISCOVER_NO_SESSION,
             reply_markup=KB.kb_login(),
         )
@@ -629,7 +636,9 @@ async def discover_groups(update: Update) -> None:
     flood_until = _flood_wait_until.get(uid, 0)
     if flood_until > now:
         wait_s = int(flood_until - now)
-        await update.message.reply_text(
+        log_gap(uid, f"FloodWait — skanerlash {wait_s}s bloklandi")
+        await reply_text_safe(
+            update,
             T.discover_flood_wait_text(wait_s),
         )
         return
@@ -638,14 +647,17 @@ async def discover_groups(update: Update) -> None:
     last_ts = _last_discover_ts.get(uid, 0)
     if last_ts and now - last_ts < DISCOVER_COOLDOWN_S:
         wait_min = max(1, int((DISCOVER_COOLDOWN_S - (now - last_ts)) / 60) + 1)
-        await update.message.reply_text(
+        log_gap(uid, f"Cooldown — skanerlash {wait_min} daqiqa kutmoqda")
+        await reply_text_safe(
+            update,
             T.discover_cooldown_text(wait_min),
         )
         return
 
     # 3) Bir vaqtda bitta skaner — ikkinchisi bosilmaydi.
     if uid in _discover_running:
-        await update.message.reply_text(T.DISCOVER_ALREADY_RUNNING)
+        log_gap(uid, "Skanerlash allaqachon ishlab turibdi")
+        await reply_text_safe(update, T.DISCOVER_ALREADY_RUNNING)
         return
 
     from worker import worker as W
@@ -653,10 +665,22 @@ async def discover_groups(update: Update) -> None:
 
     pool = W.client_pool
     if pool is None:
-        await update.message.reply_text(T.GENERIC_ERROR)
+        await reply_text_safe(update, T.GENERIC_ERROR)
         return
 
-    status_msg = await update.message.reply_text(T.DISCOVER_START)
+    # Status xabari — inline kontekstda ham kerak (guruhlar tugmasi).
+    status_msg = await reply_text_safe(update, T.DISCOVER_START, want_message=True)
+
+    async def _status_edit(
+        text: str, markup=None, *, parse_mode: str | None = None
+    ) -> None:
+        """Status xabarini tahrirlaydi (yuborilmagan bo'lsa — jim)."""
+        if status_msg is None:
+            return
+        with contextlib.suppress(Exception):
+            await status_msg.edit_text(
+                text, parse_mode=parse_mode, reply_markup=markup
+            )
 
     # Skaner uchun **alohida** client olamiz (pool'dagi umumiy client emas).
     # Sabab: Telethon'da bitta client ketma-ket RPC yuboradi — skaner
@@ -668,17 +692,14 @@ async def discover_groups(update: Update) -> None:
         try:
             client = await pool.acquire(uid, session)
         except SessionInvalidError:
-            with contextlib.suppress(Exception):
-                await status_msg.edit_text(T.DISCOVER_INVALID)
+            await _status_edit(T.DISCOVER_INVALID)
             return
         except PoolBusyError:
-            with contextlib.suppress(Exception):
-                await status_msg.edit_text(T.DISCOVER_BUSY)
+            await _status_edit(T.DISCOVER_BUSY)
             return
         except Exception as exc:  # noqa: BLE001
             log(f"discover_groups acquire {uid}: {type(exc).__name__}", "warning")
-            with contextlib.suppress(Exception):
-                await status_msg.edit_text(T.GENERIC_ERROR)
+            await _status_edit(T.GENERIC_ERROR)
             return
         release_needed = True
         # ``acquire`` natijasi — uni ham context manager sifatida ishlatamiz.
@@ -853,20 +874,17 @@ async def discover_groups(update: Update) -> None:
                         done % DISCOVER_PROGRESS_EVERY < batch_size
                         or done >= len(candidates)
                     ):
-                        with contextlib.suppress(Exception):
-                            await status_msg.edit_text(
-                                T.discover_progress(scanned, len(found))
-                            )
+                        await _status_edit(
+                            T.discover_progress(scanned, len(found))
+                        )
                     # Anti-spam: batch'lar orasida qisqa pauza.
                     if DISCOVER_BATCH_PAUSE_S > 0:
                         await asyncio.sleep(DISCOVER_BATCH_PAUSE_S)
     except SessionInvalidError:
-        with contextlib.suppress(Exception):
-            await status_msg.edit_text(T.DISCOVER_INVALID)
+        await _status_edit(T.DISCOVER_INVALID)
         return
     except PoolBusyError:
-        with contextlib.suppress(Exception):
-            await status_msg.edit_text(T.DISCOVER_BUSY)
+        await _status_edit(T.DISCOVER_BUSY)
         return
     except Exception as exc:  # noqa: BLE001
         log(f"discover_groups scan {uid}: {type(exc).__name__}", "warning")
@@ -880,8 +898,7 @@ async def discover_groups(update: Update) -> None:
     selection = discover_sessions.start_session(uid, found)
 
     if not found:
-        with contextlib.suppress(Exception):
-            await status_msg.edit_text(T.DISCOVER_PICK_EMPTY)
+        await _status_edit(T.DISCOVER_PICK_EMPTY)
         from bot.menu import show_home
 
         await show_home(update, uid)
@@ -892,25 +909,9 @@ async def discover_groups(update: Update) -> None:
         return
 
     # Ro'yxatni bir xabarda ko'rsatamiz — «qidirilmoqda» xabari almashtiriladi.
-    rendered = False
-    with contextlib.suppress(Exception):
-        await status_msg.edit_text(
-            _discover_header(
-                selection, 0, selection.page_count(GROUPS_PAGE_SIZE)
-            ),
-            parse_mode="HTML",
-            reply_markup=KB.kb_discover_groups(
-                selection.page_groups(0, GROUPS_PAGE_SIZE),
-                selection.selected,
-                page=0,
-                page_size=GROUPS_PAGE_SIZE,
-                total=len(selection.groups),
-                pages=selection.page_count(GROUPS_PAGE_SIZE),
-            ),
-        )
-        rendered = True
-    if not rendered:
-        await _render_discover_list(update, status_msg, uid, selection, page=0)
+    # Ro'yxatni **status xabarining o'zida** ko'rsatamiz — yangi xabar
+    # yubormaymiz (eski «qidirilmoqda» xabari qolib ketmasin).
+    await _render_discover_list(update, status_msg, uid, selection, page=0, edit=True)
     log(
         f"🔍 Guruh topish: {uid} — {len(found)} ta topildi, "
         f"tanlov kutilmoqda (takror {duplicate_count}, o'tkazildi {skipped}, "
@@ -970,8 +971,12 @@ async def _render_discover_list(
         with contextlib.suppress(Exception):
             await message.edit_text(header, parse_mode="HTML", reply_markup=markup)
             return
-    await update.message.reply_text(
-        header, parse_mode="HTML", reply_markup=markup
+    # Inline kontekstda `update.message` mavjud bo'lmasligi mumkin.
+    await reply_text_safe(
+        update,
+        header,
+        reply_markup=markup,
+        parse_mode="HTML",
     )
 
 
@@ -1002,6 +1007,7 @@ async def handle_discover_callback(update: Update, uid: int, data: str) -> None:
             return
         if index < 0 or index >= len(selection.groups):
             await q.answer("Bu guruh topilmadi", show_alert=True)
+            log_gap(uid, "Guruh topilmadi yoki o'chirilgan", action=data)
             return
         group = selection.groups[index]
         now_selected = selection.toggle(group.key)
