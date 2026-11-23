@@ -401,6 +401,7 @@ class DiscoverGroupsTestCase(unittest.IsolatedAsyncioTestCase):
             patch.object(G.db, "get_limits", AsyncMock(return_value={"max_groups": 5})),
         ):
             await G.handle_discover_callback(cb_update, UID, "disc:apply")
+            await G.handle_discover_callback(cb_update, UID, "disc:apply:yes")
 
         report = q.edit_message_text.await_args.args[0]
         self.assertIn("Paket chegarasi", report)

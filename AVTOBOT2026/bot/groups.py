@@ -15,7 +15,7 @@ import contextlib
 import random  # noqa: F401 — eski testlar `G.random` ni patch qiladi
 import time
 
-from telegram import Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telethon import TelegramClient, utils
 from telethon.errors import (
     ChannelPrivateError,
@@ -1087,12 +1087,68 @@ async def _render_discover_list(
     )
 
 
+def _confirm_apply_markup() -> InlineKeyboardMarkup:
+    """Tasdiqlash oynasi tugmalari."""
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    T.DISCOVER_APPLY_CONFIRM_YES, callback_data="disc:apply:yes"
+                ),
+                InlineKeyboardButton(
+                    T.DISCOVER_APPLY_CONFIRM_NO, callback_data="disc:apply:no"
+                ),
+            ]
+        ]
+    )
+
+
+async def ask_apply_confirmation(update: Update, uid: int, selected) -> bool:
+    """Saqlashdan oldin tasdiqlash so'raydi.
+
+    Foydalanuvchi skanerda tanlab, tugmani bosmasdan oyna yopishi mumkin.
+    Tasdiqlash bosqichi shuni aniqlashtiradi: avval «ha, saqla» deyish
+    kerak. Shu bilan birga qaysi guruhlar saqlanayotgani ko'rinadi.
+
+    Qaytaradi: ``True`` — foydalanuvchi tasdiqladi, ``False`` — bekor qildi.
+    """
+    q = update.callback_query
+    lines = []
+    for group in selected[:15]:
+        label = group.title or group.reference
+        lines.append(f"• {label}")
+    if len(selected) > 15:
+        lines.append(f"• … va yana {len(selected) - 15} ta")
+    text = T.DISCOVER_APPLY_CONFIRM_HEADER.format(
+        count=len(selected),
+        list="\n".join(lines),
+    )
+    markup = _confirm_apply_markup()
+    shown = False
+    with contextlib.suppress(Exception):
+        await q.edit_message_text(
+            text,
+            parse_mode="HTML",
+            reply_markup=markup,
+        )
+        shown = True
+    if not shown:
+        with contextlib.suppress(Exception):
+            await q.message.reply_text(
+                text,
+                parse_mode="HTML",
+                reply_markup=markup,
+            )
+            shown = True
+    return shown
+
+
 async def apply_selected_groups(update: Update, uid: int, selected) -> None:
     """Tanlangan guruhlarni bazaga qo'shadi va natijani ko'rsatadi.
 
     Ikki yo'l bir xil funksiyani ishlatadi:
-    - skaner oynasidagi «✅ Tanlanganlarni qo'shish» tugmasi;
-    - «💬 Guruhlar» oynasidagi «✅ Tanlanganlarni qo'shish» tugmasi.
+    - skaner oynasidagi «💾 Tanlanganlarni saqlash» tugmasi;
+    - «💬 Guruhlar» oynasidagi «💾 Tanlanganlarni saqlash» tugmasi.
 
     Foydalanuvchi tanlagan guruhlarni yo'qotib qo'ymasligi uchun natija
     **doim** tekshiriladi: bazada qancha guruh turgani solishtiriladi va
@@ -1342,10 +1398,32 @@ async def handle_discover_callback(update: Update, uid: int, data: str) -> None:
         return
 
     if action == "apply":
+        # ✅/❌ tasdiqlash bosqichi (ikkinchi bosilishda).
+        decision = parts[2] if len(parts) > 2 else ""
+        if decision == "yes":
+            selected = selection.selected_groups()
+            if not selected:
+                await q.answer(T.DISCOVER_APPLY_NONE, show_alert=True)
+                return
+            await apply_selected_groups(update, uid, selected)
+            return
+        if decision == "no":
+            await q.answer("Bekor qilindi")
+            discover_sessions.clear_session(uid)
+            with contextlib.suppress(Exception):
+                await q.edit_message_text(
+                    "🚫 Tanlangan guruhlar saqlanmadi.",
+                    reply_markup=await KB.kb_main_for(uid),
+                )
+            return
+
         selected = selection.selected_groups()
         if not selected:
             await q.answer(T.DISCOVER_APPLY_NONE, show_alert=True)
             return
-        await apply_selected_groups(update, uid, selected)
+        # ⚠️ Birinchi bosilish — tasdiqlash so'raladi. Shu bilan birga
+        # qaysi guruhlar saqlanayotgani ko'rsatiladi.
+        await q.answer()
+        await ask_apply_confirmation(update, uid, selected)
         return
 

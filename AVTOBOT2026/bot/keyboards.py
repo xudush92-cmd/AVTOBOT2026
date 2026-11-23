@@ -330,7 +330,7 @@ def kb_my_groups(
         rows.append(
             [
                 InlineKeyboardButton(
-                    f"✅ Tanlanganlarni qo'shish ({pending_selected})",
+                    f"💾 Tanlanganlarni saqlash ({pending_selected})",
                     callback_data="mg:apply",
                 )
             ]
@@ -1862,7 +1862,7 @@ def kb_discover_groups(
         rows.append(
             [
                 InlineKeyboardButton(
-                    f"✅ Tanlanganlarni qo'shish ({count})",
+                    f"💾 Tanlanganlarni saqlash ({count})",
                     callback_data="disc:apply",
                 )
             ]

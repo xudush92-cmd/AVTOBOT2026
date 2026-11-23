@@ -2,7 +2,7 @@
 
 Foydalanuvchi nuqtasidan to'liq oqim tekshiriladi:
 1. skaner guruhlarni topadi;
-2. «Tanlanganlarni qo'shish» bosiladi;
+2. «Tanlanganlarni saqlash» bosiladi;
 3. guruhlar bazaga yoziladi;
 4. «💬 Guruhlar» oynasi ularni **ko'rsatadi** (bo'sh xabar chiqmaydi);
 5. guruh o'chirilganda log izi qoladi.
@@ -62,7 +62,7 @@ class LiveFlowSmokeTests(unittest.IsolatedAsyncioTestCase):
         )
         session.selected.update({session.groups[0].key, session.groups[1].key})
 
-        # 2) «Tanlanganlarni qo'shish» bosildi.
+        # 2) «Tanlanganlarni saqlash» bosildi.
         answer = AsyncMock()
         callback = SimpleNamespace(
             data="disc:apply",
@@ -78,6 +78,7 @@ class LiveFlowSmokeTests(unittest.IsolatedAsyncioTestCase):
         )
 
         await G.handle_discover_callback(update, UID, "disc:apply")
+        await G.handle_discover_callback(update, UID, "disc:apply:yes")
 
         alerts = [call.args[0] for call in answer.call_args_list if call.args]
         self.assertTrue(any("qo'shildi" in a for a in alerts), alerts)
@@ -161,7 +162,7 @@ class LiveFlowSmokeTests(unittest.IsolatedAsyncioTestCase):
             btn
             for row in markup.inline_keyboard
             for btn in row
-            if "Tanlanganlarni qo'shish" in btn.text
+            if "Tanlanganlarni saqlash" in btn.text
         ]
         self.assertEqual(len(buttons), 1)
 
@@ -179,6 +180,8 @@ class LiveFlowSmokeTests(unittest.IsolatedAsyncioTestCase):
         )
 
         await MG.handle_my_groups_callback(mg_update, UID, "mg:apply")
+        # Tasdiqlash — foydalanuvchi «✅ Ha, saqla» ni bosadi.
+        await G.handle_discover_callback(mg_update, UID, "disc:apply:yes")
 
         rows = await db.get_chat_records(UID)
         self.assertEqual(len(rows), 2)

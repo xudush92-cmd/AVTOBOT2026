@@ -706,8 +706,10 @@ DISCOVER_PICK_HEADER = (
     "Topilgan guruh: {total} ta\n"
     "Sahifa: {page}/{pages}\n"
     "✅ Belgilangan: {selected} ta\n\n"
-    "Kerakli guruhlarni <b>✅ belgisi</b> orqali tanlang. "
-    "Oxirida «Tanlanganlarni qo'shish» tugmasini bosing."
+    "Kerakli guruhlarni <b>✅ belgisi</b> orqali tanlang.\n\n"
+    "⚠️ Tanlagandan keyin ro'yxatning <b>pastidagi</b> "
+    "«💾 Tanlanganlarni saqlash» tugmasini bosish shart — "
+    "shundagina guruhlar saqlanadi."
 )
 
 DISCOVER_PICK_LINKS = (
@@ -741,12 +743,14 @@ DISCOVER_APPLY_NONE = (
 GROUPS_PENDING_SELECTED = (
     "ℹ️ Skanerda <b>{found}</b> ta guruh topilgan, <b>{selected}</b> tasi "
     "tanlangan — lekin ular hali qo'shilmagan.\n\n"
-    "Qo'shish uchun «✅ Tanlanganlarni qo'shish» tugmasini bosing."
+    "Ro'yxatning pastidagi <b>💾 Tanlanganlarni saqlash</b> tugmasini "
+    "bosib, ularni qo'shing."
 )
 
 GROUPS_PENDING_NOT_SELECTED = (
     "ℹ️ Skanerda <b>{found}</b> ta guruh topilgan.\n\n"
-    "Ularni ✅ belgilab, «✅ Tanlanganlarni qo'shish» tugmasini bosing."
+    "Ularni ✅ belgilab, ro'yxatning pastidagi "
+    "<b>💾 Tanlanganlarni saqlash</b> tugmasini bosing."
 )
 
 GROUPS_PENDING_NONE = (
@@ -754,6 +758,22 @@ GROUPS_PENDING_NONE = (
     "Sizda hali guruh yo'q.\n\n"
     "«🔍 Guruhlarni topish» tugmasi orqali Telegram'dagi "
     "guruhlaringizni avtomatik toping va qo'shing."
+)
+
+# ── Qo'shishni tasdiqlash (ikki bosqichli oqim) ──
+DISCOVER_APPLY_CONFIRM_HEADER = (
+    "💾 <b>Tanlangan {count} ta guruhni saqlash</b>\n\n"
+    "Ro'yxat:\n{list}\n\n"
+    "Ularni «💬 Guruhlar» ro'yxatiga qo'shasizmi?"
+)
+
+DISCOVER_APPLY_CONFIRM_YES = "✅ Ha, saqla"
+DISCOVER_APPLY_CONFIRM_NO = "❌ Yo'q, bekor qil"
+
+DISCOVER_APPLY_SAVED = (
+    "✅ <b>{count} ta guruh saqlandi</b>\n\n"
+    "Endi ular «💬 Guruhlar» ro'yxatida. E'lon yuborishni "
+    "▶️ Start tugmasi bilan yoqing."
 )
 
 DISCOVER_LIMIT_HIT = (

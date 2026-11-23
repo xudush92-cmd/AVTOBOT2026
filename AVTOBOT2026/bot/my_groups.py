@@ -467,7 +467,7 @@ async def handle_my_groups_callback(
     if action == "apply":
         # ⚠️ Skanerda tanlangan, lekin hali qo'shilmagan guruhlarni
         # to'g'ridan-to'g'ri qo'shamiz. Foydalanuvchi "Tanlanganlarni
-        # qo'shish" tugmasini skaner oynasida topib bosmasdan, bu
+        # saqlash" tugmasini skaner oynasida topib bosmasdan, bu
         # oynadan ham qo'shishi mumkin bo'ladi.
         from bot import groups as G
 
@@ -479,10 +479,9 @@ async def handle_my_groups_callback(
         if not selected:
             await q.answer(T.DISCOVER_APPLY_NONE, show_alert=True)
             return
-        # Javob ``apply_selected_groups`` ichida beriladi — bu yerda
-        # ``q.answer()`` qo'shimcha chaqirilmaydi (Telegram bitta javobga
-        # ruxsat beradi).
-        await G.apply_selected_groups(update, uid, selected)
+        # ⚠️ Tasdiqlash — foydalanuvchi aniq «ha, saqla» deishi kerak.
+        await q.answer()
+        await G.ask_apply_confirmation(update, uid, selected)
         return
 
     if action == "back":

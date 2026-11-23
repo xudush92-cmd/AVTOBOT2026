@@ -357,6 +357,7 @@ class GroupTitleScanTests(unittest.IsolatedAsyncioTestCase):
 
         cb_update, _q = self._callback("disc:apply")
         await G.handle_discover_callback(cb_update, UID, "disc:apply")
+        await G.handle_discover_callback(cb_update, UID, "disc:apply:yes")
 
         records = await db.get_chat_records(UID)
         self.assertEqual(len(records), 1)

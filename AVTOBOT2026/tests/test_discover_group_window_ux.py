@@ -226,6 +226,7 @@ class DiscoverGroupWindowUXTests(unittest.IsolatedAsyncioTestCase):
         selection.toggle(selection.groups[0].key)
         cb_update, _q = self._callback("disc:apply")
         await G.handle_discover_callback(cb_update, UID, "disc:apply")
+        await G.handle_discover_callback(cb_update, UID, "disc:apply:yes")
 
         self.assertEqual(await db.get_chats(UID), ["@aaa"])
 
@@ -290,6 +291,7 @@ class DiscoverGroupWindowUXTests(unittest.IsolatedAsyncioTestCase):
 
         cb_update, q = self._callback("disc:apply")
         await G.handle_discover_callback(cb_update, UID, "disc:apply")
+        await G.handle_discover_callback(cb_update, UID, "disc:apply:yes")
 
         q.edit_message_text.assert_awaited()
         args, kwargs = q.edit_message_text.await_args
@@ -321,6 +323,7 @@ class DiscoverGroupWindowUXTests(unittest.IsolatedAsyncioTestCase):
 
         cb_update, q = self._callback("disc:apply")
         await G.handle_discover_callback(cb_update, UID, "disc:apply")
+        await G.handle_discover_callback(cb_update, UID, "disc:apply:yes")
 
         text = q.edit_message_text.await_args.args[0]
         self.assertIn("Qo'shildi: 1 ta", text)
@@ -343,6 +346,7 @@ class DiscoverGroupWindowUXTests(unittest.IsolatedAsyncioTestCase):
         # Xabar tahrirlab bo'lmaydi (eskirgan/klaviyurasiz).
         q.edit_message_text = AsyncMock(side_effect=RuntimeError("can't edit"))
         await G.handle_discover_callback(cb_update, UID, "disc:apply")
+        await G.handle_discover_callback(cb_update, UID, "disc:apply:yes")
 
         # Yangi xabar yuborilishi kerak.
         q.message.reply_text.assert_awaited()
