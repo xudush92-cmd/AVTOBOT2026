@@ -276,6 +276,7 @@ def kb_my_groups(
     groups: list[dict],
     page: int = 0,
     page_size: int = 10,
+    pending_selected: int = 0,
 ) -> InlineKeyboardMarkup:
     """Foydalanuvchining o'z guruhlari — bitta boshqaruv oynasi.
 
@@ -286,6 +287,11 @@ def kb_my_groups(
     ``🔍 Guruhlarni topish`` tugmasi bu yerga **qo'yilmaydi** — u asosiy
     menyuda mavjud. Shu yerda takror bo'lsa, foydalanuvchi bir xil
     amalni ikki joyda topadi va chalkashadi.
+
+    ``pending_selected`` — skanerda tanlangan, lekin hali qo'shilmagan
+    guruhlar soni. Noldan katta bo'lsa, «✅ Tanlanganlarni qo'shish»
+    tugmasi qo'shiladi — aks holda foydalanuvchi tanlagan guruhlarini
+    yo'qotib qo'yadi.
     """
     max_page = max(0, (len(groups) - 1) // page_size)
     page = min(max(page, 0), max_page)
@@ -318,6 +324,17 @@ def kb_my_groups(
                 InlineKeyboardButton("➡️", callback_data=f"mg:page:{page + 1}")
             )
         rows.append(nav)
+    if pending_selected > 0:
+        # ⚠️ Skanerda tanlangan, lekin hali qo'shilmagan guruhlar bor.
+        # Tugmasiz foydalanuvchi ularni yo'qotib qo'yadi.
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    f"💾 Tanlanganlarni saqlash ({pending_selected})",
+                    callback_data="mg:apply",
+                )
+            ]
+        )
     rows.append(
         [InlineKeyboardButton("⬅️ Asosiy menyu", callback_data="mg:back")]
     )
@@ -1845,12 +1862,18 @@ def kb_discover_groups(
         rows.append(
             [
                 InlineKeyboardButton(
-                    f"✅ Tanlanganlarni qo'shish ({count})",
+                    f"💾 Tanlanganlarni saqlash ({count})",
                     callback_data="disc:apply",
                 )
             ]
         )
+    # ⚠️ «Bekor qilish» tanlanishni butunlay tozalaydi. Shuuning uchun
+    # undan oldin «⬅️ Guruhlar» — tanlanishni saqlab, foydalanuvchining
+    # «💬 Guruhlar» oynasiga qaytish imkonini beradi.
     rows.append(
-        [InlineKeyboardButton("🚫 Bekor qilish", callback_data="disc:cancel")]
+        [
+            InlineKeyboardButton("⬅️ Guruhlar", callback_data="disc:groups"),
+            InlineKeyboardButton("🚫 Bekor qilish", callback_data="disc:cancel"),
+        ]
     )
     return InlineKeyboardMarkup(rows)

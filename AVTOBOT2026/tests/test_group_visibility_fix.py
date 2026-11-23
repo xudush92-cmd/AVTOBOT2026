@@ -212,8 +212,12 @@ class DiscoverApplyVerificationTests(_DatabaseTestCase):
         session = DS.start_session(
             UID,
             [
-                DS.DiscoveredGroup(reference="@a", title="A"),
-                DS.DiscoveredGroup(reference="@b", title="B"),
+                DS.DiscoveredGroup(
+                    reference="@a", title="A", key=DS.build_key("@a")
+                ),
+                DS.DiscoveredGroup(
+                    reference="@b", title="B", key=DS.build_key("@b")
+                ),
             ],
         )
         session.selected.update({session.groups[0].key, session.groups[1].key})
@@ -237,6 +241,7 @@ class DiscoverApplyVerificationTests(_DatabaseTestCase):
 
         with patch.object(db, "add_chat", side_effect=_fake_add_chat):
             await G.handle_discover_callback(update, UID, "disc:apply")
+            await G.handle_discover_callback(update, UID, "disc:apply:yes")
 
         # Foydalanuvchiga "qo'shildi" emas, xato ko'rsatilishi kerak.
         alerts = [call.args[0] for call in answer.call_args_list if call.args]
@@ -246,7 +251,9 @@ class DiscoverApplyVerificationTests(_DatabaseTestCase):
     async def test_apply_reports_success_when_stored(self) -> None:
         """Normal holat — "qo'shildi" xabari chiqsin."""
         session = DS.start_session(
-            UID, [DS.DiscoveredGroup(reference="@a", title="A")]
+            UID, [DS.DiscoveredGroup(
+                reference="@a", title="A", key=DS.build_key("@a")
+            )]
         )
         session.selected.update({session.groups[0].key})
 
@@ -265,6 +272,7 @@ class DiscoverApplyVerificationTests(_DatabaseTestCase):
         )
 
         await G.handle_discover_callback(update, UID, "disc:apply")
+        await G.handle_discover_callback(update, UID, "disc:apply:yes")
 
         alerts = [call.args[0] for call in answer.call_args_list if call.args]
         self.assertTrue(alerts)
@@ -277,7 +285,9 @@ class EmptyGroupsWindowHintTests(_DatabaseTestCase):
     async def test_empty_window_mentions_scanner_results(self) -> None:
         """Skanerda tanlangan guruhlar bo'lsa — bo'sh oynada eslatma chiqsin."""
         session = DS.start_session(
-            UID, [DS.DiscoveredGroup(reference="@a", title="A")]
+            UID, [DS.DiscoveredGroup(
+                reference="@a", title="A", key=DS.build_key("@a")
+            )]
         )
         session.selected.update({session.groups[0].key})
 
@@ -285,7 +295,7 @@ class EmptyGroupsWindowHintTests(_DatabaseTestCase):
             text, _markup = await MG.build_groups_window(UID)
 
         self.assertIn("Sizda hali guruh yo'q", text)
-        self.assertIn("Tanlanganlarni qo'shish", text)
+        self.assertIn("Tanlanganlarni saqlash", text)
 
     async def test_empty_window_without_session_is_unchanged(self) -> None:
         """Skaner sessiyasi yo'q bo'lsa — xabar o'zgfeitamente."""
@@ -293,7 +303,7 @@ class EmptyGroupsWindowHintTests(_DatabaseTestCase):
             text, _markup = await MG.build_groups_window(UID)
 
         self.assertIn("Sizda hali guruh yo'q", text)
-        self.assertNotIn("Tanlanganlarni qo'shish", text)
+        self.assertNotIn("Tanlanganlarni saqlash", text)
 
 
 if __name__ == "__main__":

@@ -306,6 +306,8 @@ class DiscoverToggleTests(unittest.IsolatedAsyncioTestCase):
         await CB.handle_callback(up, None)
         up.callback_query.data = "disc:apply"
         await CB.handle_callback(up, None)
+        up.callback_query.data = "disc:apply:yes"
+        await CB.handle_callback(up, None)
 
         records = await db.get_chat_records(UID)
         values = [r["value"] for r in records]

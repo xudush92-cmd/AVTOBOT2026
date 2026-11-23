@@ -2,7 +2,7 @@
 
 Foydalanuvchi nuqtasidan to'liq oqim tekshiriladi:
 1. skaner guruhlarni topadi;
-2. «Tanlanganlarni qo'shish» bosiladi;
+2. «Tanlanganlarni saqlash» bosiladi;
 3. guruhlar bazaga yoziladi;
 4. «💬 Guruhlar» oynasi ularni **ko'rsatadi** (bo'sh xabar chiqmaydi);
 5. guruh o'chirilganda log izi qoladi.
@@ -62,7 +62,7 @@ class LiveFlowSmokeTests(unittest.IsolatedAsyncioTestCase):
         )
         session.selected.update({session.groups[0].key, session.groups[1].key})
 
-        # 2) «Tanlanganlarni qo'shish» bosildi.
+        # 2) «Tanlanganlarni saqlash» bosildi.
         answer = AsyncMock()
         callback = SimpleNamespace(
             data="disc:apply",
@@ -78,6 +78,7 @@ class LiveFlowSmokeTests(unittest.IsolatedAsyncioTestCase):
         )
 
         await G.handle_discover_callback(update, UID, "disc:apply")
+        await G.handle_discover_callback(update, UID, "disc:apply:yes")
 
         alerts = [call.args[0] for call in answer.call_args_list if call.args]
         self.assertTrue(any("qo'shildi" in a for a in alerts), alerts)
@@ -115,6 +116,83 @@ class LiveFlowSmokeTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertTrue(mock_log.called)
         self.assertEqual(len(await db.get_chat_records(UID)), 1)
+
+    async def test_selection_not_lost_when_switching_to_groups_window(self) -> None:
+        """Skanerdan «Guruhlar» oynasiga o'tsa — tanlanish saqlanadi va
+        foydalanuvchi u yerda ham qo'shishi mumkin bo'ladi."""
+        # 1) Skaner topdi va foydalanuvchi 2 ta guruhni tanladi.
+        session = DS.start_session(
+            UID,
+            [
+                DS.DiscoveredGroup(
+                    reference="@taxi_1",
+                    title="Toshkent Taksi",
+                    key=DS.build_key("@taxi_1"),
+                ),
+                DS.DiscoveredGroup(
+                    reference="@taxi_2",
+                    title="Xorazm Taksi",
+                    key=DS.build_key("@taxi_2"),
+                ),
+            ],
+        )
+        session.selected.update({session.groups[0].key, session.groups[1].key})
+
+        # 2) Foydalanuvchi «⬅️ Guruhlar» ni bosdi.
+        disc_callback = SimpleNamespace(
+            data="disc:groups",
+            message=None,
+            answer=AsyncMock(),
+            edit_message_text=AsyncMock(),
+        )
+        disc_update = SimpleNamespace(
+            effective_user=SimpleNamespace(id=UID),
+            callback_query=disc_callback,
+        )
+
+        await G.handle_discover_callback(disc_update, UID, "disc:groups")
+
+        # Tanlanish saqlanib qoldi.
+        self.assertEqual(len(session.selected), 2)
+
+        # 3) «Guruhlar» oynasida tanlanish ko'rinadi va tugma chiqadi.
+        text, markup = await MG.build_groups_window(UID)
+        self.assertIn("Sizda hali guruh yo'q", text)
+        buttons = [
+            btn
+            for row in markup.inline_keyboard
+            for btn in row
+            if "Tanlanganlarni saqlash" in btn.text
+        ]
+        self.assertEqual(len(buttons), 1)
+
+        # 4) Shu tugmani bosdi — guruhlar qo'shildi.
+        mg_callback = SimpleNamespace(
+            data="mg:apply",
+            message=None,
+            answer=AsyncMock(),
+            edit_message_text=AsyncMock(),
+            edit_message_reply_markup=AsyncMock(),
+        )
+        mg_update = SimpleNamespace(
+            effective_user=SimpleNamespace(id=UID),
+            callback_query=mg_callback,
+        )
+
+        await MG.handle_my_groups_callback(mg_update, UID, "mg:apply")
+        # Tasdiqlash — foydalanuvchi «✅ Ha, saqla» ni bosadi.
+        await G.handle_discover_callback(mg_update, UID, "disc:apply:yes")
+
+        rows = await db.get_chat_records(UID)
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(
+            sorted(r["value"] for r in rows), ["@taxi_1", "@taxi_2"]
+        )
+
+        # 5) Endi «Guruhlar» oynasi guruhlarni ko'rsatadi.
+        text, _markup = await MG.build_groups_window(UID)
+        self.assertNotIn("Sizda hali guruh yo'q", text)
+        self.assertIn("Toshkent Taksi", text)
 
 
 if __name__ == "__main__":

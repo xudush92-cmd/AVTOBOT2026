@@ -518,6 +518,31 @@ chiqqan.
 journalctl -u avtobot3.service --since "10 minutes ago" | grep -E "add_chat|guruh o'chirildi|bazada 0 ta"
 ```
 
+### Tanlangan guruhlar yo'qolmasligi (PR #43)
+
+1. **Skanerda guruhlarni ✅ belgilab**, «Tanlanganlarni saqlash» tugmasini
+   bosmasdan **«💬 Guruhlar»** oynasiga o'tsangiz — tanlanish **ko'rinadi**
+   va oynada **«💾 Tanlanganlarni saqlash (N)»** tugmasi chiqadi.
+2. **Skaner oynasida** «⬅️ Guruhlar» tugmasi qo'shildi — u skanerdan
+   chiqaradi va **tanlanishni saqlab qoldiradi** («🚫 Bekor qilish» esa
+   tanlanishni tozalaydi — o'z xatti-harakaticha).
+3. **Tugma matni aniqroq**: «✅ Tanlanganlarni qo'shish» →
+   **«💾 Tanlanganlarni saqlash»** — nima qilishini aniq bildiradi.
+4. **Tasdiqlash bosqichi** — saqlash tugmasi bosilganda avval tasdiqlash
+   oynasi ochiladi («✅ Ha, saqla» / «❌ Yo'q, bekor qil») va qaysi
+   guruhlar saqlanayotgani ko'rsatiladi.
+5. Skanerdagi va «Guruhlar» oynasidagi saqlash tugmalari **bir xil**
+   natijani beradi.
+
+**Tekshirish (deploydan keyin):**
+
+```bash
+# 1) «🔍 Guruhlarni topish» → biror guruhni ✅ belgilang
+# 2) «💾 Tanlanganlarni saqlash (1)» ni bosing → tasdiqlash oynasi ochiladi
+# 3) «✅ Ha, saqla» ni bosing → «✅ 1 ta guruh saqlandi» chiqishi kerak
+journalctl -u avtobot3.service --since "5 minutes ago" | grep -E "Tanlangan guruhlar|bazada"
+```
+
 ### Inline tugmalar va xato logi (PR #38)
 
 1. **«💬 Guruhlar»** → **«🔍 Guruhlarni topish»** — skaner ishlaydi va

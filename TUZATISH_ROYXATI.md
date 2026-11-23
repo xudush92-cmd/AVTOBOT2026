@@ -1,8 +1,8 @@
 # 🔧 TUZATISHLAR RO'YXATI — AVTOBOT2026
 
 > **Holat:** ✅ **BARCHA TUZATISHLAR BAJARILDI** (2026-11-22)
-> **Filial:** `arena/361ef30e-avtobot2026` (asosiy: `main`, commit `5de3380` — **PR #42 merged**)
-> **Testlar:** `667 passed, 62 subtests passed` (bazadagi 656 + 11 yangi)
+> **Filial:** `arena/8b2153b2-avtobot2026` (asosiy: `main`, commit `b566822` — **PR #43 ochilmoqda**)
+> **Testlar:** `684 passed, 62 subtests passed` (bazadagi 667 + 17 yangi)
 > **Deploy:** ⏳ VPS'ga o'tkazilishi kutilmoqda (buyruq quyida)
 
 ---
@@ -490,6 +490,91 @@ keyin **o'chirilgan** (AUTOINCREMENT qiymati saqlanadi).
 
 ---
 
+## 🎯 TUZATISHLAR — PR #43 (2026-11-22) — Tanlangan guruhlar yo'qolmasligi
+
+> **Filial:** `arena/8b2153b2-avtobot2026` (asosiy: `main`, commit `b566822`)
+> **Testlar:** `684 passed, 62 subtests passed` (bazadagi 667 + 17 yangi)
+> **Holat:** ⏳ PR yaratilish kutilmoqda
+
+### 🎯 X1. Tanlangan guruhlar «yo'qoladi» — foydalanuvchi chalkashadi
+
+**Boshqaruv:** `bot/groups.py`, `bot/my_groups.py`, `bot/keyboards.py`,
+`bot/texts.py`.
+
+**Belgilari (production, `6169018469`):**
+
+- Skaner 3 ta guruh topadi va foydalanuvchi ularni ✅ belgilaydi;
+- Foydalanuvchi **«Tanlanganlarni qo'shish (3)»** tugmasini **bosmaydi** —
+  o'rniga **«Guruhlar»** tugmasini bosadi;
+- Natijada **«Sizda hali guruh yo'q»** chiqadi — foydalanuvchi tanlagan
+  guruhlarni **yo'qotganini** bilmaydi.
+
+**Sabab:** «💬 Guruhlar» oynasi skanerdagi **tanlanishni ko'rmasdi** va
+uni qo'shish imkoniyatini **bermasdi**. Skaner oynasida esa faqat
+**«🚫 Bekor qilish»** bor edi — u tanlanishni **butunlay tozalaydi**.
+
+**Hozir:**
+
+1. **«💬 Guruhlar» oynasi** — skanerdagi tanlanishni ko'rsatadi:
+   - `ℹ️ Skanerda 3 ta guruh topilgan, 2 tasi tanlangan — lekin ular hali
+     qo'shilmagan.`
+   - **«✅ Tanlanganlarni qo'shish (2)»** tugmasi chiqadi
+     (`mg:apply`) — bo'sh va to'ldirilgan oynada ham.
+2. **`mg:apply` handler** — skanerdagi **«✅ Tanlanganlarni qo'shish»**
+   bilan **bir xil** funksiyani ishlatadi (`apply_selected_groups`), ya'ni
+   natija har ikki yo'lda ham bir xil.
+3. **Skaner oynasida «⬅️ Guruhlar» tugmasi** (`disc:groups`) — skanerdan
+   chiqishda **tanlanish saqlanadi**; foydalanuvchi keyinchalik
+   «Guruhlar» oynasidan qo'shishi mumkin.
+4. **`apply_selected_groups`** — `apply` mantiqi modul darajasida
+   ajratildi, ikkala yo'l ham **bir xil** kodni ishlatadi.
+5. **«🚫 Bekor qilish»** — o'z xatti-harakatini saqlaydi (skaner oynasi
+   yopiladi, tanlanish tozalanadi).
+
+**Tekshiruv:** `tests/test_pending_selection.py` (10 ta test) +
+`tests/test_live_flow_smoke.py` (2 ta test — to'liq oqim).
+
+### 🎯 X2. Tugma chalkash — foydalanuvchi oxiridagini bosmaydi
+
+**Boshqaruv:** `bot/texts.py`, `bot/keyboards.py`, `bot/groups.py`.
+
+**Belgilari:** foydalanuvchi skanerda guruhlarni tanlab chiqadi va
+**oxiridagi tugmani bosmaydi** — natijada guruhlar qo'shilmaydi va u
+«guruhlar yo'q» deb o'ylaydi. Sabab: tugma matni **«✅ Tanlanganlarni
+qo'shish (3)»** edi — `✅` belgisi **guruh belgilash** tugmasi bilan
+bir xil bo'lgani uchun chalkash edi, va saqlash amali **tushuntirilmagandi**.
+
+**Hozir:**
+
+1. **Tugma matni** — «✅ Tanlanganlarni qo'shish (N)» →
+   **«💾 Tanlanganlarni saqlash (N)»**. «💾» belgisi **saqlashni**
+   ko'rsatadi va belgilash tugmasidan farqlanadi.
+2. **Skaner matni** — endi oxirgi tugmani aniq tushuntiradi:
+   > ⚠️ Tanlagandan keyin ro'yxatning **pastidagi** «💾 Tanlanganlarni
+   > saqlash» tugmasini bosish shart — shundagina guruhlar saqlanadi.
+3. **Tasdiqlash bosqichi** — saqlash tugmasi bosilganda avval
+   **tasdiqlash oynasi** ochiladi:
+   ```
+   💾 Tanlangan 2 ta guruhni saqlash
+
+   Ro'yxat:
+   • Toshkent Taksi
+   • Xorazm Taksi
+
+   Ularni «💬 Guruhlar» ro'yxatiga qo'shasizmi?
+
+   [✅ Ha, saqla]  [❌ Yo'q, bekor qil]
+   ```
+   «✅ Ha, saqla» bosilgandagina guruhlar bazaga yoziladi. «❌ Yo'q,
+   bekor qil» — hech narsa saqlanmaydi va sessiya tozalanadi.
+4. **Ikki yo'l bir xil** — skanerdagi va «Guruhlar» oynasidagi saqlash
+   tugmalari **bir xil** tasdiqlash oqimini ishlatadi.
+
+**Tekshiruv:** `tests/test_pending_selection.py` (6 ta yangi test:
+tasdiqlash oynasi, «ha»/«yo'q», tugma matni, skaner matni).
+
+---
+
 ## 📋 YANGI TESTLAR
 
 | Fayl | Testlar | Qamrov |
@@ -502,9 +587,10 @@ keyin **o'chirilgan** (AUTOINCREMENT qiymati saqlanadi).
 | `tests/test_discover_group_window_ux.py` | **14** (yangi) | **U1, U2, U3, U4, U5** |
 | `tests/test_group_titles.py` | **18** (yangi) | **V1** — guruh nomi (migratsiya, baza, ko'rsatish, fon task) |
 | `tests/test_group_visibility_fix.py` | **10** (yangi) | **W1** — «Guruhlar yo'q» tuzatishi (FK, commit tekshiruvi, o'chirish logi, bo'sh oyna eslatmasi) |
-| `tests/test_live_flow_smoke.py` | **1** (yangi) | **W1** — to'liq oqim: skaner → qo'shish → ko'rish → o'chirish |
+| `tests/test_live_flow_smoke.py` | **2** (yangi) | **W1, X1** — to'liq oqim: skaner → qo'shish → ko'rish → o'chirish; tanlanish saqlanishi |
+| `tests/test_pending_selection.py` | **16** (yangi) | **X1, X2** — tanlangan guruhlar yo'qolmasligi + tasdiqlash |
 
-**Jami:** 547 → **667 test**, hammasi o'tadi (`pytest` va `unittest`).
+**Jami:** 547 → **684 test**, hammasi o'tadi (`pytest` va `unittest`).
 
 > Eski testlar (`test_menu_simplified.py`, `test_my_groups_screen.py`)
 > `mg:find` mavjudligini talab qilardi — yangi UX ga moslab yangilandi.

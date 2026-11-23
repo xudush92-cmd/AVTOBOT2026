@@ -203,6 +203,7 @@ class DiscoverSelectionTests(unittest.IsolatedAsyncioTestCase):
 
         cb_update, q = self._callback("disc:apply")
         await G.handle_discover_callback(cb_update, UID, "disc:apply")
+        await G.handle_discover_callback(cb_update, UID, "disc:apply:yes")
 
         values = await db.get_chats(UID)
         self.assertIn("@grp0", values)
@@ -221,6 +222,7 @@ class DiscoverSelectionTests(unittest.IsolatedAsyncioTestCase):
 
         cb_update, q = self._callback("disc:apply")
         await G.handle_discover_callback(cb_update, UID, "disc:apply")
+        await G.handle_discover_callback(cb_update, UID, "disc:apply:yes")
 
         self.assertEqual(await db.get_chats(UID), [])
         self.assertIn("belgilanmagan", q.answer.await_args.args[0])
