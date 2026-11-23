@@ -643,7 +643,8 @@ sudo journalctl -u avtobot3.service -n 50 --no-pager
 
 > **Filial:** `arena/724b5f17-avtobot2026` (asosiy: `main`, commit `b8b10d3`)
 > **Testlar:** `697 passed, 62 subtests passed` (bazadagi 684 + 13 yangi)
-> **Holat:** ⏳ PR ochilmoqda
+> **PR:** #44 — ✅ **MERGED** (merge commit `9c1d704`)
+> **Holat:** ⏳ VPS'ga o'tkazish kutilmoqda
 
 ### 🟡 Y1. Interval oynalarida guruh **ID** si ko'rinadi
 
@@ -687,6 +688,30 @@ ko'rsatadigan oynalarda nom **hamma vaqt** bo'sh chiqardi.
 
 **Qo'shimcha:** `group_label()` logikasi `core/utils.py` ga ko'chirildi —
 bitta manba, hamma oynada bir xil natija.
+
+**🔎 LIVE BAZA TEKSHIRUVI (2026-11-23):**
+
+```bash
+sqlite3 data/avtobot.db "SELECT COUNT(*), SUM(CASE WHEN title IS NULL OR title='' THEN 1 ELSE 0 END), SUM(CASE WHEN title<>'' THEN 1 ELSE 0 END) FROM groups;"
+# → 284 | 281 | 3
+```
+
+| Jami | Nomi yo'q | Nomi bor |
+| ---- | --------- | -------- |
+| **284** | **281** | **3** |
+
+Nomi bor 3 ta guruh — `6169018469` ning guruhlari, **2026-11-23 03:51:47** da
+**skaner** orqali qo'shilgan (bir vaqtda, nomlari to'g'ri saqlangan):
+
+```
+6169018469 | -1003119200089 | КАНГЛИ ЯККА ТУРОНГИЛ МФЙ
+6169018469 | -1003757610510 | QARNDOSHLAR
+6169018469 | @guruh99999999   | Guruh
+```
+
+**Xulosa:** skaner oqimi (`add_chat(..., title=...)`) **ishlayapti**.
+281 ta guruh — **PR #41 dan OLDIN** qo'shilgan (`title` ustuni yo'q paytda),
+ularning nomi hali olilmagan.
 
 **Tekshiruv:** `tests/test_group_names_everywhere.py` (13 ta test):
 `group_label` mantiqi, `get_chat_record` title, interval tugmalari,
