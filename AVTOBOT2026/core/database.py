@@ -955,7 +955,7 @@ async def get_chat_records(uid: int) -> list[dict]:
 
 async def get_chat_record(uid: int, group_id: int) -> dict | None:
     async with _conn().execute(
-        "SELECT id, uid, value, created_at, interval_min, last_attempt_at, "
+        "SELECT id, uid, value, title, created_at, interval_min, last_attempt_at, "
         "next_send_at, flood_wait_until FROM groups WHERE uid = ? AND id = ?",
         (uid, group_id),
     ) as cur:

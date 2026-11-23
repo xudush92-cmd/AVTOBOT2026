@@ -445,6 +445,22 @@ def kb_groups_delete(
     return InlineKeyboardMarkup(rows)
 
 
+def _group_display_name(item: dict) -> str:
+    """Guruhning ko'rinadigan nomi.
+
+    Telegram'dagi display name (``title``) afzal — foydalanuvchi guruhni
+    nomidan tanib oladi. Nomi yo'q bo'lsa — username.
+
+    Interval tanlash oynasida guruhni **tanlash** kerak bo'lgani uchun
+    ID ni yashirmaymiz (faqat nomi bo'lsa, nomini ko'rsatamiz).
+    """
+    title = str(item.get("title") or "").strip()
+    value = str(item.get("value") or "").strip()
+    if title and title != value:
+        return title[:40]
+    return value[:40]
+
+
 def kb_group_interval_picker(
     groups: list[dict],
     global_interval: int,
@@ -457,13 +473,13 @@ def kb_group_interval_picker(
     rows: list[list[InlineKeyboardButton]] = []
     for item in groups[start : start + page_size]:
         group_id = int(item["id"])
-        value = str(item["value"])
         interval = item.get("interval_min")
         label = f"{int(interval)} daq" if interval is not None else f"Umumiy {global_interval} daq"
+        name = _group_display_name(item)
         rows.append(
             [
                 InlineKeyboardButton(
-                    f"{value[:26]} · {label}",
+                    f"{name} · {label}",
                     callback_data=f"gint:select:{group_id}",
                 )
             ]

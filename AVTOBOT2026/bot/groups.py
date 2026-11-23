@@ -55,6 +55,7 @@ from core import database as db
 from core.errlog import log_gap
 from core.logger import log
 from core.utils import (
+    group_label,
     group_reference_key,
     normalize_group_reference,
     parse_group_lines_with_errors,
@@ -390,7 +391,7 @@ async def show_groups(update: Update) -> None:
             if interval is not None
             else f"umumiy {global_interval} daq"
         )
-        lines.append(f"{index}. {group['value']} — {mode}")
+        lines.append(f"{index}. {group_label(group)} — {mode}")
     lines.append("\n⏱ «Guruh intervali» orqali har birini alohida sozlang.")
     chunks: list[str] = []
     current = ""

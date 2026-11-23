@@ -635,3 +635,60 @@ sudo journalctl -u avtobot3.service -n 50 --no-pager
    xabari keladi va uning jamoasi `Jamoa #<uid>` nomi bilan avtomatik
    yaratilgan bo'lsa — **«✏️ Jamoa nomi»** tugmasi orqali nomni
    almashtirish kerak (foydalanuvchilarga ko'rinadigan texnik nom).
+
+
+---
+
+## 📛 TUZATISHLAR — PR #44 (2026-11-23) — Guruh nomi hamma oynalarda
+
+> **Filial:** `arena/724b5f17-avtobot2026` (asosiy: `main`, commit `b8b10d3`)
+> **Testlar:** `697 passed, 62 subtests passed` (bazadagi 684 + 13 yangi)
+> **Holat:** ⏳ PR ochilmoqda
+
+### 🟡 Y1. Interval oynalarida guruh **ID** si ko'rinadi
+
+**Belgilari (screenshot, `6169018469`):**
+
+```
+⏱ GURUH INTERVALI
+-1003119200089 · Umumiy 6 daq
+-1003757610510 · Umumiy 6 daq
+@guruh99999999  · Umumiy 6 daq
+```
+
+Foydalanuvchi guruhni **ID** orqali tanib olmaydi. Bazada esa nomlar
+**bor**:
+
+```
+6169018469 | -1003119200089 | КАНГЛИ ЯККА ТУРОНГИЛ МФЙ
+6169018469 | -1003757610510 | QARNDOSHLAR
+6169018469 | @guruh99999999   | Guruh
+```
+
+**Sabab:** PR #41 nomni faqat **«💬 Guruhlar»** oynasiga qo'shgan edi.
+Boshqa oynalar (interval tanlash, o'chirish, qo'shish) **to'g'ridan-to'g'ri**
+`value` (ID) ni chiqarardi.
+
+**Asosiy sabab:** `db.get_chat_record()` ning `SELECT` ro'yxatida **`title`
+yo'q edi** — faqat `get_chat_records()` da bor edi. Shu sababli bitta guruhni
+ko'rsatadigan oynalarda nom **hamma vaqt** bo'sh chiqardi.
+
+**Hozir:**
+
+1. **`db.get_chat_record()`** — `title` ustuni `SELECT` ga qo'shildi.
+2. **`kb_group_interval_picker()`** — interval tugmalarida **nom** chiqadi
+   (nomi yo'q bo'lsa — username/ID).
+3. **`my_groups.show_group_interval()`** — «Guruh: \<nom\>».
+4. **`timer.handle_group_interval_callback()`** — «Guruh: \<nom\>» va
+   «✏️ \<nom\> uchun intervalni…».
+5. **`my_groups`** — o'chirish xabari «🗑 O'chirildi: \<nom\>».
+6. **`texts.groups_delete_text()`** — o'chirish ro'yxatida **nom**.
+7. **`groups.show_groups()`** — qo'shish yo'lidagi ro'yxatda **nom**.
+
+**Qo'shimcha:** `group_label()` logikasi `core/utils.py` ga ko'chirildi —
+bitta manba, hamma oynada bir xil natija.
+
+**Tekshiruv:** `tests/test_group_names_everywhere.py` (13 ta test):
+`group_label` mantiqi, `get_chat_record` title, interval tugmalari,
+bitta guruh oynasi, qo'lda interval, «💬 Guruhlar» oynasi, o'chirish
+xabari, o'chirish ro'yxati, `show_groups()`.
