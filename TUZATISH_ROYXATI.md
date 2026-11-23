@@ -725,7 +725,8 @@ xabari, o'chirish ro'yxati, `show_groups()`.
 
 > **Filial:** `arena/b9039601-avtobot2026` (asosiy: `main`, commit `cc7684c`)
 > **Testlar:** `715 passed, 62 subtests passed` (bazadagi 697 + 18 yangi)
-> **Holat:** ⏳ PR ochilmoqda
+> **PR:** #45 — ✅ **MERGED** (merge commit `d174f93`)
+> **Holat:** ⏳ VPS'ga o'tkazish kutilmoqda
 
 ### 🔵 Z1. Super admin boshqa adminlarga muddat **+ / −** qo'yishi
 
