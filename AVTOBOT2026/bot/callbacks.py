@@ -280,6 +280,11 @@ async def _handle_callback_locked(update: Update, uid: int) -> None:
 
             await admin_actions.handle_expire(update, uid, data)
             return
+        if data.startswith(("expadd:", "expsub:")):
+            from admin import admin_actions
+
+            await admin_actions.handle_expire_shift(update, uid, data)
+            return
         if data.startswith("unblock:"):
             from admin import admin_panel
 

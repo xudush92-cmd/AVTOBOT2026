@@ -38,6 +38,7 @@ from config.config import (
     API_HASH,
     API_ID,
     DEFAULT_DURATION_DAYS,
+    DURATION_OPTIONS,
     MAX_INTERVAL_MIN,
     MEDIA_DIR,
     SUPER_ADMIN,
@@ -57,6 +58,7 @@ from core.utils import (
     format_expires,
     is_valid_interval,
     safe_unlink,
+    shift_expires,
     truncate,
     wipe_directory,
 )
@@ -1386,6 +1388,47 @@ async def give_new_term(
     return previous, new_expires
 
 
+async def handle_expire_shift(update: Update, admin_uid: int, data: str) -> None:
+    """Muddatni ko'paytirish yoki kamaytirish oynasini ochadi.
+
+    ``expadd:<uid>`` — ko'paytirish, ``expsub:<uid>`` — kamaytirish.
+    """
+    q = update.callback_query
+    if admin_uid != SUPER_ADMIN:
+        return
+
+    parts = data.split(":")
+    if len(parts) < 2:
+        return
+    try:
+        target = int(parts[1])
+    except (ValueError, IndexError):
+        return
+    if target == SUPER_ADMIN or not await db.get_user(target):
+        await q.edit_message_text(
+            "❌ Foydalanuvchi topilmadi.",
+            reply_markup=KB.kb_admin_back(),
+        )
+        return
+
+    sign = 1 if parts[0] == "expadd" else -1
+    user = await db.get_user(target) or {}
+    current = format_expires(user.get("tariff_expires_at"))
+    title = "➕ Muddatni ko'paytirish" if sign > 0 else "➖ Muddatni kamaytirish"
+    hint = (
+        "Mavjud muddatga qo'shiladi."
+        if sign > 0
+        else "Mavjud muddatdan ayiriladi."
+    )
+    await q.edit_message_text(
+        f"{title}\n\n"
+        f"📅 Hozirgi muddat: {current}\n\n"
+        f"{hint}\n"
+        "Kunni tanlang.",
+        reply_markup=KB.kb_expire_shift(target, DURATION_OPTIONS, sign),
+    )
+
+
 async def handle_expire(update: Update, admin_uid: int, data: str) -> None:
     """Tarif muddati callback'i: yangi muddat oldingisini almashtiradi."""
     q = update.callback_query
@@ -1406,6 +1449,38 @@ async def handle_expire(update: Update, admin_uid: int, data: str) -> None:
         await q.edit_message_text(
             "❌ Foydalanuvchi topilmadi.",
             reply_markup=KB.kb_admin_back(),
+        )
+        return
+
+    # ➕/➖ — mavjud muddatni ko'paytirish yoki kamaytirish.
+    if days_str in {"plus", "minus"}:
+        if len(parts) < 4:
+            return
+        try:
+            days = int(parts[3])
+        except (ValueError, IndexError):
+            return
+        sign = 1 if days_str == "plus" else -1
+        async with user_operation_lock(target):
+            user = await db.get_user(target)
+            if not user:
+                await q.edit_message_text(
+                    "❌ Foydalanuvchi topilmadi.",
+                    reply_markup=KB.kb_admin_back(),
+                )
+                return
+            base = user.get("tariff_expires_at") or None
+            expires = shift_expires(base, sign * days)
+            await db.set_tariff_expires(target, expires)
+        verb = "ko'paytirildi" if sign > 0 else "kamaytirildi"
+        await q.edit_message_text(
+            f"✅ Muddat {verb}: {user.get('name') or target}\n\n"
+            f"📅 Yangi muddat: {format_expires(expires)}",
+            reply_markup=await user_card_markup(target),
+        )
+        log(
+            f"⏰ Admin {admin_uid} → {target} muddat {verb} "
+            f"({sign * days:+d} kun)"
         )
         return
 

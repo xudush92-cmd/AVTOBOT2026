@@ -717,3 +717,56 @@ ularning nomi hali olilmagan.
 `group_label` mantiqi, `get_chat_record` title, interval tugmalari,
 bitta guruh oynasi, qo'lda interval, «💬 Guruhlar» oynasi, o'chirish
 xabari, o'chirish ro'yxati, `show_groups()`.
+
+
+---
+
+## 🔧 TUZATISHLAR — PR #45 (2026-11-23) — Admin panel: muddat +/- va «Orqaga» yopadi
+
+> **Filial:** `arena/b9039601-avtobot2026` (asosiy: `main`, commit `cc7684c`)
+> **Testlar:** `715 passed, 62 subtests passed` (bazadagi 697 + 18 yangi)
+> **Holat:** ⏳ PR ochilmoqda
+
+### 🔵 Z1. Super admin boshqa adminlarga muddat **+ / −** qo'yishi
+
+**Hozirgi holat:**
+- **Jamoa admini** — faqat `+` bor («📅 Muddatni uzaytirish»).
+- **Oddiy admin** — faqat muddatni **almashtirish** (1/7/30/90/cheksiz), `+`/`−` yo'q.
+
+**Endi:**
+- `core.utils.shift_expires()` — muddatni `±` kun siljitadi (yagona manba).
+- **Jamoa admini kartasi** — «⏳ Muddatni kamaytirish» tugmasi qo'shildi.
+- **Muddat oynasi** — yuqorida `+1/+7/+30…`, pastida `−1/−7/−30…`.
+- **Oddiy admin** — «⏰ Tarif muddati» oynasida «➕ Ko'paytirish» va
+  «➖ Kamaytirish» tugmalari (`expadd:` / `expsub:`).
+- Jamoa admini uchun ham, oddiy admin uchun ham **bir xil qoida**:
+  `+` — mavjud muddatga qo'shiladi, `−` — mavjud muddatdan ayiriladi.
+
+### 🔵 Z2. Admin oynasi «⬅️ Orqaga» bosilganda **yopiladi**
+
+**Hozirgi holat:** `adm:back` → `show_panel()` → asosiy panel **tahrirlanadi**
+va **ochiq qoladi**.
+
+**Endi:**
+- `close_admin_window()` — xabar **o'chiriladi** (o'chirib bo'lmasa —
+  klaviatura olib tashlanadi).
+- `adm:back` → oyna yopiladi + qayta ochish uchun **panel tugmalari**
+  yangi xabarda ko'rsatiladi.
+- `adm:teamadmins` → jamoa adminlari ro'yxati **yangi xabarda** ochiladi
+  (eski oyna yopiladi).
+
+### 🔵 Z3. Admin panel **minimal va aniq**
+
+- Tugmalar **qisqartirildi** va **2 qatorga** joylandi (11 ta saqlanadi):
+  `➕ User qo'shish`, `👥 Userlar`, `👑 Jamoa adminlari`, `📊 Statistika`,
+  `⏳ Tasdiq kutilmoqda`, `🕓 Muddati tugagan`, `📢 Xabar yuborish`,
+  `🚫 Bloklanganlar`, `💾 Ma'lumotlar bazasi`, `🖥 Tizim holati`.
+- Statistika **2 qatorga** siqildi (`👥 Userlar: N | ✅ Admin: N | …`).
+- `send_super_admin_panel()` matni `show_panel()` bilan **bir xil** qilindi
+  (avval ikki xil matn bor edi).
+- `/help` ga qisqa qadamlar (`WELCOME_GUIDE`) qo'shildi — bu matn
+  yozilgan, lekin **hech qayerda ishlatilmasdi**.
+
+**Tekshiruv:** `tests/test_admin_panel_term.py` (18 ta test):
+`shift_expires` mantiqi (4), jamoa admini muddati +/- (4), oddiy admin
+muddat +/- (4), oyna yopish (3), panel minimal (2), `+`/`−` oynalari (1).
