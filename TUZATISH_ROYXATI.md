@@ -1,7 +1,7 @@
 # 🔧 TUZATISHLAR RO'YXATI — AVTOBOT2026
 
 > **Holat:** ✅ **BARCHA TUZATISHLAR BAJARILDI** (2026-11-22)
-> **Filial:** `arena/8b2153b2-avtobot2026` (asosiy: `main`, commit `b566822` — **PR #43 ochilmoqda**)
+> **Filial:** `arena/8b2153b2-avtobot2026` (asosiy: `main`, commit `6d6e148` — **PR #43 merged**)
 > **Testlar:** `684 passed, 62 subtests passed` (bazadagi 667 + 17 yangi)
 > **Deploy:** ⏳ VPS'ga o'tkazilishi kutilmoqda (buyruq quyida)
 
@@ -492,9 +492,9 @@ keyin **o'chirilgan** (AUTOINCREMENT qiymati saqlanadi).
 
 ## 🎯 TUZATISHLAR — PR #43 (2026-11-22) — Tanlangan guruhlar yo'qolmasligi
 
-> **Filial:** `arena/8b2153b2-avtobot2026` (asosiy: `main`, commit `b566822`)
+> **Filial:** `arena/8b2153b2-avtobot2026` (asosiy: `main`, commit `6d6e148` — **PR #43 merged**)
 > **Testlar:** `684 passed, 62 subtests passed` (bazadagi 667 + 17 yangi)
-> **Holat:** ⏳ PR yaratilish kutilmoqda
+> **Holat:** ✅ PR #43 merged — deploy kutilmoqda
 
 ### 🎯 X1. Tanlangan guruhlar «yo'qoladi» — foydalanuvchi chalkashadi
 
