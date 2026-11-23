@@ -117,12 +117,10 @@ async def send_super_admin_panel(message) -> None:
     stats = await db.get_stats()
     await message.reply_text(
         "🖥 SUPER ADMIN PANEL\n\n"
-        f"👥 Foydalanuvchilar: {stats['total_users']} ta\n"
-        f"✅ Tasdiqlangan: {stats['admins']} ta\n"
-        f"⏳ Kutayotgan: {stats['waiting']} ta\n"
-        f"🟢 Faol: {stats['running']} ta\n"
-        f"🚫 Bloklangan: {stats['blocked']} ta\n\n"
-        "Kerakli bo'limni tanlang:",
+        f"👥 Userlar: {stats['total_users']} | ✅ Admin: {stats['admins']} | "
+        f"⏳ Kutilmoqda: {stats['waiting']}\n"
+        f"🟢 Ishlayapti: {stats['running']} | 🚫 Bloklangan: {stats['blocked']}\n\n"
+        "Bo'limni tanlang:",
         reply_markup=KB.kb_admin_panel(),
     )
 
@@ -159,6 +157,8 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             T.HELP_TEXT,
             reply_markup=await get_menu(uid),
         )
+        # Qisqa qadamlar — yangi foydalanuvchi uchun «qayerdan boshlash».
+        await update.message.reply_text(T.WELCOME_GUIDE)
 
 
 async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

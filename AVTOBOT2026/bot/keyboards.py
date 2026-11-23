@@ -632,34 +632,33 @@ def kb_team_approve_term_options(uid: int, options: list[int]) -> InlineKeyboard
 
 
 def kb_admin_panel() -> InlineKeyboardMarkup:
+    """Super admin paneli — barcha bo'limlar, qisqa va aniq nomlar bilan."""
     return InlineKeyboardMarkup(
         [
             [
                 InlineKeyboardButton(
-                    "➕ Foydalanuvchi qo'shish", callback_data="adm:adduser"
-                )
+                    "➕ User qo'shish", callback_data="adm:adduser"
+                ),
+                InlineKeyboardButton("👥 Userlar", callback_data="adm:users"),
             ],
-            [
-                InlineKeyboardButton(
-                    "⏳ Tasdiq kutilayotganlar", callback_data="adm:pending"
-                )
-            ],
-            [InlineKeyboardButton("👥 Foydalanuvchilar", callback_data="adm:users")],
             [
                 InlineKeyboardButton(
                     "👑 Jamoa adminlari", callback_data="adm:teamadmins"
-                )
+                ),
+                InlineKeyboardButton("📊 Statistika", callback_data="adm:stats"),
             ],
             [
-                InlineKeyboardButton(
-                    "🕓 Muddati tugaganlar", callback_data="adm:expired"
-                )
+                InlineKeyboardButton("⏳ Tasdiq kutilmoqda", callback_data="adm:pending"),
+                InlineKeyboardButton("🕓 Muddati tugagan", callback_data="adm:expired"),
             ],
-            [InlineKeyboardButton("📊 Statistika", callback_data="adm:stats")],
-            [InlineKeyboardButton("📢 Xabar yuborish", callback_data="adm:broadcast")],
-            [InlineKeyboardButton("🚫 Bloklanganlar", callback_data="adm:blocked")],
-            [InlineKeyboardButton("💾 Ma'lumotlar bazasi", callback_data="adm:db")],
-            [InlineKeyboardButton("🖥 Tizim holati", callback_data="adm:system")],
+            [
+                InlineKeyboardButton("📢 Xabar yuborish", callback_data="adm:broadcast"),
+                InlineKeyboardButton("🚫 Bloklanganlar", callback_data="adm:blocked"),
+            ],
+            [
+                InlineKeyboardButton("💾 Ma'lumotlar bazasi", callback_data="adm:db"),
+                InlineKeyboardButton("🖥 Tizim holati", callback_data="adm:system"),
+            ],
         ]
     )
 
@@ -720,6 +719,11 @@ def kb_team_admin_card(uid: int) -> InlineKeyboardMarkup:
             ],
             [
                 InlineKeyboardButton(
+                    "⏳ Muddatni kamaytirish", callback_data=f"adm:teamshrinkterm:{uid}"
+                )
+            ],
+            [
+                InlineKeyboardButton(
                     "👥 Sig'imni o'zgartirish", callback_data=f"adm:teamlimit:{uid}"
                 )
             ],
@@ -735,6 +739,28 @@ def kb_team_admin_card(uid: int) -> InlineKeyboardMarkup:
             ],
         ]
     )
+
+
+def kb_team_admin_shrink_term(uid: int, options: list[int]) -> InlineKeyboardMarkup:
+    """Jamoa adminining muddatini **kamaytirish** (− kunlar)."""
+    rows: list[list[InlineKeyboardButton]] = []
+    row: list[InlineKeyboardButton] = []
+    for days in options:
+        row.append(
+            InlineKeyboardButton(
+                f"−{days} kun",
+                callback_data=f"adm:teamsetterm:{uid}:-{days}",
+            )
+        )
+        if len(row) == 3:
+            rows.append(row)
+            row = []
+    if row:
+        rows.append(row)
+    rows.append(
+        [InlineKeyboardButton("⬅️ Orqaga", callback_data=f"adm:teamadmin:{uid}")]
+    )
+    return InlineKeyboardMarkup(rows)
 
 
 def kb_team_handover_options(
@@ -760,13 +786,16 @@ def kb_team_handover_options(
 
 
 def kb_team_admin_term(uid: int, options: list[int]) -> InlineKeyboardMarkup:
-    """Jamoa adminiga yangi muddat berish."""
+    """Jamoa adminiga muddat berish — **ko'paytirish** va **kamaytirish**.
+
+    Yuqorida — muddatni uzaytirish (+), pastida — kamaytirish (−).
+    """
     rows: list[list[InlineKeyboardButton]] = []
     row: list[InlineKeyboardButton] = []
     for days in options:
         row.append(
             InlineKeyboardButton(
-                f"{days} kun",
+                f"+{days} kun",
                 callback_data=f"adm:teamsetterm:{uid}:{days}",
             )
         )
@@ -775,6 +804,24 @@ def kb_team_admin_term(uid: int, options: list[int]) -> InlineKeyboardMarkup:
             row = []
     if row:
         rows.append(row)
+
+    rows.append(
+        [InlineKeyboardButton("➖ Kamaytirish", callback_data=f"adm:teamshrinkterm:{uid}")]
+    )
+    row = []
+    for days in options:
+        row.append(
+            InlineKeyboardButton(
+                f"−{days} kun",
+                callback_data=f"adm:teamsetterm:{uid}:-{days}",
+            )
+        )
+        if len(row) == 3:
+            rows.append(row)
+            row = []
+    if row:
+        rows.append(row)
+
     rows.append(
         [InlineKeyboardButton("⬅️ Orqaga", callback_data=f"adm:teamadmin:{uid}")]
     )
@@ -1225,6 +1272,11 @@ def kb_admin_plan(uid: int, plan: str = "") -> InlineKeyboardMarkup:
 
 
 def kb_expire_options(uid: int) -> InlineKeyboardMarkup:
+    """Tarif muddatini boshqarish.
+
+    Yuqorida — muddatni **almashtirish** (bugundan boshlab).
+    Pastda — mavjud muddatga **+ / −** qo'shish.
+    """
     return InlineKeyboardMarkup(
         [
             [
@@ -1241,9 +1293,37 @@ def kb_expire_options(uid: int) -> InlineKeyboardMarkup:
                     "✏️ Qo'lda kiritish", callback_data=f"exp:{uid}:manual"
                 )
             ],
+            [InlineKeyboardButton("➕ Ko'paytirish", callback_data=f"expadd:{uid}")],
+            [
+                InlineKeyboardButton(
+                    "➖ Kamaytirish", callback_data=f"expsub:{uid}"
+                )
+            ],
             [InlineKeyboardButton("⬅️ Orqaga", callback_data=f"uc:back:{uid}")],
         ]
     )
+
+
+def kb_expire_shift(uid: int, options: list[int], sign: int) -> InlineKeyboardMarkup:
+    """Muddatni ko'paytirish (``sign=1``) yoki kamaytirish (``sign=-1``)."""
+    rows: list[list[InlineKeyboardButton]] = []
+    row: list[InlineKeyboardButton] = []
+    for days in options:
+        row.append(
+            InlineKeyboardButton(
+                f"{'+' if sign > 0 else '−'}{days} kun",
+                callback_data=f"exp:{uid}:{'plus' if sign > 0 else 'minus'}:{days}",
+            )
+        )
+        if len(row) == 3:
+            rows.append(row)
+            row = []
+    if row:
+        rows.append(row)
+    rows.append(
+        [InlineKeyboardButton("⬅️ Orqaga", callback_data=f"uc:expire:{uid}")]
+    )
+    return InlineKeyboardMarkup(rows)
 
 
 # ─────────────────────────────────────────

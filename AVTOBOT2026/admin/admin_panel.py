@@ -29,7 +29,7 @@ from config.config import (
 from core import database as db
 from core.logger import log
 from core.update_locks import user_update_lock
-from core.utils import calc_expires, format_expires, reply_text_safe
+from core.utils import calc_expires, format_expires, reply_text_safe, shift_expires
 
 # Jamoa admini sig'imi uchun taklif qilinadigan variantlar.
 TEAM_LIMIT_OPTIONS = [2, 5, 10, 20, 50, 100]
@@ -64,9 +64,16 @@ async def handle_admin_callback(update: Update, uid: int, data: str) -> None:
             await cleanup_login(uid)
         broadcast.broadcast_pending.pop(uid, None)
 
-    # Orqaga — asosiy panel
+    # Orqaga — admin oynasini YOPISH (yangi menyu ochilmaydi).
     if data == "adm:back":
-        await show_panel(update)
+        await q.answer()
+        await close_admin_window(update)
+        # Yo'lni ko'rsatamiz — admin panelga qaytish ochiq qoladi.
+        with contextlib.suppress(Exception):
+            await q.message.reply_text(
+                "✅ Admin panel yopildi.",
+                reply_markup=KB.kb_admin_panel(),
+            )
         return
 
     # Yangi foydalanuvchi qo'shish / jarayonni to'xtatish
@@ -111,7 +118,14 @@ async def handle_admin_callback(update: Update, uid: int, data: str) -> None:
 
     # Jamoa adminlari (super admin)
     if data == "adm:teamadmins":
-        await show_team_admins(update)
+        await q.answer()
+        # Oyna yopiladi — ro'yxat yangi xabarda ochiladi.
+        await close_admin_window(update)
+        with contextlib.suppress(Exception):
+            await q.message.reply_text(
+                "👑 Jamoa adminlari",
+                reply_markup=KB.kb_team_admins(await db.get_team_admins()),
+            )
         return
     if data == "adm:addteamadmin":
         await begin_add_team_admin(update)
@@ -129,10 +143,28 @@ async def handle_admin_callback(update: Update, uid: int, data: str) -> None:
         except (ValueError, IndexError):
             return
         await q.edit_message_text(
-            "📅 Jamoa adminiga yangi muddat bering:\n\n"
-            "Adminning jamoasi va o'zi to'xtaydi, muddat berilganda qayta ishga "
-            "tushadi.",
+            "📅 Jamoa adminining muddatini o'zgartiring:\n\n"
+            "**+** — muddatni uzaytirish.\n"
+            "**−** — muddatni kamaytirish.\n\n"
+            "Muddat berilganda adminning jamoasi va o'zi qayta ishga tushadi.",
+            parse_mode="HTML",
             reply_markup=KB.kb_team_admin_term(target, DURATION_OPTIONS),
+        )
+        return
+    if data.startswith("adm:teamshrinkterm:"):
+        try:
+            target = int(data.split(":")[2])
+        except (ValueError, IndexError):
+            return
+        admin = await db.get_user(target)
+        current = format_expires(
+            admin.get("admin_expires_at") if admin else None
+        )
+        await q.edit_message_text(
+            "⏳ Muddatni kamaytirish\n\n"
+            f"📅 Hozirgi muddat: {current}\n\n"
+            "Kamaytirmoqchi bo'lgan kunni tanlang.",
+            reply_markup=KB.kb_team_admin_shrink_term(target, DURATION_OPTIONS),
         )
         return
     if data.startswith("adm:teamsetterm:"):
@@ -232,6 +264,23 @@ async def handle_admin_callback(update: Update, uid: int, data: str) -> None:
 # ─────────────────────────────────────────────────────────────────────────
 # ASOSIY PANEL
 # ─────────────────────────────────────────────────────────────────────────
+async def close_admin_window(update: Update) -> None:
+    """Admin oynasini **yopadi** — yangi menyu ochilmaydi.
+
+    Super admin «⬅️ Orqaga» bosganida oyna yopilishi kerak: panel
+    klaviaturasi ochiq qolmasin, foydalanuvchi asosiy menyuga qaytsin.
+    """
+    q = update.callback_query
+    action_tokens.clear(SUPER_ADMIN)
+    deleted = False
+    with contextlib.suppress(Exception):
+        await q.delete_message()
+        deleted = True
+    if not deleted:
+        with contextlib.suppress(Exception):
+            await q.edit_message_reply_markup(reply_markup=None)
+
+
 async def show_panel(update: Update) -> None:
     """Asosiy admin panelni ko'rsatadi va eski tasdiqlarni bekor qiladi."""
     q = update.callback_query
@@ -240,12 +289,10 @@ async def show_panel(update: Update) -> None:
     stats = await db.get_stats()
     text = (
         "🖥 SUPER ADMIN PANEL\n\n"
-        f"👥 Foydalanuvchilar: {stats['total_users']} ta\n"
-        f"✅ Tasdiqlangan: {stats['admins']} ta\n"
-        f"⏳ Kutayotgan: {stats['waiting']} ta\n"
-        f"🟢 Faol: {stats['running']} ta\n"
-        f"🚫 Bloklangan: {stats['blocked']} ta\n\n"
-        "Kerakli bo'limni tanlang:"
+        f"👥 Userlar: {stats['total_users']} | ✅ Admin: {stats['admins']} | "
+        f"⏳ Kutilmoqda: {stats['waiting']}\n"
+        f"🟢 Ishlayapti: {stats['running']} | 🚫 Bloklangan: {stats['blocked']}\n\n"
+        "Bo'limni tanlang:"
     )
     with contextlib.suppress(Exception):
         await q.edit_message_text(text, reply_markup=KB.kb_admin_panel())
@@ -741,7 +788,11 @@ async def show_team_admin_card(update: Update, target: int) -> None:
 
 
 async def set_team_admin_term(update: Update, target: int, days: int) -> None:
-    """Jamoa adminining muddatini uzaytiradi (+ kunlar)."""
+    """Jamoa adminining muddatini o'zgartiradi.
+
+    ``days > 0`` — muddatni uzaytiradi (mavjud muddat ustiga qo'shiladi).
+    ``days < 0`` — muddatni kamaytiradi (mavjud muddatdan ayiriladi).
+    """
     q = update.callback_query
     admin = await db.get_user(target)
     if not admin or not admin.get("is_team_admin"):
@@ -751,16 +802,8 @@ async def set_team_admin_term(update: Update, target: int, days: int) -> None:
         )
         return
 
-    from datetime import datetime, timedelta
-
     base = admin.get("admin_expires_at")
-    try:
-        start = (
-            datetime.strptime(base, "%Y-%m-%d %H:%M:%S") if base else datetime.now()
-        )
-    except (TypeError, ValueError):
-        start = datetime.now()
-    expires = (start + timedelta(days=max(1, days))).strftime("%Y-%m-%d %H:%M:%S")
+    expires = shift_expires(base, days)
 
     await db.set_admin_expires(target, expires)
     # Jamoaning o'z muddatini ham yangilaymiz (jamoa ham to'xtamaydi).
@@ -771,12 +814,13 @@ async def set_team_admin_term(update: Update, target: int, days: int) -> None:
     # muddat uzaytirilgandan keyin ham "muddati tugagan" bo'lib qoladi.
     await db.set_user_limits(target, tariff_expires_at=expires)
 
+    verb = "uzaytirildi" if days > 0 else "kamaytirildi"
     await q.edit_message_text(
-        f"✅ Muddat yangilandi: {admin.get('name') or target}\n\n"
+        f"✅ Muddat {verb}: {admin.get('name') or target}\n\n"
         f"📅 Yangi muddat: {format_expires(expires)}",
         reply_markup=KB.kb_team_admin_card(target),
     )
-    log(f"📅 Jamoa admini muddati yangilandi: {target} (+{days} kun)")
+    log(f"📅 Jamoa admini muddati {verb}: {target} ({days:+d} kun)")
 
 
 async def set_team_admin_limit(update: Update, target: int, size: int) -> None:

@@ -16,6 +16,19 @@ qaytish rejasini beradi.
 
 Barcha yangi funksiya testlangan: **656 test** (`python -m unittest discover -s tests -t tests`).
 
+### 🆕 Admin panel — muddat +/- va «Orqaga» yopadi (PR #45)
+
+| Qism | Xavf | Izoh |
+| ---- | ---- | ---- |
+| **Muddat `+` / `−`** | 🟢 past | Jamoa admini va oddiy admin uchun muddatni **ko'paytirish/kamaytirish**. `+` — mavjud muddatga qo'shiladi, `−` — ayiriladi |
+| **`shift_expires()`** | 🟢 past | Yangi yordamchi funksiya `core/utils.py` da — muddatni `±` kun siljitadi. O'tib ketgan muddat kelajakka surilmaydi |
+| **«Orqaga» = oyna yopiladi** | 🟢 past | Admin oynalari «⬅️ Orqaga» bosilganda **yopiladi** (xabar o'chiriladi). Panelni qayta ochish tugmalari yangi xabarda chiqadi |
+| **Panel minimal** | 🟢 past | 11 ta tugma saqlanadi, nomlari qisqartiriladi va 2 qatorga joylandi. Statistika 2 qatorga sig'di |
+
+> 📌 **Baza sxemasi o'zgarmadi** — yangi ustun/jadval yo'q.
+> 📌 **Worker / posting / Start / Stop / foydalanuvchi oynalari** tegilmadi.
+> 📌 Faqat **super admin** paneli va jamoa/oddiy admin muddati o'zgardi.
+
 ### 🆕 Guruh nomi **hamma oynalarda** (PR #44)
 
 | Qism | Xavf | Izoh |

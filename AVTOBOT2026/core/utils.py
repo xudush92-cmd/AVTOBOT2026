@@ -7,7 +7,7 @@ Bu fayldagi funksiyalar loyihaning turli joyida ishlatiladi.
 from __future__ import annotations
 
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from urllib.parse import parse_qs, urlsplit
 
 
@@ -37,6 +37,41 @@ def calc_expires(days: int) -> str:
         calc_expires(30) -> '2026-10-17 14:30:00'
     """
     return (now_utc() + timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def shift_expires(expires_iso: str | None, days: int) -> str:
+    """Muddatni ``days`` kun **siljitadi** (manfiy — kamaytiradi).
+
+    ``days > 0`` — mavjud muddatga qo'shiladi (bugundan boshlab).
+    ``days < 0`` — mavjud muddatdan ayiriladi. Natija o'tib ketgan bo'lsa,
+    u **bugundan** kelajakka surilmaydi — o'tgan muddat o'tganligicha qoladi
+    (foydalanuvchi darhol «muddati tugagan» bo'lib ko'rinadi).
+
+    ``None`` (cheksiz) muddatga ``days > 0`` berilsa — bugundan ``days``
+    kun keyingi sana qo'yiladi (cheksizdan muddatliqqa o'tish).
+    ``None`` ga ``days < 0`` berilsa — o'zgartirilmaydi (cheksiz qoladi).
+
+    Returns: ``"%Y-%m-%d %H:%M:%S"`` formatidagi sana.
+    """
+    if expires_iso:
+        try:
+            base = datetime.strptime(expires_iso, "%Y-%m-%d %H:%M:%S").replace(
+                tzinfo=UTC
+            )
+        except (TypeError, ValueError):
+            base = now_utc()
+    elif days < 0:
+        # Cheksiz muddatni kamaytirib bo'lmaydi.
+        return calc_expires(0)
+    else:
+        base = now_utc()
+
+    shifted = base + timedelta(days=days)
+    # Agar muddat allaqachon o'tgan bo'lsa — kamaytirish uni yana ham
+    # o'tgan qilmaydi (o'tganligicha qoladi), lekin kelajakka ham surmaydi.
+    if days < 0 and base < now_utc():
+        return base.strftime("%Y-%m-%d %H:%M:%S")
+    return shifted.strftime("%Y-%m-%d %H:%M:%S")
 
 
 def format_expires(expires_iso: str | None) -> str:

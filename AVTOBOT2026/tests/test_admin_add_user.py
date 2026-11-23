@@ -66,7 +66,7 @@ class AdminAddUserWizardTests(unittest.IsolatedAsyncioTestCase):
         add_button = next(
             button for button in panel_buttons if button.callback_data == "adm:adduser"
         )
-        self.assertIn("Foydalanuvchi qo'shish", add_button.text)
+        self.assertIn("User qo'shish", add_button.text)
 
         cancel_callbacks = {
             button.callback_data
