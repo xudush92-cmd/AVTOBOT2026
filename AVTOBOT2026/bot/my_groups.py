@@ -39,6 +39,7 @@ from config.config import API_HASH, API_ID
 from core import database as db
 from core.errlog import log_gap
 from core.logger import log
+from core.utils import group_label as _group_label
 from core.utils import is_valid_interval
 
 # Sahifada nechta guruh ko'rsatiladi.
@@ -91,20 +92,10 @@ async def _back_markup(uid: int):
 def group_label(item: dict) -> str:
     """Guruh uchun ko'rsatiladigan nom.
 
-    Telegram'dagi display name (baza ``title``) afzal — foydalanuvchi
-    guruhni nomidan tanib oladi. Nomi yo'q bo'lsa — username.
-
-    Yopiq guruh (marked ID, masalan ``-100123...``) uchun ID **ko'rsatilmaydi** —
-    u maxfiy ma'lumot. Nomi bo'lmasa — umumiy matn qo'yiladi.
+    Logika ``core.utils.group_label`` da — bu yerda faqat qayta eksport
+    qilinadi (backward compatibility: boshqa modullar shu yerdan import qiladi).
     """
-    title = str(item.get("title") or "").strip()
-    value = str(item.get("value") or "").strip()
-    if title and title != value:
-        return title
-    if value.startswith("@"):
-        return value
-    # Yopiq guruh — ID ko'rsatilmaydi.
-    return "Yopiq guruh"
+    return _group_label(item)
 
 
 def group_label_with_handle(item: dict) -> str:
@@ -358,7 +349,7 @@ async def show_group_interval(
         selected = f"Alohida ({int(custom_interval)} daqiqa)"
     text = (
         "⏱ <b>GURUH INTERVALI</b>\n\n"
-        f"Guruh: {group['value']}\n"
+        f"Guruh: {escape_html(group_label(group))}\n"
         f"Hozirgi sozlama: {selected}\n"
         f"Umumiy interval: {global_interval} daqiqa\n\n"
         "Alohida intervalni tanlang yoki umumiy intervalga qaytaring."
@@ -550,7 +541,7 @@ async def handle_my_groups_callback(
             # nima bo'lganini tekshirish mumkin bo'ladi.
             log(f"🗑 {uid} guruh o'chirildi (foydalanuvchi): {group['value']}")
         await q.answer(
-            f"🗑 O'chirildi: {group['value']}" if removed else "❌ O'chirilmadi",
+            f"🗑 O'chirildi: {group_label(group)}" if removed else "❌ O'chirilmadi",
             show_alert=True,
         )
         groups = await db.get_chat_records(uid)
@@ -637,7 +628,7 @@ async def handle_my_groups_callback(
         group = await db.get_chat_record(uid, group_id)
         with contextlib.suppress(Exception):
             await q.edit_message_text(
-                f"✏️ {group['value'] if group else 'Guruh'} uchun "
+                f"✏️ {group_label(group) if group else 'Guruh'} uchun "
                 "intervalni daqiqada kiriting."
             )
         await update.message.reply_text(

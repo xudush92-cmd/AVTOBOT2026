@@ -16,6 +16,19 @@ qaytish rejasini beradi.
 
 Barcha yangi funksiya testlangan: **656 test** (`python -m unittest discover -s tests -t tests`).
 
+### 🆕 Guruh nomi **hamma oynalarda** (PR #44)
+
+| Qism | Xavf | Izoh |
+| ---- | ---- | ---- |
+| **`db.get_chat_record()`** | 🟢 past | `SELECT` ro'yxatiga `title` qo'shildi — bitta guruhni ko'rsatadigan oynalar endi **nomni** oladi (avval ID chiqardi) |
+| **Interval oynasi** | 🟢 past | Tugmalarda **nom**: `КАНГЛИ ЯККА ТУРОНГИЛ МФЙ · Umumiy 6 daq` (avval `-1003119200089 · Umumiy 6 daq`) |
+| **O'chirish** | 🟢 past | Xabar va ro'yxatda **nom** — `🗑 O'chirildi: QARNDOSHLAR` |
+| **`group_label()`** | 🟢 past | Logika `core/utils.py` ga ko'chirildi — hamma oynada **bir xil** natija |
+
+> 📌 **Baza sxemasi o'zgarmadi** — yangi ustun/jadval yo'q.
+> 📌 **Worker / posting / Start / Stop** tegilmadi.
+> 📌 **Yopiq guruh ID'si** hech qayerda ko'rsatilmaydi (avvalgi maxfiylik saqlanadi).
+
 ### 🆕 Guruh nomi (title) — bazadan tugma matnigacha (PR #41)
 
 | Qism | Xavf | Izoh |

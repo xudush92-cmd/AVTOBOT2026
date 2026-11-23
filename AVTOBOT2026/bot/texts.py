@@ -16,7 +16,7 @@ from config.config import (
     PLAN_DEFS,
     REFERRAL_BONUS_DAYS,
 )
-from core.utils import format_expires
+from core.utils import format_expires, group_label
 
 # ─────────────────────────────────────────────────────────────────────────
 # UMUMIY
@@ -840,7 +840,10 @@ def groups_delete_text(groups, page=0, page_size=10, notice=""):
         lines.append(f"{notice}\n")
     lines.append(f"💬 GURUHLAR ({len(groups)} ta)\n")
     for index, item in enumerate(groups[start : start + page_size], start + 1):
-        value = item["value"] if isinstance(item, dict) else item
+        if isinstance(item, dict):
+            value = group_label(item)
+        else:
+            value = item
         lines.append(f"{index}. {value}")
     lines.append("\n🗑 guruhni o'chiradi.")
     return "\n".join(lines)

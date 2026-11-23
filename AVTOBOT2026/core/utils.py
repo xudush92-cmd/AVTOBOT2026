@@ -297,6 +297,25 @@ def clean_group_value(value: str) -> str:
     return normalize_group_reference(value)
 
 
+def group_label(item: dict) -> str:
+    """Guruh uchun ko'rsatiladigan nom.
+
+    Telegram'dagi display name (baza ``title``) afzal — foydalanuvchi
+    guruhni nomidan tanib oladi. Nomi yo'q bo'lsa — username.
+
+    Yopiq guruh (marked ID, masalan ``-100123...``) uchun ID **ko'rsatilmaydi** —
+    u maxfiy ma'lumot. Nomi bo'lmasa — umumiy matn qo'yiladi.
+    """
+    title = str(item.get("title") or "").strip()
+    value = str(item.get("value") or "").strip()
+    if title and title != value:
+        return title
+    if value.startswith("@"):
+        return value
+    # Yopiq guruh — ID ko'rsatilmaydi.
+    return "Yopiq guruh"
+
+
 def parse_group_lines_with_errors(text: str) -> tuple[list[str], list[str]]:
     """Guruhlarni canonical ko'rinishga keltiradi, noto'g'ri qatorlarni ajratadi."""
     result: list[str] = []

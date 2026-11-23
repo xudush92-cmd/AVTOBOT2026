@@ -18,7 +18,7 @@ from bot import keyboards as KB
 from bot import texts as T
 from core import database as db
 from core.logger import log
-from core.utils import is_valid_interval, reply_text_safe
+from core.utils import group_label, is_valid_interval, reply_text_safe
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -146,7 +146,7 @@ async def _show_group_interval_options(
         selected = f"Alohida ({int(custom_interval)} daqiqa)"
     text = (
         f"⏱ GURUH INTERVALI\n\n"
-        f"Guruh: {group['value']}\n"
+        f"Guruh: {group_label(group)}\n"
         f"Hozirgi sozlama: {selected}\n"
         f"Umumiy interval: {global_interval} daqiqa\n\n"
         "Kerakli alohida intervalni tanlang yoki umumiy sozlamaga qaytaring."
@@ -218,7 +218,7 @@ async def handle_group_interval_callback(update: Update, uid: int, data: str) ->
             "group_id": group_id,
         }
         await q.edit_message_text(
-            f"✏️ {group['value']} uchun intervalni daqiqada yuboring."
+            f"✏️ {group_label(group)} uchun intervalni daqiqada yuboring."
         )
         await q.message.reply_text(
             f"{T.MIN_INTERVAL_MIN}–{T.MAX_INTERVAL_MIN} daqiqada butun son kiriting:",
