@@ -88,6 +88,12 @@ SEND_DELAY_S: int = 5  # guruhlar orasidagi pauza (soniya)
 JITTER_S: int = 300  # tasodifiy qo'shimcha vaqt (5 daqiqagacha)
 START_JITTER_S: int = 60  # worker birinchi start (1 daqiqagacha)
 MAX_GROUP_FAILS: int = 3  # guruh necha xato qilsa o'chiriladi
+# ⚠️ PeerFlood (akkaunt darajasidagi "juda ko'p so'rov" cheklovi) kelganda
+# yuborish qancha vaqt to'xtatiladi. Bu cheklov akkauntni butunlay ban
+# qilishdan saqlaydi — o'chirish emas, kutish kerak.
+PEER_FLOOD_PAUSE_S: int = max(
+    60, _int("PEER_FLOOD_PAUSE_S", 3600)
+)  # standart: 1 soat
 
 # ─────────────────────────────────────────────────────────────────────────
 # MEDIA (POST SURATLARI / VIDEO)
