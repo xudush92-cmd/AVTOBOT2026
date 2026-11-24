@@ -831,3 +831,6 @@ PEER_FLOOD_PAUSE_S=3600
 **Tekshiruv:** `tests/test_worker_safety.py` (8 ta test): PeerFlood
 alohida ushlanishi, `release` `continue` dan oldin, `references` kamayishi,
 `PEER_FLOOD_PAUSE_S` mavjudligi.
+
+**✅ PR #46 MERGED** — `8dcf4fc`
+(https://github.com/xudush92-cmd/AVTOBOT2026/pull/46)
