@@ -16,6 +16,24 @@ qaytish rejasini beradi.
 
 Barcha yangi funksiya testlangan: **656 test** (`python -m unittest discover -s tests -t tests`).
 
+### 🆕 Worker himoyasi — connection leak va PeerFlood (PR #46)
+
+| Qism | Xavf | Izoh |
+| ---- | ---- | ---- |
+| **Connection leak** | 🟢 past | Kunlik limit / tungi tanaffusda `client_pool.release()` endi `continue` dan **oldin** chaqiriladi. Oldin `references` osib, pool to'lsa **yangi user Start bosolmasdi** |
+| **PeerFlood** | 🟢 past | `PeerFloodError` endi **alohida** ushlanadi: yuborish to'xtaydi, **1 soat** kutadi, akkaunt **o'chirilmaydi**, foydalanuvchiga xabar yuboriladi. Oldin akkaunt tez **butunlay ban** bo'lardi |
+| **`UserBannedInChannelError`** | 🟢 past | Guruh darajasidagi xato sifatida qo'shildi (guruh 3 urinishdan keyin chiqadi) |
+
+**Yangi sozlama (ixtiyoriy):**
+
+```bash
+# .env — PeerFlood'da kutish vaqti (soniya, standart 3600 = 1 soat)
+PEER_FLOOD_PAUSE_S=3600
+```
+
+> 📌 **Baza sxemasi o'zgarmadi.**
+> 📌 **Start / Stop / interval / kunlik limit** semantikasi o'zgarmadi.
+
 ### 🆕 Admin panel — muddat +/- va «Orqaga» yopadi (PR #45)
 
 | Qism | Xavf | Izoh |

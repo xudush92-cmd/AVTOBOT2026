@@ -22,8 +22,10 @@ from telethon.errors import (
     ChannelPrivateError,
     ChatWriteForbiddenError,
     FloodWaitError,
+    PeerFloodError,
     PeerIdInvalidError,
     SlowModeWaitError,
+    UserBannedInChannelError,
     UserDeactivatedBanError,
     UsernameInvalidError,
     UsernameNotOccupiedError,
@@ -52,6 +54,7 @@ from config.config import (
     JITTER_S,
     MAX_ALBUM_FILES,
     MAX_GROUP_FAILS,
+    PEER_FLOOD_PAUSE_S,
     REFERRAL_QUALIFY_MIN_SENDS,
     SEND_DELAY_S,
     START_JITTER_S,
@@ -501,6 +504,12 @@ async def posting_loop(uid: int, stop: asyncio.Event) -> None:
             allowed, wait_s, pause_reason = await posting_window_state(uid, user)
             if not allowed:
                 log(f"⏸ Worker:{uid} — {pause_reason}, {wait_s}s kutadi", "warning")
+                # ✅ Client olindi va yuborilmadi — pool'ni bo'shatamiz.
+                # Aks holda ``references`` osib qoladi, client heq qachon
+                # "idle" bo'lmaydi va pool to'lganda yangi user Start
+                # bosolmay qoladi.
+                with contextlib.suppress(Exception):
+                    await client_pool.release(uid)
                 if await sleep_or_stop(stop, wait_s):
                     break
                 continue
@@ -531,6 +540,9 @@ async def posting_loop(uid: int, stop: asyncio.Event) -> None:
                     attempted_at: float | None = None
                     # Slow mode faqat shu guruhni bloklaydi — siklni to'xtatmaydi.
                     slow_mode_hit = False
+                    # PeerFlood — akkaunt darajasidagi cheklov. Butun siklni
+                    # to'xtatadi va pauza qo'yadi (loop tashqarisida).
+                    peer_flood_hit = False
 
                     try:
                         await asyncio.wait_for(
@@ -583,12 +595,50 @@ async def posting_loop(uid: int, stop: asyncio.Event) -> None:
                             error=f"FloodWait {wait_s}s",
                         )
 
+                    except PeerFloodError:
+                        # ⚠️ AKKAUNT DARAJASIDAGI CHEKLOV. Telegram akkauntni
+                        # "juda ko'p so'rov" deb belgilagan — bu **barcha**
+                        # guruhlarga tegadi, shuning uchun yuborish butunlay
+                        # to'xtatiladi. Aks holda akkaunt tez **butunlay ban**
+                        # bo'ladi (PostFlood).
+                        #
+                        # Akkauntni o'chirmaymiz — faqat uzoq kutamiz va
+                        # foydalanuvchiga xabar beramiz.
+                        peer_flood_until = time.time() + PEER_FLOOD_PAUSE_S
+                        attempted_at = time.time()
+                        flood_wait_until = peer_flood_until
+                        peer_flood_hit = True
+                        log(
+                            f"🚨 {uid} → {chat} PeerFlood — akkaunt "
+                            f"{PEER_FLOOD_PAUSE_S}s to'xtatildi",
+                            "error",
+                        )
+                        await db.log_send(
+                            uid,
+                            False,
+                            group_id=group_id,
+                            post_id=post.get("id"),
+                            error=f"PeerFlood {PEER_FLOOD_PAUSE_S}s",
+                        )
+                        with contextlib.suppress(Exception):
+                            await application.bot.send_message(
+                                uid,
+                                "🚨 Telegram akkauntingizga cheklov qo'ydi "
+                                f"(juda ko'p so'rov). E'lonlar {PEER_FLOOD_PAUSE_S // 60} "
+                                "daqiqa to'xtatildi.\n\n"
+                                "Guruhlar sonini kamaytirish yoki intervalni "
+                                "uzaytirish tavsiya etiladi — aks holda "
+                                "akkaunt butunlay bloklanishi mumkin.",
+                            )
+                        break  # butun siklni to'xtatamiz — boshqa guruh ham yubormaydi
+
                     except (
                         ChatWriteForbiddenError,
                         ChannelPrivateError,
                         PeerIdInvalidError,
                         UsernameNotOccupiedError,
                         UsernameInvalidError,
+                        UserBannedInChannelError,
                         ValueError,
                     ) as exc:
                         fail += 1
@@ -676,6 +726,19 @@ async def posting_loop(uid: int, stop: asyncio.Event) -> None:
                             stop, max(0, flood_wait_until - time.time())
                         ):
                             break
+
+                    if peer_flood_hit:
+                        # ⚠️ PeerFlood — akkaunt darajasidagi cheklov.
+                        # Butun sikl to'xtatildi; endi pauza qilib turamiz
+                        # (keyingi sikl yana urinish qilmasin).
+                        log(
+                            f"🚨 {uid} PeerFlood pauzasi — "
+                            f"{PEER_FLOOD_PAUSE_S}s kutamiz",
+                            "warning",
+                        )
+                        if await sleep_or_stop(stop, PEER_FLOOD_PAUSE_S):
+                            break
+                        break
 
                     if not stop.is_set():
                         await sleep_or_stop(stop, SEND_DELAY_S)

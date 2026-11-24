@@ -771,3 +771,63 @@ va **ochiq qoladi**.
 **Tekshiruv:** `tests/test_admin_panel_term.py` (18 ta test):
 `shift_expires` mantiqi (4), jamoa admini muddati +/- (4), oddiy admin
 muddat +/- (4), oyna yopish (3), panel minimal (2), `+`/`−` oynalari (1).
+
+
+---
+
+## 🛡 TUZATISHLAR — PR #46 (2026-11-23) — Worker himoyasi: leak va PeerFlood
+
+> **Filial:** `arena/367cf38f-avtobot2026` (asosiy: `main`, commit `d35cbef`)
+> **Testlar:** `723 passed, 62 subtests passed` (bazadagi 715 + 8 yangi)
+> **Holat:** ⏳ PR ochilmoqda
+
+### 🔴 V1. Worker connection **leak** — pool to'ladi, yangi user Start bosolmaydi
+
+**Sabab:** `worker/worker.py` — `client_pool.acquire()` dan keyin
+`posting_window_state()` (kunlik limit / tungi tanaffus) `allowed=False`
+bo'lsa `continue` qilinardi. Lekin `client_pool.release(uid)` faqat
+yuborish bloki ichidagi `finally` da chaqirilardi — **`continue` o'sha
+blokdan o'tib ketardi**.
+
+**Ta'siri:** `references` refcount osib qolardi → client **hech qachon
+"idle" bo'lmasdi** → pool 50 ta client bilan to'lsa, `evicted` topilmaydi
+→ `PoolBusyError` → **yangi foydalanuvchi «▶️ Start» bosolmay qoladi**.
+
+**Tuzatish:** limit/to'xtash holatida `client_pool.release(uid)` — `continue`
+dan **oldin** chaqiriladi.
+
+### 🔴 V2. **PeerFlood** — akkaunt butunlay ban bo'lardi
+
+**Sabab:** `PeerFloodError` va `UserBannedInChannelError` **import qilinmagandi**
+— ular umumiy `except Exception` ga tushib, `fail += 1` qilib, keyingi
+intervalda **yana urinish** qilardi.
+
+**Ta'siri:** Telegram akkauntga «juda ko'p so'rov» (PeerFlood) deb
+cheklov qo'ygan bo'lsa, worker har intervalda yana urinish qilib,
+akkauntni tez **butunlay ban** (PostFlood) qilardi. Bu — **akkauntni
+yo'qotish** demak.
+
+**Tuzatish:**
+- `PeerFloodError` — **alohida** ushlanadi:
+  - yuborish **butunlay to'xtatiladi** (boshqa guruhlarga ham);
+  - `PEER_FLOOD_PAUSE_S` (standart **1 soat**, `.env` bilan o'zgartiriladi)
+    kutish;
+  - akkaunt **o'chirilmaydi** — faqat kutadi;
+  - foydalanuvchiga **xabar** yuboriladi (guruhlar sonini kamaytirish tavsiya).
+- `UserBannedInChannelError` — guruh darajasidagi xato sifatida
+  qo'shildi (3 urinishdan keyin guruh ro'yxatdan chiqadi).
+
+### 📌 Yangi sozlamalar
+
+```bash
+# .env (ixtiyoriy) — PeerFlood'da kutish vaqti (soniya, standart 3600)
+PEER_FLOOD_PAUSE_S=3600
+```
+
+> 📌 **Baza sxemasi o'zgarmadi.**
+> 📌 **Start / Stop / interval / kunlik limit** semantikasi o'zgarmadi.
+> 📌 Faqat **xato holatlar** to'g'ri ishlaydi.
+
+**Tekshiruv:** `tests/test_worker_safety.py` (8 ta test): PeerFlood
+alohida ushlanishi, `release` `continue` dan oldin, `references` kamayishi,
+`PEER_FLOOD_PAUSE_S` mavjudligi.
