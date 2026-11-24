@@ -247,7 +247,8 @@ class QrLoginLifecycleTests(unittest.IsolatedAsyncioTestCase):
             await login._wait_for_qr_login(uid, ctx, qr_login)
 
         set_phone.assert_not_awaited()
-        finalize.assert_awaited_once_with(uid)
+        # QR oqimida ``update`` yo'q — taklif ``update=None`` bilan qo'llanadi.
+        finalize.assert_awaited_once_with(uid, update=None)
         self.assertEqual(ctx.phone, "+998900000000")
 
     async def test_code_login_binds_uid_and_authenticated_phone(self) -> None:

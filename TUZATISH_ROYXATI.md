@@ -834,3 +834,79 @@ alohida ushlanishi, `release` `continue` dan oldin, `references` kamayishi,
 
 **✅ PR #46 MERGED** — `8dcf4fc`
 (https://github.com/xudush92-cmd/AVTOBOT2026/pull/46)
+
+---
+
+## 🔒 PR #47 — Jamoa xavfsizligi: taklif, bloklash va sig'im
+
+> 📌 **PR #46 (worker leak + PeerFlood) dan davomi.** Alohida PR — har bir
+> o'zgarish alohida ko'rib chiqilishi uchun.
+
+### 🔴 V3. Jamoa taklifi **kodsiz** qo'llanardi
+
+**Sabab:** `bot/login.py::_handle_phone_locked()` — telefon raqam
+yozilgach **darhol** `_auto_bind_team_invite()` chaqirilardi. Bu — Telegram
+tasdiq kodi **so'ralmasdan**, ya'ni raqamning haqiqiy egasi
+tekshirilmasdan.
+
+**Ta'siri:** Begona odam o'z raqamini yozib, Telegram kodiga ehtiyoj
+yo'q holda **jamoa admini** bo'lib qolishi mumkin edi. Super admin
+taklif qilgan raqam — kodsiz jamoa adminiga aylanardi.
+
+**Tuzatish:**
+- `_handle_phone_locked()` — taklif **butunlay** olib tashlandi.
+- Yangi `_apply_team_invite_after_login()` — taklifni **faqat** Telegram
+  login **muvaffaqiyatli** bo'lgandan keyin qo'llaydi.
+  - ✅ SMS kod (numpad) → `attempt_signin(..., update=update)`
+  - ✅ 2FA parol → `handle_password()` → `finalize_login(uid, update=update)`
+  - ✅ QR login → `finalize_login(uid, update=None)` (ism bazadan olinadi)
+- `finalize_login()` va `_finalize_login_locked()` endi ixtiyoriy
+  `update` parametrini oladi.
+
+### 🔴 V4. Jamoa admini **super admin blokini** bekor qila olardi
+
+**Sabab:** Kim bloklagani saqlanmasdi — faqat `is_blocked` (0/1) bor edi.
+Jamoa admini `tadm:unblock:<uid>` bosganda **har qanday** blokni
+chiqara olardi.
+
+**Ta'siri:** Super admin tomonidan bloklangan foydalanuvchi jamoa admini
+orqali «ochilib» ketardi — bloklash cheklovi ma'nosiz bo'lardi.
+
+**Tuzatish:**
+- `users` jadvaliga **`blocked_by`** ustuni qo'shildi (migratsiya bilan,
+  eski DB ma'lumotlari saqlanadi; `0` = tizim/super admin).
+- Jamoa admini bloklaganda `blocked_by = <jamoa admini uid>` yoziladi.
+- Blokdan chiqarishda: **faqat `blocked_by == uid`** bo'lsa mumkin.
+  Aks holda — «🚫 Bu foydalanuvchi super admin tomonidan bloklangan».
+- Super admin (`admin/admin_actions.py`) bloklaganda `blocked_by = 0`
+  qoladi — jamoa admini uni bekor qila olmaydi.
+
+### 🔴 V5. Jamoa sig'imi **noto'g'ri** hisoblanardi
+
+**Sabab:** `approve_team_member()` — sig'imni `len(members)` bilan
+tekshirardi, bu yerda **jamoa admini ham** hisobga olinardi.
+
+**Ta'siri:** Sig'im 2 bo'lgan jamoada: admin (1) + 1 arizachi = 2 →
+`2 >= 2` → «sig'im to'lgan» deb rad etilardi. Ya'ni jamoaga **bitta
+odam** ham sig'imar qabul qilinmas edi.
+
+**Tuzatish:** Sigim — jamoaning **a'zolari** soni. Jamoa admini (jamoa
+egasi) hisobga **olmaydi**. Arizachi allaqachon jamoaga biriktirilgan
+bo'lgani uchun u hisobga olinadi.
+
+### 📌 Baza sxemasi
+
+```sql
+ALTER TABLE users ADD COLUMN blocked_by INTEGER DEFAULT 0;
+```
+
+> 📌 Migratsiya avtomatik ishlaydi (`_migrate_schema()`) — eski DB
+> fayllari va ma'lumotlari saqlanadi.
+> 📌 **Start / Stop / interval / kunlik limit** semantikasi o'zgarmadi.
+> 📌 Scanner, guruh nomlari va boshqa funksiyalar o'zgarmadi.
+
+**Tekshiruv:** `tests/test_team_security.py` (12 ta test): taklif
+telefon bosqichida qo'llanmasligi, `blocked_by` saqlanishi, jamoa
+adminining super admin blokini chiqara olmasligi, sig'imda admin
+hisobga olinmasligi.
+

@@ -129,6 +129,10 @@ async def _migrate_schema() -> None:
             ("is_team_admin", "INTEGER DEFAULT 0"),
             ("admin_expires_at", "TEXT"),
             ("admin_max_users", "INTEGER DEFAULT 0"),
+            # Kim bloklagan — jamoa admini o'z a'zosini (yoki super admin
+            # bloklagan odamni) blokdan chiqarib olmasligi uchun.
+            # 0 = tizim/anonim (super admin).
+            ("blocked_by", "INTEGER DEFAULT 0"),
         ),
     )
     await add_missing_columns(
@@ -701,6 +705,7 @@ async def set_user_limits(uid: int, **fields: object) -> bool:
         "active_hours",
         "tariff_expires_at",
         "is_blocked",
+        "blocked_by",
     }
     unknown = set(fields) - allowed
     if unknown:
@@ -737,6 +742,15 @@ async def set_user_limits(uid: int, **fields: object) -> bool:
             return False
         params.append(1 if blocked else 0)
         updates.append("is_blocked = ?")
+    # Kim bloklagan (0 = tizim/super admin) — jamoa admini faqat o'z
+    # bloklaganini blokdan chiqara oladi.
+    if "blocked_by" in fields:
+        try:
+            who = int(fields["blocked_by"])  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            return False
+        params.append(max(0, who))
+        updates.append("blocked_by = ?")
     if not updates:
         return False
     updates.append("updated_at = ?")
@@ -801,12 +815,36 @@ async def is_blocked(uid: int) -> bool:
     return bool(user and user.get("is_blocked"))
 
 
-async def set_blocked(uid: int, blocked: bool) -> bool:
-    cur = await _execute_write(
-        "UPDATE users SET is_blocked = ?, updated_at = ? WHERE uid = ?",
-        (1 if blocked else 0, iso_now(), uid),
-    )
+async def set_blocked(
+    uid: int, blocked: bool, blocked_by: int | None = None
+) -> bool:
+    """Foydalanuvchini bloklaydi / blokdan chiqaradi.
+
+    ``blocked_by`` — kim bloklagan (0 = tizim/super admin). Blokdan
+    chiqarishda saqlanadi, shunda keyingi bloklash yangi kimni yozadi.
+    """
+    if blocked:
+        who = int(blocked_by or 0)
+        cur = await _execute_write(
+            "UPDATE users SET is_blocked = 1, blocked_by = ?, updated_at = ? "
+            "WHERE uid = ?",
+            (who, iso_now(), uid),
+        )
+    else:
+        cur = await _execute_write(
+            "UPDATE users SET is_blocked = 0, blocked_by = 0, updated_at = ? "
+            "WHERE uid = ?",
+            (iso_now(), uid),
+        )
     return cur.rowcount > 0
+
+
+async def get_blocked_by(uid: int) -> int:
+    """Foydalanuvchini kim bloklagan (0 — tizim/super admin)."""
+    user = await get_user(uid)
+    if not user:
+        return 0
+    return int(user.get("blocked_by") or 0)
 
 
 async def set_awaiting_approval(uid: int, awaiting: bool) -> bool:
