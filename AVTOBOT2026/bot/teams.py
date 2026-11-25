@@ -961,6 +961,14 @@ async def _handle_team_admin_callback_inner(
         if not member or int(member.get("owner_admin_uid") or 0) != uid:
             await q.answer("Bu foydalanuvchi sizning jamoangizda emas", show_alert=True)
             return
+        # ⚠️ Jamoa egasi o'ziga muddat bera olmaydi (u o'z muddatini
+        # o'zi boshqaradi — jamoa egasi sifatida).
+        if target == uid or member.get("is_team_admin"):
+            await q.answer(
+                "🚫 O'zingizga muddat bera olmaysiz.",
+                show_alert=True,
+            )
+            return
 
         # Chegara: faqat chegaragacha muddat ko'rsatiladi.
         from core.duration_policy import cap_note, options_within_cap
@@ -1034,6 +1042,16 @@ async def _handle_team_admin_callback_inner(
         if not member or int(member.get("owner_admin_uid") or 0) != uid:
             await q.answer("Bu foydalanuvchi sizning jamoangizda emas", show_alert=True)
             return
+        # ⚠️ Jamoa egasi o'zini bloklay olmaydi. Uning
+        # ``owner_admin_uid`` o'zining qiymatiga teng, shuning uchun
+        # yuqoridagi shart o'tib ketardi — u o'zini bloklab qo'yib,
+        # keyin o'zi ochib ketishi mumkin edi.
+        if target == uid or member.get("is_team_admin"):
+            await q.answer(
+                "🚫 O'zingizni bloklay olmaysiz.",
+                show_alert=True,
+            )
+            return
         # Bloklaganini saqlaymiz — keyin faqat o'z bloklaganini
         # blokdan chiqara olamiz (super admin bloklaganini emas).
         await db.set_user_limits(target, is_blocked=1, blocked_by=uid)
@@ -1051,6 +1069,14 @@ async def _handle_team_admin_callback_inner(
         member = await db.get_user(target)
         if not member or int(member.get("owner_admin_uid") or 0) != uid:
             await q.answer("Bu foydalanuvchi sizning jamoangizda emas", show_alert=True)
+            return
+        # ⚠️ Jamoa egasi o'ziga nisbatan amal bajarishi mumkin emas
+        # (u o'zini bloklagan bo'lishi mumkin).
+        if target == uid or member.get("is_team_admin"):
+            await q.answer(
+                "🚫 O'zingiz uchun amal bajarib bo'lmaydi.",
+                show_alert=True,
+            )
             return
         # ⚠️ Faqat **o'zing bloklagan** foydalanuvchini blokdan chiqara
         # olamiz. Super admin (yoki tizim) bloklaganini — jamoa admini

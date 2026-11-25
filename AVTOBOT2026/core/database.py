@@ -64,6 +64,7 @@ _USER_COLUMNS = {
     "is_team_admin",
     "admin_expires_at",
     "admin_max_users",
+    "admin_expiry_notified_at",
 }
 
 
@@ -133,6 +134,9 @@ async def _migrate_schema() -> None:
             # bloklagan odamni) blokdan chiqarib olmasligi uchun.
             # 0 = tizim/anonim (super admin).
             ("blocked_by", "INTEGER DEFAULT 0"),
+            # Jamoa admini muddati tugagani haqida xabar yuborilganmi —
+            # xabar har daqiqada takrorlanmasligi uchun.
+            ("admin_expiry_notified_at", "TEXT"),
         ),
     )
     await add_missing_columns(
@@ -2501,16 +2505,25 @@ async def leave_team(uid: int) -> dict | None:
 
     # Muddat: jamoa admini bergan bo'lsa — chiqish bilan tugaydi.
     # Super admin bergan muddat (jamoasiz tasdiqlash) saqlanadi.
+    #
+    # ⚠️ Tugatishda muddat **chekisiz** (`NULL`) qilinmasdi — bu
+    # foydalanuvchiga «muddatim tugadi» deb aytilib, ammo aslida
+    # cheksiz foydalanish berardi. Endi muddat **bugun tugagan** qilib
+    # qo'yiladi — haqiqatan ham tugaydi.
     expires_cleared = False
     current_expires = user.get("tariff_expires_at")
+    new_expires = current_expires
     if current_expires and owner_uid and owner_uid != SUPER_ADMIN:
         expires_cleared = True
+        from core.utils import calc_expires
+
+        new_expires = calc_expires(0)
 
     cur = await _execute_write(
         "UPDATE users SET team_id = NULL, owner_admin_uid = NULL, "
         "awaiting_approval = 0, tariff_expires_at = ?, updated_at = ? "
         "WHERE uid = ?",
-        (None if expires_cleared else current_expires, iso_now(), int(uid)),
+        (new_expires, iso_now(), int(uid)),
     )
     if not cur.rowcount:
         return None
@@ -2625,7 +2638,8 @@ async def set_team_admin(
     await upsert_user(uid)
     cur = await _execute_write(
         "UPDATE users SET is_team_admin = 1, team_id = ?, admin_max_users = ?, "
-        "admin_expires_at = ?, updated_at = ? WHERE uid = ?",
+        "admin_expires_at = ?, admin_expiry_notified_at = NULL, updated_at = ? "
+        "WHERE uid = ?",
         (int(team_id), max(0, int(max_users or 0)), admin_expires_at, iso_now(), int(uid)),
     )
     return cur.rowcount > 0
@@ -2694,13 +2708,39 @@ async def set_admin_max_users(uid: int, max_users: int) -> bool:
 
 
 async def set_admin_expires(uid: int, expires_at: str | None) -> bool:
-    """Jamoa adminining muddatini o'zgartiradi (faqat super admin)."""
+    """Jamoa adminining muddatini o'zgartiradi (faqat super admin).
+
+    Muddat yangilanganda ``admin_expiry_notified_at`` **tozalanadi** —
+    yangi muddat tugaganda ogohlantirish xabari yana bir marta yuborilsin
+    (aks holda eski ogohlantirish yangisini yopib qo'yardi).
+    """
     await upsert_user(uid)
     cur = await _execute_write(
-        "UPDATE users SET admin_expires_at = ?, updated_at = ? WHERE uid = ?",
+        "UPDATE users SET admin_expires_at = ?, admin_expiry_notified_at = NULL, "
+        "updated_at = ? WHERE uid = ?",
         (expires_at, iso_now(), int(uid)),
     )
     return cur.rowcount > 0
+
+
+async def mark_admin_expiry_notified(uid: int) -> bool:
+    """Jamoa admini muddati tugagani haqida xabar yuborilganini belgilaydi.
+
+    Shu belgi orqali xabar **faqat bir marta** yuboriladi — janitor har
+    daqiqada ishga tushsa, foydalanuvchi va super admin bir xil xabarni
+    yana-yana olmasin.
+    """
+    cur = await _execute_write(
+        "UPDATE users SET admin_expiry_notified_at = ?, updated_at = ? WHERE uid = ?",
+        (iso_now(), iso_now(), int(uid)),
+    )
+    return cur.rowcount > 0
+
+
+async def is_admin_expiry_notified(uid: int) -> bool:
+    """Jamoa admini muddati tugagani haqida xabar yuborilganmi?"""
+    user = await get_user(uid)
+    return bool(user and user.get("admin_expiry_notified_at"))
 
 
 async def get_team_admins() -> list[dict]:

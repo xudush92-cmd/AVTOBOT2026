@@ -32,7 +32,7 @@ from bot import media_ingest  # noqa: E402
 from bot import callbacks as Cb  # noqa: E402
 from bot import teams as Tm  # noqa: E402
 from bot import texts as T  # noqa: E402
-from core.utils import calc_expires  # noqa: E402
+from core.utils import calc_expires, is_expired  # noqa: E402
 
 
 def assert_expires_in_days(testcase, actual, days, msg=""):
@@ -1438,11 +1438,23 @@ class TeamLeaveTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(user["owner_admin_uid"])
 
     async def test_leave_team_clears_expiry(self) -> None:
-        """Jamoa admini bergan muddat chiqish bilan tugaydi."""
+        """Jamoa admini bergan muddat chiqish bilan tugaydi.
+
+        ⚠️ Muddat **chekisiz** (`None`) qilinmasdi — aks holda foydalanuvchi
+        «muddatim tugdi» deb xabar olib, haqiqiyda cheksiz foydalanib
+        qolardi. Endi muddat **bugun tugagan** qilib qo'yiladi.
+        """
         await self._make_member()
         await db.leave_team(USER_1)
         user = await db.get_user(USER_1)
-        self.assertIsNone(user["tariff_expires_at"])
+        self.assertIsNotNone(
+            user["tariff_expires_at"],
+            "muddat cheksiz qilinmashi kerak — u bugun tugishi kerak",
+        )
+        self.assertTrue(
+            is_expired(user["tariff_expires_at"]),
+            "chiqishdan keyin muddat tugagan bo'lishi kerak",
+        )
 
     async def test_leave_team_keeps_super_admin_expiry(self) -> None:
         """Super admin bergan muddat saqlanadi (jamoa admini emas)."""
@@ -1504,7 +1516,9 @@ class TeamLeaveTests(unittest.IsolatedAsyncioTestCase):
 
         user = await db.get_user(USER_1)
         self.assertIsNone(user["team_id"])
-        self.assertIsNone(user["tariff_expires_at"])
+        # Muddat cheksiz qilinmaydi — u bugun tugishi kerak.
+        self.assertIsNotNone(user["tariff_expires_at"])
+        self.assertTrue(is_expired(user["tariff_expires_at"]))
         self.assertFalse(user["running"], "posting to'xtatilishi kerak")
 
     async def test_leave_ask_shows_confirmation(self) -> None:

@@ -37,7 +37,7 @@ os.environ.setdefault("ADMIN_ID", "123456789")
 from bot import teams as Tm
 from core import database as db
 from core import session_crypto
-from core.utils import calc_expires
+from core.utils import calc_expires, is_expired
 
 ADMIN_UID = 77001
 MEMBER_UID = 77002
@@ -219,9 +219,15 @@ class TeamLifecycleTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(
             member.get("owner_admin_uid"), "owner_admin_uid tozalanishi kerak"
         )
-        self.assertIsNone(
+        # Muddat **chekisiz** qilinmaydi — u bugun tugishi kerak
+        # (aks holda «muddat tugdi» degan xabar yolg'on bo'lardi).
+        self.assertIsNotNone(
             member.get("tariff_expires_at"),
-            "jamoa muddati a'zo bilan birga tugashi kerak",
+            "muddat cheksiz qilinmashi kerak — u bugun tugishi kerak",
+        )
+        self.assertTrue(
+            is_expired(member.get("tariff_expires_at")),
+            "jamoa muddati a'zo bilan birga tugishi kerak",
         )
 
         # ── 7. Jamoa admini o'z jamoasidan chiqmaydi ───────────────────
