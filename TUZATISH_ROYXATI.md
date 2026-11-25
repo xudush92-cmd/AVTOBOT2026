@@ -935,3 +935,94 @@ hisobga olinmasligi.
 > 📌 Qo'shimcha: `request_code()` ga `update` qo'shildi — kodsiz
 > tasdiqlash (`SentCodeSuccess`) oqimida ham taklif to'g'ri qo'llanadi.
 
+
+---
+
+## 🛡️ PR #49 — Muddat va jamoa xavfsizligi (auditning qolgan bandlari)
+
+> 📌 **PR #46 (worker leak + PeerFlood)** va **PR #48 (jamoa taklifi,
+> bloklash manbai, sig'im)** dan davomi. Alohida PR — har bir o'zgarish
+> alohida ko'rib chiqilishi uchun.
+
+### 🔴 V6. Jamoa admini muddat eslatmasi **har daqiqada** yuborilardi
+
+**Sabab:** `main.py::check_team_admin_expiry()` — xabar yuborgandan keyin
+**hech qanday belgi qo'ymasdi**. `admin_expires_at` o'zgarmay qoladi,
+shuning uchun `get_expired_team_admins()` har chaqiruvda **shu adminga
+qaytaradi** — janitor har daqiqada ishga tushsa, xabar ham **har
+daqiqada** yuborilardi.
+
+**Ta'siri:** Foydalanuvchi, jamoa a'zolari va super admin bir xil xabarni
+daqiqa davomida yana-yana oladi.
+
+**Tuzatish:**
+- `users` jadvaliga **`admin_expiry_notified_at`** ustuni qo'shildi
+  (avtomatik migratsiya).
+- Xabar yuborilgach belgi qo'yiladi — keyingi chaqiruvda xabar
+  yana yuborilmaydi.
+- `set_admin_expires()` va `set_team_admin()` — muddat yangilangananda
+  belgi **tozalanadi**, shunda yangi muddat tugaganda ogohlantirish
+  yana bir marta yuboriladi.
+
+### 🔴 V7. Jamoadan chiqishda muddat **chekisiz** bo'lib qolardi
+
+**Sabab:** `core/database.py::leave_team()` — jamoa admini bergan muddatni
+`tariff_expires_at = None` (chekisiz) qilib qo'yardi. Hujjat va
+foydalanuvchiga yuboriladigan xabar «uning muddati ham tugdi» deb
+aytadi.
+
+**Ta'siri:** Foydalanuvchi xabar oladi va muddat tugaganini o'ylaydi —
+lekin bazada cheksiz qoladi va muddat **hech qachon tugmaydi**. Xabar
+yolg'on, funksiya esa muddatni **uzaytirib** yuboradi.
+
+**Tuzatish:** Endi muddat **bugun tugagan** (`calc_expires(0)`) qilib
+qo'yiladi — haqiqatan ham tugaydi. Super admin bergan muddat
+(jamoasiz tasdiqlash) **saqlanadi** — o'zgarmaydi.
+
+### 🔴 V8. «Kamaytirish» cheksiz muddatni **darhol tugatardi**
+
+**Sabab:** `core/utils.py::shift_expires(None, -1)` — `calc_expires(0)`
+qaytarardi, ya'ni muddat **shu zahoti tugaydi**. Docstring esa
+«o'zgartirilmaydi (cheksiz qoladi)» deb yozgan edi — kod bilan ziddiyat.
+
+**Ta'siri:** Super admin jamoa adminining muddatini «kamaytirish» tugmasi
+bossa va o'sha muddat cheksiz bo'lsa, uning jamoasi va jamoasi
+**darhol to'xtaydi** — bu «kamaytirish» emas.
+
+**Tuzatish:**
+- `shift_expires()` endi `None` + manfiy kun holatida **`None` qaytaradi**
+  (rad etiladi) va `str | None` qaytaradi.
+- Ikkala chaqiruv joyi ham (oddiy admin va jamoa admini muddati) endi
+  foydalanuvchiga tushunarli xabar beradi: «❌ Cheksiz muddatni
+  kamaytirib bo'lmaydi. 💡 Avval muddat bering (+ tugmasi), keyin
+  kamaytiring.»
+
+### 🔴 V9. Jamoa admini **o'zini bloklay** olardi
+
+**Sabab:** `bot/teams.py` — jamoa egasining `owner_admin_uid` o'zining
+qiymatiga teng (`create_team_for_admin` shuni yozadi). `block`/`unblock`/
+`term` shartlari esa `owner_admin_uid == uid` ni tekshiradi — ya'ni
+jamoa admini **o'ziga** nisbatan amal bajarishi mumkin edi.
+(`kick` da `is_team_admin` tekshiruvi bor edi, `block`da — yo'q.)
+
+**Ta'siri:** Jamoa admini o'zini bloklab, keyin o'zi ochib ketishi
+mumkin edi — o'z jamoasiga nisbatan nazoratdan chiqib ketadi.
+
+**Tuzatish:** `block`, `unblock` va `term` amallarida jamoa egasiga
+«🚫 O'zingizga nisbatan amal bajarib bo'lmaydi» deb rad etiladi.
+
+### 📌 Baza sxemasi
+
+```sql
+ALTER TABLE users ADD COLUMN admin_expiry_notified_at TEXT;
+```
+
+> 📌 Migratsiya avtomatik ishlaydi (`_migrate_schema()`) — eski DB
+> fayllari va ma'lumotlari saqlanadi (eski DB bilan sinovdan o'tdi).
+> 📌 **Start / Stop / interval / kunlik limit** semantikasi o'zgarmadi.
+> 📌 Scanner, guruh nomlari va boshqa funksiyalar o'zgarmadi.
+
+**Tekshiruv:** `tests/test_expiry_and_self_guard.py` (14 ta test):
+xabarning bir marta yuborilishi, belgi qo'yilishi va tozalanishi,
+chiqishda muddatning cheksiz bo'lmasligi, `shift_expires` rad etishi,
+jamoa adminining o'ziga amal bajarolmasligi.

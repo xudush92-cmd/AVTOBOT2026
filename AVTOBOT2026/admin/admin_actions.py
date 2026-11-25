@@ -1471,6 +1471,16 @@ async def handle_expire(update: Update, admin_uid: int, data: str) -> None:
                 return
             base = user.get("tariff_expires_at") or None
             expires = shift_expires(base, sign * days)
+            # ⚠️ Cheksiz muddatni kamaytirib bo'lmaydi — ``shift_expires``
+            # ``None`` qaytaradi. Aks holda muddat "kamaytirish" o'rniga
+            # **darhol tugatilardi**, bu esa tasdig'emas edi.
+            if expires is None:
+                await q.edit_message_text(
+                    "❌ Cheksiz muddatni kamaytirib bo'lmaydi.\n\n"
+                    "💡 Avval muddat bering (+ tugmasi), keyin kamaytiring.",
+                    reply_markup=await user_card_markup(target),
+                )
+                return
             await db.set_tariff_expires(target, expires)
         verb = "ko'paytirildi" if sign > 0 else "kamaytirildi"
         await q.edit_message_text(

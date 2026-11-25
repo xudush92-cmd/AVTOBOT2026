@@ -805,6 +805,17 @@ async def set_team_admin_term(update: Update, target: int, days: int) -> None:
     base = admin.get("admin_expires_at")
     expires = shift_expires(base, days)
 
+    # ⚠️ Cheksiz muddatni kamaytirib bo'lmaydi — ``shift_expires``
+    # ``None`` qaytaradi. Aks holda muddat "kamaytirish" o'rniga
+    # **darhol tugatilardi**, bu esa tasdig'emas edi.
+    if expires is None:
+        await q.edit_message_text(
+            "❌ Cheksiz muddatni kamaytirib bo'lmaydi.\n\n"
+            "💡 Avval muddat bering (+ tugmasi), keyin kamaytiring.",
+            reply_markup=KB.kb_team_admin_card(target),
+        )
+        return
+
     await db.set_admin_expires(target, expires)
     # Jamoaning o'z muddatini ham yangilaymiz (jamoa ham to'xtamaydi).
     teams = await db.get_teams(target)

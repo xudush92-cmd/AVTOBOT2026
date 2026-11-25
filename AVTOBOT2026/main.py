@@ -1259,7 +1259,13 @@ async def check_tariff_expiry() -> int:
 
 
 async def check_team_admin_expiry() -> int:
-    """Muddati tugagan jamoa adminlarini va ularning jamoalarini to'xtatadi."""
+    """Muddati tugagan jamoa adminlarini va ularning jamoalarini to'xtatadi.
+
+    ⚠️ Xabarlar **faqat bir marta** yuboriladi. Avval har chaqiruvda
+    (janitor har daqiqada ishga tushadi) foydalanuvchi va super admin
+    bir xil xabarni yana-yana olishardi. Endi ``admin_expiry_notified_at``
+    belgisi qo'yiladi — u muddat yangilanganda tozalanadi.
+    """
     expired_admins = await db.get_expired_team_admins()
     if not expired_admins:
         return 0
@@ -1279,6 +1285,11 @@ async def check_team_admin_expiry() -> int:
         except Exception as exc:  # pragma: no cover - himoya
             log(f"👥 Jamoa a'zolari o'qilmadi: {type(exc).__name__}", "error")
 
+        # ⚠️ Xabar **faqat bir marta** yuboriladi. Janitor har daqiqada
+        # ishga tushsa, foydalanuvchilar bir xil xabarni yana-yana
+        # olmasin.
+        already_notified = bool(admin.get("admin_expiry_notified_at"))
+
         for uid in targets:
             async with user_operation_lock(uid):
                 user = await db.get_user(uid)
@@ -1291,31 +1302,36 @@ async def check_team_admin_expiry() -> int:
                 await db.set_running(uid, False)
                 stopped += 1
 
+            # A'zolar xabari — jamoa admini bilan birga, faqat bir marta.
+            if not already_notified:
+                with contextlib.suppress(Exception):
+                    await application.bot.send_message(
+                        uid,
+                        T.EXPIRED_TEXT,
+                        reply_markup=await KB.kb_main_for(uid),
+                    )
+
+        # Adminga va super admin ga xabar — faqat bir marta.
+        if not already_notified:
             with contextlib.suppress(Exception):
                 await application.bot.send_message(
-                    uid,
-                    T.EXPIRED_TEXT,
-                    reply_markup=await KB.kb_main_for(uid),
+                    admin_uid,
+                    T.TEAM_ADMIN_EXPIRED.format(
+                        expires=format_expires(admin.get("admin_expires_at"))
+                    ),
+                    reply_markup=await KB.kb_main_for(admin_uid),
                 )
-
-        # Adminga va super admin ga xabar.
-        with contextlib.suppress(Exception):
-            await application.bot.send_message(
-                admin_uid,
-                T.TEAM_ADMIN_EXPIRED.format(
-                    expires=format_expires(admin.get("admin_expires_at"))
-                ),
-                reply_markup=await KB.kb_main_for(admin_uid),
-            )
-        with contextlib.suppress(Exception):
-            info = await db.get_user_info(admin_uid)
-            await application.bot.send_message(
-                SUPER_ADMIN,
-                f"⌛ Jamoa admini muddati tugadi\n\n"
-                f"👑 {info.get('name') or admin_uid} ({admin_uid})\n"
-                f"Jamoasi to'xtatildi.\n"
-                "Muddatni uzaytirish uchun: 🖥 Super Admin → 👑 Jamoa adminlari",
-            )
+            with contextlib.suppress(Exception):
+                info = await db.get_user_info(admin_uid)
+                await application.bot.send_message(
+                    SUPER_ADMIN,
+                    f"⌛ Jamoa admini muddati tugadi\n\n"
+                    f"👑 {info.get('name') or admin_uid} ({admin_uid})\n"
+                    f"Jamoasi to'xtatildi.\n"
+                    "Muddatni uzaytirish uchun: 🖥 Super Admin → 👑 Jamoa adminlari",
+                )
+            # Belgi qo'yamiz — keyingi chaqiruvda xabar yana yuborilmaydi.
+            await db.mark_admin_expiry_notified(admin_uid)
 
     if stopped:
         log(f"⌛ Jamoa admini expiry: {stopped} ta to'xtatildi")

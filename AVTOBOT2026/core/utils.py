@@ -39,7 +39,7 @@ def calc_expires(days: int) -> str:
     return (now_utc() + timedelta(days=days)).strftime("%Y-%m-%d %H:%M:%S")
 
 
-def shift_expires(expires_iso: str | None, days: int) -> str:
+def shift_expires(expires_iso: str | None, days: int) -> str | None:
     """Muddatni ``days`` kun **siljitadi** (manfiy — kamaytiradi).
 
     ``days > 0`` — mavjud muddatga qo'shiladi (bugundan boshlab).
@@ -49,9 +49,15 @@ def shift_expires(expires_iso: str | None, days: int) -> str:
 
     ``None`` (cheksiz) muddatga ``days > 0`` berilsa — bugundan ``days``
     kun keyingi sana qo'yiladi (cheksizdan muddatliqqa o'tish).
-    ``None`` ga ``days < 0`` berilsa — o'zgartirilmaydi (cheksiz qoladi).
 
-    Returns: ``"%Y-%m-%d %H:%M:%S"`` formatidagi sana.
+    ``None`` ga ``days < 0`` berilsa — **rad etiladi**: cheksiz muddatni
+    kamaytirib bo'lmaydi, shuning uchun muddat **o'zgartirmaydi**
+    (``None`` qaytadi). Avval bu holatda ``calc_expires(0)`` qaytarilardi —
+    ya'ni «kamaytirish» o'rniga muddat **darhol tugatilardi**, bu esa
+    foydalanuvchining tasdig'i emas edi.
+
+    Returns: ``"%Y-%m-%d %H:%M:%S"`` formatidagi sana yoki ``None``
+    (cheksiz muddat kamaytirilmoqchi bo'lsa).
     """
     if expires_iso:
         try:
@@ -61,8 +67,10 @@ def shift_expires(expires_iso: str | None, days: int) -> str:
         except (TypeError, ValueError):
             base = now_utc()
     elif days < 0:
-        # Cheksiz muddatni kamaytirib bo'lmaydi.
-        return calc_expires(0)
+        # ⚠️ Cheksiz muddatni kamaytirib bo'lmaydi — rad etiladi.
+        # (Avval `calc_expires(0)` qaytarilardi — muddat darhol
+        # tugatilardi, bu esa «kamaytirish» ma'nosiga zid.)
+        return None
     else:
         base = now_utc()
 
