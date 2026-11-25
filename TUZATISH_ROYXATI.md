@@ -1026,3 +1026,20 @@ ALTER TABLE users ADD COLUMN admin_expiry_notified_at TEXT;
 xabarning bir marta yuborilishi, belgi qo'yilishi va tozalanishi,
 chiqishda muddatning cheksiz bo'lmasligi, `shift_expires` rad etishi,
 jamoa adminining o'ziga amal bajarolmasligi.
+
+**✅ PR #49 MERGED** — `d053f27`
+(https://github.com/xudush92-cmd/AVTOBOT2026/pull/49)
+
+---
+
+## ✅ Audit yakunlandi — barcha bandlar tuzatildi
+
+| PR | Holat | Bandlar |
+|---|---|---|
+| #46 | MERGED `8dcf4fc` | 1–2: worker leak, PeerFlood/akkaunt ban |
+| #48 | MERGED `e92fe12` | 3–5: jamoa taklifi, bloklash manbai, sig'im |
+| #49 | MERGED `d053f27` | 6–9: muddat eslatmasi, chiqishda cheksiz, kamaytirish, o'zini bloklash |
+
+> 📌 Natija: **749 test** (62 subtest), unittest **OK**, Ruff — yangi
+> xato yo'q. Baza migratsiyasi avtomatik (eski DB ma'lumotlari
+> saqlanadi).
