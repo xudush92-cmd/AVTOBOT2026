@@ -1043,3 +1043,86 @@ jamoa adminining o'ziga amal bajarolmasligi.
 > 📌 Natija: **749 test** (62 subtest), unittest **OK**, Ruff — yangi
 > xato yo'q. Baza migratsiyasi avtomatik (eski DB ma'lumotlari
 > saqlanadi).
+
+---
+
+## 🔧 PR #50 — Inline callback xatolari (UID `6169018469`)
+
+Server logida ikkita xato ko'ringan:
+
+```
+1) AttributeError: 'NoneType' object has no attribute 'reply_text'
+2) BadRequest: Message is not modified
+```
+
+### Sabab
+
+**1) `NoneType.reply_text`** — inline kontekstda `update.message` = `None`.
+`bot/timer.py` `gint:manual` branchida `q.message.reply_text(...)` chaqirgan,
+`bot/my_groups.py` `mg:manual` branchida esa `update.message.reply_text(...)`.
+Inline callback'da bu ikkalasi ham `None` → `AttributeError`.
+
+**2) `Message is not modified`** — Telegram yangi matn va klaviatura avvalgisi
+bilan **bir xil** bo'lsa `BadRequest` beradi. Bu normal holat (foydalanuvchi
+bir xil tugmani ikki marta bosadi), lekin kod uni xato deb hisoblab,
+butun laytni sindirardi. `bot/timer.py::_show_group_interval_options()`
+va `bot/my_groups.py::show_group_interval()` shu holatga tushardi.
+
+Qo'shimcha: `bot/timer.py` `gint:back` branchida `render_groups_inline()`
+`edit=False` bilan chaqirilardi — bu yana ham `update.message.reply_text`
+ga olib kelardi.
+
+### Tuzatish
+
+**Yangi yordamchi** — `core/utils.py::edit_text_safe()`:
+
+- `MessageIsNotModified` → jim qoldiriladi, muvaffaqiyat deb hisoblanadi;
+- boshqa xatolar → logga yoziladi, lekin **yeyilmaydi** (oqim buzilmaydi);
+- `query is None` → `False` qaytaradi (xato bermaslik).
+
+`core/utils.py::reply_text_safe()` ham kuchaytirildi — endi `in_place=True`
+rejimida `edit_text_safe()` orqali ishlaydi, ya'ni "not modified" xatosi
+ham yutib o'tiladi.
+
+**Qo'llangan joylar:**
+
+| Fayl | O'zgarish |
+|---|---|
+| `core/utils.py` | `edit_text_safe()` qo'shildi; `reply_text_safe()` kuchaytirildi |
+| `bot/timer.py` | Barcha `q.edit_message_text` → `edit_text_safe`; `q.message.reply_text` → `reply_text_safe`; `gint:back` endi `edit=True` bilan ishlaydi |
+| `bot/my_groups.py` | `render_groups_inline()`, `show_group_interval()`, `mg:manual` — xavfsiz yordamchilar |
+| `bot/groups.py` | `gchk:` handler va skaner natijalari — xavfsiz yordamchilar |
+| `admin/admin_panel.py` | `adm:back` va `adm:teamadmins` — `reply_text_safe` |
+| `bot/callbacks.py` | `ref:share` — `reply_text_safe` |
+
+> 📌 **Telegram API o'zgarmadi** — bir xil `editMessageText` va `sendMessage`
+> chaqiriladi, faqat xatolar endi oqimni sindirmaydi.
+> 📌 **Tugmalar, matnlar va klaviaturalar o'zgarmadi** — faqat xato
+> boshqaruvi o'zgardi.
+
+### Tekshiruv
+
+**Yangi test fayl** — `tests/test_callback_safe_edits.py` (16 ta test +
+3 subtest):
+
+- `edit_text_safe`: muvaffaqiyat, `None` query, "not modified" (3 ta
+  variant), boshqa xato loglanadi, umumiy istisno yutib o'tiladi;
+- `reply_text_safe`: inline kontekstda ishlaydi, `in_place` + "not modified";
+- `gint:list`, `gint:manual`, `gint:reset`, `gint:back`;
+- `mg:manual`, `render_groups_inline`, `show_group_interval`;
+- `gchk:page`.
+
+**Live-simulyatsiya** — `tests/live_sim_gint.py`: haqiqiy
+`telegram.error.BadRequest` klassi bilan 6 ta oqim tekshiriladi.
+
+**Natijalar:**
+
+| Tekshiruv | Natija |
+|---|---|
+| Yangi testlar | **16 passed**, 3 subtest |
+| To'liq pytest | **765 passed**, 65 subtest |
+| To'liq unittest | **765 OK** |
+| Ruff (baseline diff) | **bo'sh** — yangi xato yo'q |
+| `compileall` + import | **OK** |
+| Eski kod bilan simulyatsiya | `AttributeError` va "not modified" xatolari **takrorlandi** ✅ |
+| Yangi kod bilan simulyatsiya | **6/6 oqim xatosiz** ✅ |

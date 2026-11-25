@@ -10,6 +10,10 @@ import re
 from datetime import UTC, datetime, timedelta, timezone
 from urllib.parse import parse_qs, urlsplit
 
+from telegram.error import TelegramError
+
+from core.logger import log
+
 
 # ─────────────────────────────────────────────────────────────────────────
 # VAQT YORDAMCHILARI
@@ -770,8 +774,47 @@ def media_kind_label(post: dict | None) -> str:
 
 
 # ─────────────────────────────────────────────────────────────────────────
-# TELEGRAM XABAR YUBORISH YORDAMCHISI
+# TELEGRAM XABAR YUBORISH YORDAMCHILARI
 # ─────────────────────────────────────────────────────────────────────────
+async def edit_text_safe(
+    query,
+    text: str,
+    reply_markup=None,
+    *,
+    parse_mode: str | None = None,
+) -> bool:
+    """Inline xabarni **xavfsiz** tahrirlaydi.
+
+    Telegram ``BadRequest: Message is not modified`` xatosini beradi,
+    agar yangi matn va klaviatura avvalgisi bilan **bir xil** bo'lsa.
+    Bu normal holat (foydalanuvchi bir xil tugmani ikki marta bosadi) —
+    lekin kod uni xato deb hisoblab, butun laytni sindirardi.
+
+    Shu sabab:
+    - ``MessageIsNotModified`` — jim qoldiriladi (muvaffaqiyat deb hisoblanadi);
+    - qolgan xatolar — logga yoziladi, lekin **yeyilmaydi** (oqim buzilmaydi).
+
+    Returns: xabar tahrirlandi yoki matn o'zgarmadi — ``True``,
+    boshqa xato — ``False``.
+    """
+    if query is None:
+        return False
+    try:
+        await query.edit_message_text(
+            text, reply_markup=reply_markup, parse_mode=parse_mode
+        )
+        return True
+    except TelegramError as exc:
+        if "MESSAGE_IS_NOT_MODIFIED" in str(exc).upper().replace(" ", "_"):
+            # Matn o'zgarmagan — bu xato emas, normal holat.
+            return True
+        log(f"edit_text_safe xato: {type(exc).__name__}: {exc}", "warning")
+        return False
+    except Exception as exc:  # noqa: BLE001 — xato oqimni sindirmasin
+        log(f"edit_text_safe xato: {type(exc).__name__}: {exc}", "warning")
+        return False
+
+
 async def reply_text_safe(
     update,
     text: str,
@@ -806,8 +849,8 @@ async def reply_text_safe(
         return None if want_message else False
     try:
         if in_place and query is not None:
-            await query.edit_message_text(
-                text, reply_markup=reply_markup, parse_mode=parse_mode
+            await edit_text_safe(
+                query, text, reply_markup=reply_markup, parse_mode=parse_mode
             )
             return message if want_message else True
         sent = await message.reply_text(

@@ -18,7 +18,12 @@ from bot import keyboards as KB
 from bot import texts as T
 from core import database as db
 from core.logger import log
-from core.utils import group_label, is_valid_interval, reply_text_safe
+from core.utils import (
+    edit_text_safe,
+    group_label,
+    is_valid_interval,
+    reply_text_safe,
+)
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -135,7 +140,7 @@ async def _show_group_interval_options(
     q = update.callback_query
     group = await db.get_chat_record(uid, group_id)
     if not group:
-        await q.edit_message_text("❌ Guruh topilmadi yoki o'chirilgan.")
+        await edit_text_safe(q, "❌ Guruh topilmadi yoki o'chirilgan.")
         return
 
     global_interval = await db.get_interval(uid)
@@ -153,7 +158,8 @@ async def _show_group_interval_options(
     )
     if note:
         text = f"{note}\n\n{text}"
-    await q.edit_message_text(
+    await edit_text_safe(
+        q,
         text,
         reply_markup=KB.kb_group_interval_options(group_id, custom_interval),
     )
@@ -177,8 +183,10 @@ async def handle_group_interval_callback(update: Update, uid: int, data: str) ->
     if action == "back":
         from bot import my_groups as MG
 
-        await q.edit_message_text("⏱ Guruh intervali sozlamalari yopildi.")
-        await MG.render_groups_inline(update, uid)
+        # ``edit=True`` — inline kontekstda xabarni tahrirlaydi.
+        # Aks holda ``update.message.reply_text`` chaqiriladi va
+        # inline callback'da ``NoneType.reply_text`` xatosi chiqadi.
+        await MG.render_groups_inline(update, uid, edit=True)
         return
 
     if action == "list":
@@ -188,9 +196,10 @@ async def handle_group_interval_callback(update: Update, uid: int, data: str) ->
             page = 0
         groups = await db.get_chat_records(uid)
         if not groups:
-            await q.edit_message_text(T.GROUP_INTERVALS_EMPTY)
+            await edit_text_safe(q, T.GROUP_INTERVALS_EMPTY)
             return
-        await q.edit_message_text(
+        await edit_text_safe(
+            q,
             T.GROUP_INTERVAL_PICK,
             reply_markup=KB.kb_group_interval_picker(
                 groups, await db.get_interval(uid), page
@@ -203,12 +212,12 @@ async def handle_group_interval_callback(update: Update, uid: int, data: str) ->
     try:
         group_id = int(parts[2])
     except ValueError:
-        await q.edit_message_text("❌ Guruh ID noto'g'ri.")
+        await edit_text_safe(q, "❌ Guruh ID noto'g'ri.")
         return
 
     group = await db.get_chat_record(uid, group_id)
     if not group:
-        await q.edit_message_text("❌ Guruh topilmadi yoki o'chirilgan.")
+        await edit_text_safe(q, "❌ Guruh topilmadi yoki o'chirilgan.")
         return
 
     if action == "manual":
@@ -217,18 +226,23 @@ async def handle_group_interval_callback(update: Update, uid: int, data: str) ->
             "ts": time.time(),
             "group_id": group_id,
         }
-        await q.edit_message_text(
-            f"✏️ {group_label(group)} uchun intervalni daqiqada yuboring."
+        await edit_text_safe(
+            q,
+            f"✏️ {group_label(group)} uchun intervalni daqiqada yuboring.",
         )
-        await q.message.reply_text(
-            f"{T.MIN_INTERVAL_MIN}–{T.MAX_INTERVAL_MIN} daqiqada butun son kiriting:",
+        # ⚠️ ``reply_text_safe`` — inline kontekstda ham ishlaydi
+        # (``q.message`` inline callback'da None bo'ladi).
+        await reply_text_safe(
+            update,
+            f"{T.MIN_INTERVAL_MIN}–{T.MAX_INTERVAL_MIN} daqiqada "
+            "butun son kiriting:",
             reply_markup=KB.kb_input_cancel(),
         )
         return
 
     if action == "reset":
         if not await db.set_chat_interval(uid, group_id, None):
-            await q.edit_message_text("❌ Guruh sozlamasi saqlanmadi.")
+            await edit_text_safe(q, "❌ Guruh sozlamasi saqlanmadi.")
             return
         log(f"⏱ Guruh intervali umumiyga qaytdi: {uid} → {group_id}")
         await _show_group_interval_options(
@@ -242,13 +256,13 @@ async def handle_group_interval_callback(update: Update, uid: int, data: str) ->
         try:
             minutes = int(parts[3])
         except ValueError:
-            await q.edit_message_text(T.INTERVAL_INVALID_NUMBER)
+            await edit_text_safe(q, T.INTERVAL_INVALID_NUMBER)
             return
         if not is_valid_interval(minutes):
-            await q.edit_message_text(T.interval_invalid_min())
+            await edit_text_safe(q, T.interval_invalid_min())
             return
         if not await db.set_chat_interval(uid, group_id, minutes):
-            await q.edit_message_text("❌ Guruh sozlamasi saqlanmadi.")
+            await edit_text_safe(q, "❌ Guruh sozlamasi saqlanmadi.")
             return
         log(f"⏱ Guruh intervali: {uid} → {group_id} = {minutes} daqiqa")
         await _show_group_interval_options(

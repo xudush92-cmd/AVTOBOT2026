@@ -32,7 +32,7 @@ from core import database as db
 from core.logger import log
 from core.session_manager import revoke_telegram_session
 from core.update_locks import user_operation_lock, user_update_lock
-from core.utils import safe_unlink
+from core.utils import reply_text_safe, safe_unlink
 
 application = None
 
@@ -229,7 +229,9 @@ async def _handle_callback_locked(update: Update, uid: int) -> None:
                 elif data.startswith("ref:share"):
                     from bot.referral import share_referral_message
 
-                    await q.message.reply_text(await share_referral_message(uid))
+                    # ⚠️ ``reply_text_safe`` — inline kontekstda ham ishlaydi
+                    # (``q.message`` inline callback'da None bo'lishi mumkin).
+                    await reply_text_safe(update, await share_referral_message(uid))
                     await q.answer()
                 elif data.startswith("gchk:"):
                     from bot import groups as G
