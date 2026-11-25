@@ -860,6 +860,8 @@ taklif qilgan raqam — kodsiz jamoa adminiga aylanardi.
   - ✅ SMS kod (numpad) → `attempt_signin(..., update=update)`
   - ✅ 2FA parol → `handle_password()` → `finalize_login(uid, update=update)`
   - ✅ QR login → `finalize_login(uid, update=None)` (ism bazadan olinadi)
+  - ✅ Kodsiz tasdiqlash (`SentCodeSuccess`) → `request_code(...,
+    update=update)` → `finalize_login(uid, update=update)`
 - `finalize_login()` va `_finalize_login_locked()` endi ixtiyoriy
   `update` parametrini oladi.
 
@@ -884,15 +886,27 @@ orqali «ochilib» ketardi — bloklash cheklovi ma'nosiz bo'lardi.
 ### 🔴 V5. Jamoa sig'imi **noto'g'ri** hisoblanardi
 
 **Sabab:** `approve_team_member()` — sig'imni `len(members)` bilan
-tekshirardi, bu yerda **jamoa admini ham** hisobga olinardi.
+tekshirardi, bu yerda **jamoa admini ham** hisobga olinardi. Yana
+`team_has_free_slot()` (taklif berish, ariza yuborish, referal,
+super admin biriktirish) — **boshqa** o'lchovni ishlatardi.
 
 **Ta'siri:** Sig'im 2 bo'lgan jamoada: admin (1) + 1 arizachi = 2 →
 `2 >= 2` → «sig'im to'lgan» deb rad etilardi. Ya'ni jamoaga **bitta
-odam** ham sig'imar qabul qilinmas edi.
+odam** ham sig'imar qabul qilinmas edi. Bundan tashqari, **taklif
+berish** bosqichi rad etsa, **tasdiqlash** bosqichi esa o'tib ketardi —
+ikki bosqich turli o'lchov bilan ishlagan.
 
-**Tuzatish:** Sigim — jamoaning **a'zolari** soni. Jamoa admini (jamoa
+**Tuzatish:** Sig'im — jamoaning **a'zolari** soni. Jamoa admini (jamoa
 egasi) hisobga **olmaydi**. Arizachi allaqachon jamoaga biriktirilgan
 bo'lgani uchun u hisobga olinadi.
+
+- `count_team_members()` — standart `include_admin=False`
+  (jamoa admini hisobdan chiqariladi).
+- `team_has_free_slot()` — `include_admin=False` bilan hisoblaydi.
+- `approve_team_member()` — `count_team_members(..., include_admin=False)`.
+
+Natijada **barcha** bosqichlar **bir xil** o'lchovni ishlatadi:
+taklif berish → ariza → tasdiqlash.
 
 ### 📌 Baza sxemasi
 

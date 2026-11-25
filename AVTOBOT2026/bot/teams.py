@@ -1234,17 +1234,15 @@ async def approve_team_member(
     team = await db.get_team(team_id) if team_id else None
     if team:
         limit = int(team.get("max_users") or 0)
-        # ⚠️ Sig'im — jamoaning **a'zolari** soni. Jamoa admini (jamoa
-        # egasi) hisobga **olmaydi** — u jamoani yaratgan, uni sig'iminga
+        # ⚠️ Sig'im — jamoaning **a'zolar** soni. Jamoa admini (jamoa
+        # egasi) hisobga **olmaydi** — u jamoani yaratgan, uni sig'imiga
         # qo'shish «hech kimni olmay qoldi» holatiga olib kelardi
         # (sig'im 2, admin + 1 arizachi = «to'lgan» deb rad etish).
         #
         # Arizachi allaqachon ``team_id`` ga biriktirilgan, shuning uchun
-        # u hisobga olinadi — sig'im faqat **yangi** a'zolar uchun.
-        members = await db.get_team_members(team_id)
-        member_count = sum(
-            1 for m in members if not m.get("is_team_admin")
-        )
+        # u sigimga **kiradi** — sig'im faqat **yangi** a'zolar uchun.
+        # Ya'ni: jamoada N ta a'zo bo'lsa, sig'im = N.
+        member_count = await db.count_team_members(team_id, include_admin=False)
         if limit and member_count >= limit:
             await q.answer(
                 f"🚫 Jamoa sig'imi to'lgan ({limit} ta)", show_alert=True

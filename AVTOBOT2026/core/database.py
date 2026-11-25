@@ -2351,15 +2351,16 @@ async def delete_team(team_id: int) -> bool:
     return cur.rowcount > 0
 
 
-async def count_team_members(team_id: int, *, include_admin: bool = True) -> int:
+async def count_team_members(team_id: int, *, include_admin: bool = False) -> int:
     """Jamoadagi foydalanuvchilar soni.
 
-    ``include_admin=True`` (standart) — jamoa admini ham hisobga olinadi.
-    Bu sig'im (capacity) hisobi uchun kerak: admin ham jamoaning bir a'zosi.
+    ``include_admin=False`` (standart) — jamoa admini **hisobga olinmaydi**.
+    Sig'im (capacity) hisobi shu tarzda ishlaydi: jamoa admini jamoaning
+    **egasi**, u a'zo emas. Aks holda sig'im 2 bo'lgan jamoada
+    «admin (1) + 1 a'zo = to'lgan» deb rad etilib qolardi.
 
-    ``include_admin=False`` — jamoa admini hisobdan chiqariladi. Bu
-    panelda ko'rsatiladigan a'zolar soni uchun kerak (admin o'z
-    ro'yxatida ko'rinmasligi kerak).
+    ``include_admin=True`` — jamoa admini ham qo'shiladi (jamoadagi
+    **barcha** yozuvlar soni kerak bo'lganda, masalan jamoa ro'yxati).
     """
     if include_admin:
         return await _scalar(
@@ -2373,14 +2374,21 @@ async def count_team_members(team_id: int, *, include_admin: bool = True) -> int
 
 
 async def team_has_free_slot(team_id: int) -> bool:
-    """Jamoada bo'sh joy bormi. ``max_users = 0`` → cheksiz."""
+    """Jamoada bo'sh joy bormi. ``max_users = 0`` → cheksiz.
+
+    ⚠️ Sig'im — jamoaning **a'zolar** soni (jamoa admini hisobga
+    olinmaydi). Bu **bitta** o'lchov bo'lib, jamoaga a'zo qo'shishning
+    **barcha** bosqichlarida (``set_team_pending``, ``assign_team_member``,
+    taklif berish, tasdiqlash) bir xil ishlaydi — aks holda bir bosqich
+    rad etib, keyingisi qabul qilishi mumkin edi.
+    """
     team = await get_team(team_id)
     if not team:
         return False
     limit = int(team.get("max_users") or 0)
     if limit <= 0:
         return True
-    return await count_team_members(team_id) < limit
+    return await count_team_members(team_id, include_admin=False) < limit
 
 
 async def get_team_members(team_id: int) -> list[dict]:

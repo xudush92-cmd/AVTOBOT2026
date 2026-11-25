@@ -237,22 +237,34 @@ class ClosedTeamsTests(unittest.IsolatedAsyncioTestCase):
     # ── Sig'im nazorati ───────────────────────────────────────────────
 
     async def test_team_capacity_never_exceeded(self) -> None:
-        """Jamoa sig'imi hech qachon oshmasligi kerak."""
+        """Jamoa sig'imi hech qachon oshmasligi kerak.
+
+        Sig'im — jamoaning **a'zolar** soni. Jamoa admini (jamoa egasi)
+        hisobga olinmaydi.
+        """
         team = await db.create_team("Jamoa A", ADMIN_A, max_users=2)
         team_id = int(team["id"])
-        # Jamoa admini ham jamoaning a'zosi (sig'imga hisoblanadi).
+        # Jamoa admini jamoaning egasi — sig'imga hisoblanmaydi.
         await db.set_team_pending(ADMIN_A, team_id, ADMIN_A)
 
         ok1 = await db.set_team_pending(USER_1, team_id, ADMIN_A)
         self.assertTrue(ok1)
+        self.assertTrue(
+            await db.team_has_free_slot(team_id),
+            "1 a'zo < limit 2 — yana joy bo'lishi kerak",
+        )
+
+        # Ikkinchi a'zo — sig'im to'ladi.
+        ok2 = await db.set_team_pending(777000888, team_id, ADMIN_A)
+        self.assertTrue(ok2)
         self.assertFalse(
             await db.team_has_free_slot(team_id),
             "sig'im to'lgan jamoaga yangi a'zo qo'shilmasligi kerak",
         )
 
-        # Ikkinchi a'zo — rad etiladi.
-        other = 777000888
-        await db.upsert_user(other, name="Ikkinchi")
+        # Uchinchi a'zo — rad etiladi.
+        other = 777000999
+        await db.upsert_user(other, name="Uchinchi")
         self.assertFalse(await db.set_team_pending(other, team_id, ADMIN_A))
 
 

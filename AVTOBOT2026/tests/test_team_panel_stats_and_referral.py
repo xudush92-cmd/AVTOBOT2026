@@ -180,24 +180,34 @@ class TeamPanelStatsReferralTests(unittest.IsolatedAsyncioTestCase):
         await db.set_team_pending(MEMBER_UID, 1, ADMIN_UID, name="A'zo")
 
         team = await Tm.primary_team(ADMIN_UID)
-        with_admin = await db.count_team_members(int(team["id"]))
-        without_admin = await db.count_team_members(
-            int(team["id"]), include_admin=False
+        with_admin = await db.count_team_members(
+            int(team["id"]), include_admin=True
         )
+        without_admin = await db.count_team_members(int(team["id"]))
 
-        self.assertEqual(with_admin, 2, "sig'im hisobida admin hisobda bo'lishi kerak")
+        self.assertEqual(with_admin, 2, "barcha yozuvlar soni 2 bo'lishi kerak")
         self.assertEqual(
             without_admin, 1, "ko'rsatiladigan ro'yxatda admin bo'lmasligi kerak"
         )
 
-    async def test_team_capacity_still_counts_admin(self) -> None:
-        """Sig'im (capacity) hisobiga admin kirishi davom etishi kerak."""
+    async def test_team_capacity_excludes_admin(self) -> None:
+        """Sig'im (capacity) hisobiga admin **kirmaydi**.
+
+        Jamoa admini — jamoaning egasi, u a'zo emas. Aks holda sig'im 2
+        bo'lgan jamoada «admin (1) + 1 a'zo = to'lgan» deb rad etilib
+        qolardi, ya'ni jamoaga bitta odam ham o'tmasdi.
+        """
         await self._make_admin_with_team()
 
         team = await Tm.primary_team(ADMIN_UID)
         self.assertTrue(
             await db.team_has_free_slot(int(team["id"])),
-            "jamoa sig'imi adminni hisobga olgan holda bo'sh bo'lishi kerak",
+            "jamoa sig'imi adminni hisobga olmasligi kerak",
+        )
+        self.assertEqual(
+            await db.count_team_members(int(team["id"])),
+            0,
+            "faqat admin bor jamoada a'zolar soni 0 bo'lishi kerak",
         )
 
     async def test_team_admin_panel_count_matches_member_list(self) -> None:

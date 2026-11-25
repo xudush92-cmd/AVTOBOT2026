@@ -27,7 +27,7 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from typing import ClassVar
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 APP_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(APP_DIR))
@@ -260,7 +260,11 @@ class RegistrationPhoneStepTests(unittest.IsolatedAsyncioTestCase):
         ):
             await login.handle_phone(update, "+998901234567")
 
-        request_code.assert_awaited_once_with(uid, "+998901234567")
+        # ``update`` o'tkaziladi — kodsiz tasdiqlash holatida jamoa
+        # taklifini qo'llash uchun kerak.
+        request_code.assert_awaited_once_with(
+            uid, "+998901234567", update=ANY
+        )
         awaiting.assert_not_awaited()
         notify.assert_not_called()
         self.assertEqual(
@@ -283,7 +287,11 @@ class RegistrationPhoneStepTests(unittest.IsolatedAsyncioTestCase):
         ):
             await login.handle_phone(update, "+998901234567")
 
-        request_code.assert_awaited_once_with(uid, "+998901234567")
+        # ``update`` o'tkaziladi — kodsiz tasdiqlash holatida jamoa
+        # taklifini qo'llash uchun kerak.
+        request_code.assert_awaited_once_with(
+            uid, "+998901234567", update=ANY
+        )
         self.assertEqual(
             update.message.reply_text.await_args.args[0],
             T.PHONE_ACCEPTED.format(phone="+998901234567"),

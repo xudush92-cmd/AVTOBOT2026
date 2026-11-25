@@ -359,8 +359,13 @@ async def request_code(
     phone: str,
     for_uid: int | None = None,
     target_name: str = "",
+    update: Update | None = None,
 ) -> None:
-    """Telegramga kod so'rovini yuboradi va yetkazish turini ko'rsatadi."""
+    """Telegramga kod so'rovini yuboradi va yetkazish turini ko'rsatadi.
+
+    ``update`` — kodsiz tasdiqlash holatida jamoa taklifini qo'llash uchun
+    kerak (foydalanuvchi ma'lumotlari).
+    """
     # Limit Telegram `send_code_request()`dan va TelegramClient yaratilishidan
     # OLDIN tekshiriladi: limit tugagan bo'lsa API_ID orqali kod umuman
     # so'ralmaydi.
@@ -409,7 +414,11 @@ async def request_code(
                 f"✅ Kod talab qilinmadi: uid={uid} "
                 f"phone={mask_phone(phone)} type={type_name}"
             )
-            await finalize_login(uid)
+            # ⚠️ Bu — haqiqiy tasdiqlash (Telegram sessiyani allaqach
+            # tasdiqlagan). Shuning uchun jamoa taklifi shu yerda
+            # qo'llanishi **xavfsiz** — foydalanuvchi o'z akkauntini
+            # Telegram orqali tasdiqlagan.
+            await finalize_login(uid, update=update)
             return
 
         if not phone_code_hash:
@@ -659,7 +668,7 @@ async def begin_login(update: Update) -> None:
         return
 
     await update.message.reply_text(T.PHONE_ACCEPTED.format(phone=phone))
-    await request_code(uid, phone)
+    await request_code(uid, phone, update=update)
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -893,7 +902,7 @@ async def _handle_phone_locked(update: Update, text: str) -> None:
         await update.message.reply_text(T.REGISTRATION_CODE_REQUEST.format(phone=phone))
         log(f"⏳ Ro'yxatdan o'tish boshlandi: uid={uid} phone={mask_phone(phone)}")
 
-    await request_code(uid, phone)
+    await request_code(uid, phone, update=update)
 
 
 # ─────────────────────────────────────────────────────────────────────────

@@ -169,29 +169,65 @@ class BlockedByTests(_Base):
 
 
 class TeamCapacityTests(_Base):
-    """Sig'im — jamoa admini hisobga olinmaydi."""
+    """Sig'im — jamoa admini hisobga olinmaydi.
+
+    Sig'im o'lchovi **barcha** bosqichlarda **bir xil** bo'lishi kerak:
+    taklif berish, ariza yuborish va tasdiqlash. Aks holda bir bosqich
+    rad etib, keyingisi qabul qilishi mumkin edi.
+    """
 
     async def test_admin_not_counted_in_capacity(self) -> None:
         """Jamoa admini sig'imga qo'shilmaydi."""
-        source = inspect.getsource(Tm)
-        self.assertIn("is_team_admin", source)
-        # Tasdiqlashda aniq filtr bor.
-        idx = source.find("member_count = sum(")
-        self.assertGreater(idx, 0, "member_count hisobi yo'q")
-        window = source[idx : idx + 200]
-        self.assertIn("is_team_admin", window)
-
-    async def test_member_count_excludes_admin(self) -> None:
-        """Jamoa admini bilan a'zolarni sanaganda admin chiqariladi."""
         team = await db.create_team_for_admin(
             ADMIN, "Jamoa", max_users=2, admin_expires_at=None
         )
         self.assertIsNotNone(team)
-        await db.upsert_user(MEMBER, name="A'zo", team_id=int(team["id"]))
+        team_id = int(team["id"])
 
-        members = await db.get_team_members(int(team["id"]))
-        member_count = sum(1 for m in members if not m.get("is_team_admin"))
-        self.assertEqual(member_count, 1, "admin sig'imga qo'shildi")
+        # Faqat admin bor — sig'im bo'sh.
+        self.assertEqual(
+            await db.count_team_members(team_id),
+            0,
+            "faqat admin bor jamoada a'zolar soni 0 bo'lishi kerak",
+        )
+        self.assertTrue(await db.team_has_free_slot(team_id))
+
+        # Bitta a'zo — hali bo'sh (1 < 2).
+        await db.upsert_user(MEMBER, name="A'zo", team_id=team_id)
+        self.assertEqual(await db.count_team_members(team_id), 1)
+        self.assertTrue(await db.team_has_free_slot(team_id))
+
+        # Ikkinchi a'zo — jamoa to'ldi (2 == limit 2).
+        await db.upsert_user(OUTSIDER, name="Ikkinchi", team_id=team_id)
+        self.assertEqual(await db.count_team_members(team_id), 2)
+        self.assertFalse(await db.team_has_free_slot(team_id))
+
+    async def test_capacity_same_in_every_stage(self) -> None:
+        """Taklif va tasdiqlash **bir xil** o'lchovni ishlatadi.
+
+        Ilgari: taklifda admin hisobga olinardi, tasdiqlashda — yo'q.
+        Natijada sig'im 2 bo'lgan jamoada taklif rad etilib, hech kim
+        qabul qilinmas edi.
+        """
+        team = await db.create_team_for_admin(
+            ADMIN, "Jamoa", max_users=2, admin_expires_at=None
+        )
+        team_id = int(team["id"])
+
+        # Taklif berish bosqichi — jamoa bo'sh, taklif qabul qilinadi.
+        self.assertTrue(
+            await db.set_team_pending(MEMBER, team_id, ADMIN, name="A'zo"),
+            "taklif berish kerak edi",
+        )
+
+        # Arizachi allaqachon jamoada — a'zolar soni 1.
+        self.assertEqual(await db.count_team_members(team_id), 1)
+        self.assertTrue(await db.team_has_free_slot(team_id))
+
+        # Ikkinchi arizachi keladi — a'zolar soni 2 = limit.
+        await db.set_team_pending(OUTSIDER, team_id, ADMIN, name="Ikkinchi")
+        self.assertEqual(await db.count_team_members(team_id), 2)
+        self.assertFalse(await db.team_has_free_slot(team_id))
 
 
 if __name__ == "__main__":
