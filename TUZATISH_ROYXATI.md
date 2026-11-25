@@ -924,3 +924,14 @@ telefon bosqichida qo'llanmasligi, `blocked_by` saqlanishi, jamoa
 adminining super admin blokini chiqara olmasligi, sig'imda admin
 hisobga olinmasligi.
 
+**✅ PR #48 MERGED** — `e92fe12`
+(https://github.com/xudush92-cmd/AVTOBOT2026/pull/48)
+
+> 📌 Ko'rib chiqishda sig'im o'lchovida ziddiyat topildi va tuzatildi:
+> `team_has_free_slot()` (taklif/a'riza/referal/super admin) va
+> `approve_team_member()` (tasdiqlash) — boshqa-boshqa o'lchov ishlatgan.
+> Endi **barcha** bosqichlar bir xil: jamoanin **a'zolari** soni
+> (jamoa egasi hisobga olinmaydi).
+> 📌 Qo'shimcha: `request_code()` ga `update` qo'shildi — kodsiz
+> tasdiqlash (`SentCodeSuccess`) oqimida ham taklif to'g'ri qo'llanadi.
+
