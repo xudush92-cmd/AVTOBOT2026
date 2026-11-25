@@ -1034,7 +1034,9 @@ async def _handle_team_admin_callback_inner(
         if not member or int(member.get("owner_admin_uid") or 0) != uid:
             await q.answer("Bu foydalanuvchi sizning jamoangizda emas", show_alert=True)
             return
-        await db.set_user_limits(target, is_blocked=1)
+        # Bloklaganini saqlaymiz — keyin faqat o'z bloklaganini
+        # blokdan chiqara olamiz (super admin bloklaganini emas).
+        await db.set_user_limits(target, is_blocked=1, blocked_by=uid)
         # E'lon yuborish darhol to'xtatiladi.
         await _stop_member_worker(target)
         await q.answer("🚫 Foydalanuvchi bloklandi", show_alert=True)
@@ -1050,7 +1052,21 @@ async def _handle_team_admin_callback_inner(
         if not member or int(member.get("owner_admin_uid") or 0) != uid:
             await q.answer("Bu foydalanuvchi sizning jamoangizda emas", show_alert=True)
             return
-        await db.set_user_limits(target, is_blocked=0)
+        # ⚠️ Faqat **o'zing bloklagan** foydalanuvchini blokdan chiqara
+        # olamiz. Super admin (yoki tizim) bloklaganini — jamoa admini
+        # bekor qila olmaydi.
+        #
+        # ``blocked_by = 0`` — tizim/super admin bloklagan (eski yozuvlar
+        # ham shunday). ``blocked_by == uid`` — o'zing bloklagan.
+        blocked_by = int(member.get("blocked_by") or 0)
+        if blocked_by != uid:
+            await q.answer(
+                "🚫 Bu foydalanuvchi super admin tomonidan bloklangan — "
+                "uning blokini siz bekor qila olmaysiz.",
+                show_alert=True,
+            )
+            return
+        await db.set_user_limits(target, is_blocked=0, blocked_by=0)
         await q.answer("✅ Blokdan chiqarildi", show_alert=True)
         await _send(target, "✅ Blokdan chiqarildingiz. Botdan foydalanishingiz mumkin.")
         return
@@ -1218,11 +1234,16 @@ async def approve_team_member(
     team = await db.get_team(team_id) if team_id else None
     if team:
         limit = int(team.get("max_users") or 0)
-        members = await db.get_team_members(team_id)
-        # Sig'imni `team_has_free_slot` bilan bir xil hisoblaymiz:
-        # hozirgi a'zolar soni limitdan KICH bo'lishi kerak, aks holda
-        # jamoa limitdan oshadi.
-        if limit and len(members) >= limit:
+        # ⚠️ Sig'im — jamoaning **a'zolar** soni. Jamoa admini (jamoa
+        # egasi) hisobga **olmaydi** — u jamoani yaratgan, uni sig'imiga
+        # qo'shish «hech kimni olmay qoldi» holatiga olib kelardi
+        # (sig'im 2, admin + 1 arizachi = «to'lgan» deb rad etish).
+        #
+        # Arizachi allaqachon ``team_id`` ga biriktirilgan, shuning uchun
+        # u sigimga **kiradi** — sig'im faqat **yangi** a'zolar uchun.
+        # Ya'ni: jamoada N ta a'zo bo'lsa, sig'im = N.
+        member_count = await db.count_team_members(team_id, include_admin=False)
+        if limit and member_count >= limit:
             await q.answer(
                 f"🚫 Jamoa sig'imi to'lgan ({limit} ta)", show_alert=True
             )

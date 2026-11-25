@@ -402,7 +402,7 @@ async def handle_numpad(update: Update, uid: int, data: str) -> None:
             return
         # Kod hech qachon Telegram xabari matniga chiqarilmaydi.
         await q.edit_message_text("⏳ Kod xavfsiz tekshirilmoqda...")
-        await attempt_signin(uid, buffer)
+        await attempt_signin(uid, buffer, update=update)
         return
     else:
         if not action.isdigit():

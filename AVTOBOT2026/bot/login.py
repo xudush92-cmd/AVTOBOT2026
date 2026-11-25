@@ -359,8 +359,13 @@ async def request_code(
     phone: str,
     for_uid: int | None = None,
     target_name: str = "",
+    update: Update | None = None,
 ) -> None:
-    """Telegramga kod so'rovini yuboradi va yetkazish turini ko'rsatadi."""
+    """Telegramga kod so'rovini yuboradi va yetkazish turini ko'rsatadi.
+
+    ``update`` — kodsiz tasdiqlash holatida jamoa taklifini qo'llash uchun
+    kerak (foydalanuvchi ma'lumotlari).
+    """
     # Limit Telegram `send_code_request()`dan va TelegramClient yaratilishidan
     # OLDIN tekshiriladi: limit tugagan bo'lsa API_ID orqali kod umuman
     # so'ralmaydi.
@@ -409,7 +414,11 @@ async def request_code(
                 f"✅ Kod talab qilinmadi: uid={uid} "
                 f"phone={mask_phone(phone)} type={type_name}"
             )
-            await finalize_login(uid)
+            # ⚠️ Bu — haqiqiy tasdiqlash (Telegram sessiyani allaqach
+            # tasdiqlagan). Shuning uchun jamoa taklifi shu yerda
+            # qo'llanishi **xavfsiz** — foydalanuvchi o'z akkauntini
+            # Telegram orqali tasdiqlagan.
+            await finalize_login(uid, update=update)
             return
 
         if not phone_code_hash:
@@ -570,7 +579,7 @@ async def _wait_for_qr_login(uid: int, ctx: LoginCtx, qr_login) -> None:
 
             await _delete_qr_message(uid, ctx)
             log(f"✅ QR tasdiqlandi: uid={uid}")
-            await finalize_login(uid)
+            await finalize_login(uid, update=None)
 
     except SessionPasswordNeededError:
         async with user_update_lock(uid):
@@ -659,7 +668,7 @@ async def begin_login(update: Update) -> None:
         return
 
     await update.message.reply_text(T.PHONE_ACCEPTED.format(phone=phone))
-    await request_code(uid, phone)
+    await request_code(uid, phone, update=update)
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -696,7 +705,9 @@ async def handle_phone(update: Update, text: str) -> None:
         await _handle_phone_locked(update, text)
 
 
-async def _auto_bind_team_invite(update: Update, uid: int, phone: str) -> bool:
+async def _auto_bind_team_invite(
+    update: Update | None, uid: int, phone: str
+) -> bool:
     """Admin qo'shgan do'stni avtomatik jamoaga biriktiradi.
 
     Ro'yxatdan o'tayotgan foydalanuvchining telefon raqami admin tomonidan
@@ -732,12 +743,24 @@ async def _auto_bind_team_invite(update: Update, uid: int, phone: str) -> bool:
     if not await db.team_has_free_slot(team_id):
         return False
 
+    # Foydalanuvchi ismi — ``update`` bo'lsa undan, bo'lmasa bazadan.
+    # (QR oqimida ``update`` yo'q, lekin ism bazada saqlangan.)
+    name = ""
+    username = ""
+    if update is not None:
+        name = update.effective_user.full_name or ""
+        username = update.effective_user.username or ""
+    else:
+        info = await db.get_user_info(uid)
+        name = info.get("name") or ""
+        username = info.get("username") or ""
+
     saved = await db.set_team_pending(
         uid,
         team_id,
         owner_uid,
-        name=update.effective_user.full_name or "",
-        username=update.effective_user.username or "",
+        name=name,
+        username=username,
     )
     if not saved:
         return False
@@ -800,6 +823,31 @@ async def _auto_make_team_admin(uid: int, phone: str) -> bool:
     return True
 
 
+async def _apply_team_invite_after_login(
+    update: Update | None, uid: int, phone: str
+) -> bool:
+    """Telegram login **muvaffaqiyatli** bo'lgach taklifni qo'llaydi.
+
+    Taklif ikki xil bo'lishi mumkin:
+    - ``member`` — jamoaga a'zo bo'lish (jamoa admini tasdiqlaydi);
+    - ``admin`` — jamoa admini bo'lish (super admin taklif qilgan).
+
+    Muhim: bu funksiya **faqat** Telegram kodi muvaffaqiyatli kiritilgandan
+    keyin chaqiriladi — ya'ni telefon raqamining haqiqiy egasi ekani
+    tasdiqlangan. Aks holda begona odam o'z raqamini yozib, kodsiz
+    tasdiqlangan jamoa admini bo'lib qolishi mumkin.
+
+    Returns: taklif qo'llangan bo'lsa ``True``.
+    """
+    if not phone:
+        return False
+    try:
+        return await _auto_bind_team_invite(update, uid, phone)
+    except Exception as exc:  # noqa: BLE001 — taklif ixtiyoriy
+        log(f"👥 Taklif qo'llanmadi {uid}: {type(exc).__name__}", "warning")
+        return False
+
+
 async def _handle_phone_locked(update: Update, text: str) -> None:
     """Foydalanuvchi telefon raqamini UID operation lock ichida saqlaydi."""
     uid = update.effective_user.id
@@ -834,11 +882,15 @@ async def _handle_phone_locked(update: Update, text: str) -> None:
 
     user_states.pop(uid, None)
 
-    # Admin tomonidan oldindan qo'shilgan do'st — avtomatik jamoaga
-    # biriktiriladi. Referal kabi: jamoa admini tasdiqlaydi.
-    # (Baza yoki taklif jadvali xatosi ro'yxatdan o'tishni to'xtatmasin.)
-    with contextlib.suppress(Exception):
-        await _auto_bind_team_invite(update, uid, phone)
+    # ⚠️ Taklif (jamoaga biriktirish / jamoa admini) HIER va qo'llanMAYdi.
+    # Sabab: telefon raqamini yozgan odam — raqamning haqiqiy egasi
+    # bo'lishi **kafolati emas**. Agar taklif shu zahoti qo'yilsa, begona
+    # odam o'z raqamini yozib, kodsiz tasdiqlangan jamoa admini bo'lib
+    # qolishi mumkin.
+    #
+    # Taklif faqat **Telegram login muvaffaqiyatli bo'lgandan keyin**
+    # qo'llanadi — ya'ni raqam egasi Telegram kodini haqiqatan olgan
+    # bo'lganda (qarang: ``_finalize_login_locked``).
 
     # Telefon validatsiyadan o'tgach kod DARHOL so'raladi — admin tasdig'i
     # faqat Telegram logini tugagach kerak bo'ladi. Har bir kod so'rovi
@@ -850,13 +902,15 @@ async def _handle_phone_locked(update: Update, text: str) -> None:
         await update.message.reply_text(T.REGISTRATION_CODE_REQUEST.format(phone=phone))
         log(f"⏳ Ro'yxatdan o'tish boshlandi: uid={uid} phone={mask_phone(phone)}")
 
-    await request_code(uid, phone)
+    await request_code(uid, phone, update=update)
 
 
 # ─────────────────────────────────────────────────────────────────────────
 # TELEGRAM TASDIQ KODINI TEKSHIRISH
 # ─────────────────────────────────────────────────────────────────────────
-async def attempt_signin(uid: int, code: str) -> None:
+async def attempt_signin(
+    uid: int, code: str, update: Update | None = None
+) -> None:
     """Tasdiq kodini Telegramga yuborib tekshiradi."""
     ctx = login_ctx.get(uid)
     if not ctx:
@@ -883,7 +937,7 @@ async def attempt_signin(uid: int, code: str) -> None:
             code=code,
             phone_code_hash=ctx.phone_code_hash,
         )
-        await finalize_login(uid)
+        await finalize_login(uid, update=update)
 
     except SessionPasswordNeededError:
         old_msg = user_states.get(uid, {}).get("numpad_msg_id")
@@ -1098,7 +1152,7 @@ async def handle_password(update: Update, text: str) -> None:
                 T.QR_WRONG_ACCOUNT, reply_markup=KB.kb_login()
             )
             return
-        await finalize_login(uid)
+        await finalize_login(uid, update=update)
 
     except PasswordHashInvalidError:
         await update.message.reply_text(
@@ -1259,19 +1313,28 @@ async def _finalize_admin_added_user_locked(
         )
 
 
-async def finalize_login(uid: int, *, target_update_locked: bool = False) -> None:
-    """Login yakunini mo'ljallangan UID bo'yicha boshqa amallar bilan serial qiladi."""
+async def finalize_login(
+    uid: int,
+    *,
+    target_update_locked: bool = False,
+    update: Update | None = None,
+) -> None:
+    """Login yakunini mo'ljallangan UID bo'yicha boshqa amallar bilan serial qiladi.
+
+    ``update`` — jamoa taklifini qo'llash uchun kerak (foydalanuvchiga
+    xabar yuborish). Berilmasa, taklif qo'llanmaydi (xavfsizlik).
+    """
     ctx = login_ctx.get(uid)
     if not ctx:
         return
     if ctx.mode == "admin_add_user":
-        await _finalize_login_locked(uid)
+        await _finalize_login_locked(uid, update)
         return
     target = int(ctx.for_uid if ctx.for_uid is not None else uid)
 
     async def persist_target() -> None:
         async with user_operation_lock(target):
-            await _finalize_login_locked(uid)
+            await _finalize_login_locked(uid, update)
 
     if target_update_locked:
         await persist_target()
@@ -1285,7 +1348,7 @@ async def finalize_login(uid: int, *, target_update_locked: bool = False) -> Non
             await persist_target()
 
 
-async def _finalize_login_locked(uid: int) -> None:
+async def _finalize_login_locked(uid: int, update: Update | None = None) -> None:
     """UID operation lock ichidagi login yakuni."""
     ctx = login_ctx.get(uid)
     if not ctx:
@@ -1423,6 +1486,9 @@ async def _finalize_login_locked(uid: int) -> None:
         info = await db.get_user_info(uid)
         name = info.get("name") or "Foydalanuvchi"
 
+        # ✅ Jamoa taklifi — FAQAT Telegram login muvaffaqiyatli bo'lgach.
+        await _apply_team_invite_after_login(update, uid, phone)
+
         log(f"✅ Tasdiqlangan user kirdi: {uid}")
         await application.bot.send_message(
             uid,
@@ -1445,6 +1511,10 @@ async def _finalize_login_locked(uid: int) -> None:
         return
 
     log(f"⏳ Tasdiq kutilmoqda: {uid}")
+
+    # ✅ Jamoa taklifi — FAQAT Telegram login muvaffaqiyatli bo'lgach.
+    # (Raqam haqiqiy egasining ekani Telegram kodi orqali tasdiqlandi.)
+    await _apply_team_invite_after_login(update, uid, phone)
 
     # Qaysi admin tasdiqlashi kerak — uch holat:
     #   1) Jamoa asosi (jamoa admini) — u allaqachon tasdiqlangan,

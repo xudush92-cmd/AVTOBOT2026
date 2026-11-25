@@ -13,7 +13,7 @@ import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 APP_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(APP_DIR))
@@ -247,7 +247,8 @@ class QrLoginLifecycleTests(unittest.IsolatedAsyncioTestCase):
             await login._wait_for_qr_login(uid, ctx, qr_login)
 
         set_phone.assert_not_awaited()
-        finalize.assert_awaited_once_with(uid)
+        # QR oqimida ``update`` yo'q — taklif ``update=None`` bilan qo'llanadi.
+        finalize.assert_awaited_once_with(uid, update=None)
         self.assertEqual(ctx.phone, "+998900000000")
 
     async def test_code_login_binds_uid_and_authenticated_phone(self) -> None:
@@ -392,7 +393,11 @@ class RegistrationFlowTests(unittest.IsolatedAsyncioTestCase):
             await login.handle_phone(update, "+998901234567")
 
         # Yangi oqim: kod admin tasdig'idan oldin darhol so'raladi.
-        request_code.assert_awaited_once_with(uid, "+998901234567")
+        # ``update`` o'tkaziladi — kodsiz tasdiqlash holatida jamoa
+        # taklifini qo'llash uchun kerak.
+        request_code.assert_awaited_once_with(
+            uid, "+998901234567", update=ANY
+        )
         awaiting.assert_not_awaited()
         notify.assert_not_called()
         self.assertEqual(
@@ -421,7 +426,11 @@ class RegistrationFlowTests(unittest.IsolatedAsyncioTestCase):
         ):
             await login.handle_phone(update, "+998901234567")
 
-        request_code.assert_awaited_once_with(uid, "+998901234567")
+        # ``update`` o'tkaziladi — kodsiz tasdiqlash holatida jamoa
+        # taklifini qo'llash uchun kerak.
+        request_code.assert_awaited_once_with(
+            uid, "+998901234567", update=ANY
+        )
         awaiting.assert_not_awaited()
         notify.assert_not_called()
 

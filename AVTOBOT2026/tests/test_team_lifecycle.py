@@ -395,7 +395,11 @@ class TeamLifecycleTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_referral_to_full_team_is_rejected(self) -> None:
-        """Jamoa to'lgan bo'lsa, referal orqali kelgan user qo'shilmaydi."""
+        """Jamoa to'lgan bo'lsa, referal orqali kelgan user qo'shilmaydi.
+
+        Sig'im — jamoaning **a'zolar** soni (jamoa admini hisobga
+        olinmaydi). Limit 2 = ikkita a'zo mumkin.
+        """
         from bot import referral as Ref
 
         team = await db.create_team("To'lgan jamoa", ADMIN_UID, max_users=2)
@@ -409,9 +413,12 @@ class TeamLifecycleTests(unittest.IsolatedAsyncioTestCase):
             ADMIN_UID, name="Referrer", is_admin=1, is_team_admin=1,
             team_id=int(team["id"]),
         )
-        # Jamoa to'lgan: admin + 1 a'zo = limit 2.
+        # Jamoa to'lgan: 2 ta a'zo = limit 2 (admin hisobga olinmaydi).
         await db.upsert_user(
             88050, name="A'zo", team_id=int(team["id"]), owner_admin_uid=ADMIN_UID
+        )
+        await db.upsert_user(
+            88051, name="Ikkinchi", team_id=int(team["id"]), owner_admin_uid=ADMIN_UID
         )
 
         ok = await Ref.register_referral(MEMBER_UID, f"ref_{ADMIN_UID}")

@@ -376,17 +376,26 @@ class TeamContactNamingTests(unittest.IsolatedAsyncioTestCase):
         )
 
     async def test_super_admin_cannot_route_user_to_full_team(self) -> None:
-        """To'lgan jamoaga yo'naltirilmasligi kerak."""
+        """To'lgan jamoaga yo'naltirilmasligi kerak.
+
+        Sig'im — jamoaning **a'zolar** soni (admin hisobga olinmaydi),
+        shuning uchun to'ldirish uchun avval a'zo qo'shilishi kerak.
+        """
         from admin import admin_actions as AA
 
         team_id = await self._make_admin_with_team("Jamoa")
         await db.update_team(team_id, max_users=1)
         await db.upsert_user(MEMBER_UID, name="A'zo", phone=MEMBER_PHONE)
 
-        up = FakeUpdate(MEMBER_UID)
-        await AA.action_team_bind_go(up, MEMBER_UID, ADMIN_UID)
+        # Sig'im 1 — jamoada birinchi a'zo bor (admin hisobga olinmaydi).
+        await db.set_team_pending(MEMBER_UID, team_id, ADMIN_UID, name="A'zo")
 
-        member = await db.get_user(MEMBER_UID)
+        # Endi jamoa to'lgan — ikkinchisi biriktirilmaydi.
+        await db.upsert_user(777222333, name="Ikkinchi", phone="+998907070707")
+        up = FakeUpdate(777222333)
+        await AA.action_team_bind_go(up, 777222333, ADMIN_UID)
+
+        member = await db.get_user(777222333)
         self.assertFalse(member.get("team_id"), "jamoaga biriktirilmasligi kerak")
         self.assertIn("sig'imi to'lgan", up.callback_query.out[-1])
 

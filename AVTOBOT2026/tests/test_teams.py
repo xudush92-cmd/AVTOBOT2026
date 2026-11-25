@@ -126,10 +126,10 @@ class TeamDatabaseTests(unittest.IsolatedAsyncioTestCase):
 
         `assign_team_member` — jamoaga biriktirishning yagona yozuv
         nuqtasi. U sig'imi tekshirmasa, limit oshib ketishi mumkin.
+
+        Sig'im — jamoaning **a'zolar** soni. Jamoa admini (jamoa egasi)
+        hisobga **olinmaydi**: u jamoani yaratgan, u a'zo emas.
         """
-        # Jamoa admini ham jamoaning a'zosi hisoblanadi:
-        # Jamoa admini ham jamoaning a'zosi hisoblanadi:
-        # set_team_admin adminni jamoaga biriktiradi.
         team = await db.create_team("Kichik jamoa", ADMIN_A, max_users=2)
         team_id = int(team["id"])
         await db.set_team_admin(
@@ -137,23 +137,28 @@ class TeamDatabaseTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(
             await db.count_team_members(team_id),
-            1,
-            "jamoa admini jamoaga hisoblanishi kerak",
+            0,
+            "jamoa admini sig'imga hisoblanmasligi kerak",
         )
 
-        # Bo'sh joy bor (1 < 2).
+        # Bo'sh joy bor (0 < 2) — birinchi a'zo qo'shiladi.
         await db.upsert_user(USER_1, name="Birinchi")
         ok = await db.assign_team_member(USER_1, team_id, ADMIN_A)
         self.assertTrue(ok, "bo'sh joy bo'lsa biriktirilishi kerak")
 
-        # Endi jamoa to'ldi (admin + 1 a'zo = limit 2).
-        await db.upsert_user(6003, name="Uchinchi")
+        # Endi jamoa to'ldi (1 a'zo = limit 2? yo'q — 1 < 2, bo'sh joy bor).
+        await db.upsert_user(6003, name="Ikkinchi")
         ok = await db.assign_team_member(6003, team_id, ADMIN_A)
+        self.assertTrue(ok, "1 a'zo < limit 2 — ikkinchisi ham kirishi kerak")
+
+        # Uchinchi a'zo — endi jamoa to'lgan (2 a'zo = limit 2).
+        await db.upsert_user(6004, name="Uchinchi")
+        ok = await db.assign_team_member(6004, team_id, ADMIN_A)
         self.assertFalse(
             ok,
             "limit to'lganda yangi a'zo biriktirilmasligi kerak",
         )
-        u = await db.get_user(6003)
+        u = await db.get_user(6004)
         self.assertIsNone(
             u.get("team_id"),
             "rad etilgan a'zo jamoaga biriktirilmasligi kerak",
@@ -483,7 +488,11 @@ class TeamExpiryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(int(user["owner_admin_uid"]), ADMIN_A)
 
     async def test_referral_does_not_join_full_team(self) -> None:
-        """Jamoa to'ldiq bo'lsa — referal biriktirilmaydi."""
+        """Jamoa to'ldiq bo'lsa — referal biriktirilmaydi.
+
+        Sig'im — jamoaning **a'zolar** soni (jamoa admini hisobga
+        olinmaydi). Sig'im 1 = bitta a'zo mumkin.
+        """
         from bot import referral as RF
 
         team = await db.create_team("Jamoa", ADMIN_A, max_users=1)
@@ -496,9 +505,21 @@ class TeamExpiryTests(unittest.IsolatedAsyncioTestCase):
             owner_admin_uid=ADMIN_A,
         )
 
+        # Birinchi a'zo — sig'im 1 bo'lgan jamoaga sig'adi.
         self.assertTrue(await RF.register_referral(USER_1, f"ref_{ADMIN_A}"))
         user = await db.get_user(USER_1)
-        self.assertIsNone(user.get("team_id"), "to'lgan jamoaga biriktirilmasligi kerak")
+        self.assertEqual(
+            int(user["team_id"]),
+            int(team["id"]),
+            "birinchi a'zo jamoaga biriktirilishi kerak",
+        )
+
+        # Endi jamoa to'ldi (1 a'zo = limit 1) — ikkinchisi kirmaydi.
+        self.assertTrue(await RF.register_referral(6002, f"ref_{ADMIN_A}"))
+        user2 = await db.get_user(6002)
+        self.assertIsNone(
+            user2.get("team_id"), "to'lgan jamoaga biriktirilmasligi kerak"
+        )
 
 
 class TeamChoiceTests(unittest.IsolatedAsyncioTestCase):
