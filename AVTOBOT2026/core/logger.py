@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import os
 import sys
 from logging.handlers import RotatingFileHandler
 
@@ -44,6 +45,11 @@ if not logger.handlers:
     file_handler.setFormatter(logging.Formatter(FILE_FORMAT, FILE_DATEFMT))
     file_handler.setLevel(logging.INFO)
     logger.addHandler(file_handler)
+
+    # ⚠️ Log fayli maxfiy ma'lumot saqlashi mumkin (telefon raqam,
+    # foydalanuvchi nomlari, xato tafsilotlari) — faqat egasi o'qisin.
+    with contextlib.suppress(Exception):
+        os.chmod(LOG_FILE, 0o600)
 
     # 2) Konsolga yozish
     console_handler = logging.StreamHandler(sys.stdout)

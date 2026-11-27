@@ -1126,3 +1126,99 @@ ham yutib o'tiladi.
 | `compileall` + import | **OK** |
 | Eski kod bilan simulyatsiya | `AttributeError` va "not modified" xatolari **takrorlandi** ✅ |
 | Yangi kod bilan simulyatsiya | **6/6 oqim xatosiz** ✅ |
+
+---
+
+## 🔐 PR #52 — Maxfiylik: 2FA parol logga tushmasligi
+
+### Xavf
+
+Foydalanuvchi 2FA parol yoki Telegram tasdiqlash kodini kiritganda,
+`main.py::on_message()` xatoni yozganda **parolning o'zi** log fayliga
+yozilardi:
+
+```python
+action=(update.message.text or "")[:40] if update.message else None
+```
+
+Log fayli serverda saqlanadi va qo'lda ochilishi mumkin — parol shu
+orqali sizib chiqardi.
+
+### Dalil
+
+`tests/live_sim_secret_leak.py` — 2FA bosqichida xato yuz beradi va
+logga yozilgan matnni ko'rsatadi.
+
+**Eski kod (main):**
+```
+💥 XATO: Matnli xabarni qayta ishlash │ uid=991460501 │
+         action=MySecretPassword123 │ RuntimeError: sign_in failed
+
+❌ XAVF: 2FA parol logga tushdi!
+```
+
+**Yangi kod:**
+```
+💥 XATO: Matnli xabarni qayta ishlash │ uid=991460501 │
+         action=step=password │ RuntimeError: sign_in failed
+
+✅ Parol logga tushmadi — faqat bosqich nomi yozildi.
+```
+
+### Tuzatish
+
+**1) Redaksiya qatlami** — `core/errlog.py`:
+
+- `redact(text)` — `key=value` ko'rinishidagi maxfiy qiymatlarni yopadi
+  (`password=***`, `code=***`, `token=***`, `phone=***`, `hash=***` va h.k.);
+- `redact_exc(exc)` — xato matnini redaksiya qiladi;
+- `SECRET_STEPS` — maxfiy bosqichlar (`password`, `code`, `phone`,
+  `full_name`).
+
+Endi redaksiya **barcha** yozuvchilarda qo'llaniladi:
+`log_error` (sarlavha + xato matni + traceback), `log_gap` (sabab),
+`log_event` (voqea), `_fmt` (action + extra).
+
+**2) Foydalanuvchi matni o'rniga — bosqich nomi** — `main.py`:
+
+```python
+def _safe_action_label(uid: int) -> str | None:
+    """Log uchun xavfsiz «nima bosildi» yorlig'i."""
+```
+
+Qaytaradi: `step=password` / `step=code` / `step=matn` — **qiymat
+hech qachon yozilmaydi**, faqat bosqich turi.
+
+**3) Log fayli himoyasi** — `core/logger.py`:
+
+Log fayliga `chmod 600` qo'yiladi (faqat egasi o'qiy oladi) —
+telefon raqam va foydalanuvchi nomlari ham maxfiy ma'lumot.
+
+### Tekshiruv
+
+**Yangi test fayl** — `tests/test_secret_redaction.py` (22 ta test +
+5 subtest):
+
+- `redact()` — password/code/phone/token/hash/session/auth_key/secret
+  qiymatlari yopiladi, kalitsiz matn o'zgarmaydi;
+- `log_error` — xato matni, action, extra, sarlavha va **traceback**
+  redaksiyalanadi;
+- `log_gap` / `log_event` — redaksiyalanadi;
+- `_safe_action_label()` — parol bosqichida faqat `step=password`;
+- **regressiya**: `on_message` manbasida `.text` yo'q; butun
+  repozitoriyada `action=` ga foydalanuvchi matni berilmaydi;
+- log fayli `chmod 600`.
+
+| Tekshiruv | Natija |
+|---|---|
+| Yangi testlar | **22 passed**, 5 subtest |
+| To'liq pytest | **787 passed**, 70 subtest |
+| To'liq unittest | **787 OK** |
+| Ruff (baseline diff) | **bo'sh** — 291 = 291 |
+| `compileall` + import | **OK** |
+
+> 📌 **Telegram API, tugmalar, matnlar va klaviaturalar o'zgarmadi.**
+> 📌 Log mazmuni **kamayadi**, xabar mazmuni **o'zgarmaydi** —
+> foydalanuvchi hech narsani sezmaydi.
+> 📌 Xatolar hali ham to'liq yoziladi (faqat maxfiy qiymatlar
+> yopiladi) — diagnostika saqlanadi.
