@@ -1311,3 +1311,25 @@ telefon raqam va foydalanuvchi nomlari ham maxfiy ma'lumot.
 > foydalanuvchi hech narsani sezmaydi.
 > 📌 Xatolar hali ham to'liq yoziladi (faqat maxfiy qiymatlar
 > yopiladi) — diagnostika saqlanadi.
+
+---
+
+## ✅ PR #51 va PR #52 MERGED — natija
+
+| PR | Holat | Merge commit | Nima |
+|---|---|---|---|
+| #50 | MERGED | `c733b2a` | Inline callback xatolari (`NoneType.reply_text`, "Message is not modified") — `gint:`/`mg:`/`gchk:` |
+| #51 | MERGED | `52c62dd` | "Message is not modified" — qolgan **250 ta** callback oynasi |
+| #52 | MERGED | `9e1c64c` | Maxfiylik: 2FA parol va kod logga tushmasligi |
+
+**Yakuniy validatsiya (fresh-clone, `main` = `9e1c64c`):**
+
+| Tekshiruv | Natija |
+|---|---|
+| To'liq pytest | **798 passed**, 70 subtest |
+| To'liq unittest | **798 OK** |
+| Ruff (baseline diff) | **bo'sh** — yangi xato yo'q |
+| `compileall` + import | **OK** |
+
+> 📌 Konflikt faqat `TUZATISH_ROYXATI.md` (hujjat) da bo'ldi — kod
+> to'g'ri auto-merge bo'ldi. Hujjat tartibi: PR #50 → #51 → #52.
