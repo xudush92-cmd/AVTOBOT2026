@@ -389,7 +389,7 @@ async def handle_interval_choice_callback(
     if action == "back":
         await q.answer()
         with contextlib.suppress(Exception):
-            await q.edit_message_text(
+            await edit_text_safe(q, 
                 "⬅️ Asosiy menyu",
                 reply_markup=await _back_markup(uid),
             )
@@ -409,7 +409,7 @@ async def handle_interval_choice_callback(
         groups = await db.get_chat_records(uid)
         if not groups:
             with contextlib.suppress(Exception):
-                await q.edit_message_text(
+                await edit_text_safe(q, 
                     "💬 Guruhlar yopiq. Avval guruh qo'shing.",
                     reply_markup=KB.kb_my_groups([], 0),
                 )
@@ -421,7 +421,7 @@ async def handle_interval_choice_callback(
             "Intervalni o'zgartirmoqchi guruhni tanlang."
         )
         with contextlib.suppress(Exception):
-            await q.edit_message_text(
+            await edit_text_safe(q, 
                 text,
                 parse_mode="HTML",
                 reply_markup=KB.kb_group_interval_picker(
@@ -503,7 +503,7 @@ async def handle_my_groups_callback(
         # guruhlar ro'yxati va havolalari yo'qolmasligi kerak.
         text, markup = await build_groups_window(uid, page=page)
         with contextlib.suppress(Exception):
-            await q.edit_message_text(
+            await edit_text_safe(q, 
                 text,
                 parse_mode="HTML",
                 reply_markup=markup,
@@ -548,7 +548,7 @@ async def handle_my_groups_callback(
         groups = await db.get_chat_records(uid)
         if not groups:
             with contextlib.suppress(Exception):
-                await q.edit_message_text(
+                await edit_text_safe(q, 
                     "💬 Guruhlar yopildi. Endi guruh yo'q.",
                     reply_markup=await _back_markup(uid),
                 )
@@ -557,7 +557,7 @@ async def handle_my_groups_callback(
         # ham ko'rinib turishi kerak (avval faqat sarlavha qolardi).
         text, markup = await build_groups_window(uid)
         with contextlib.suppress(Exception):
-            await q.edit_message_text(
+            await edit_text_safe(q, 
                 text,
                 parse_mode="HTML",
                 reply_markup=markup,

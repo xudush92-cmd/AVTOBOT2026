@@ -29,7 +29,13 @@ from config.config import (
 from core import database as db
 from core.logger import log
 from core.update_locks import user_update_lock
-from core.utils import calc_expires, format_expires, reply_text_safe, shift_expires
+from core.utils import (
+    calc_expires,
+    edit_text_safe,
+    format_expires,
+    reply_text_safe,
+    shift_expires,
+)
 
 # Jamoa admini sig'imi uchun taklif qilinadigan variantlar.
 TEAM_LIMIT_OPTIONS = [2, 5, 10, 20, 50, 100]
@@ -144,7 +150,7 @@ async def handle_admin_callback(update: Update, uid: int, data: str) -> None:
             target = int(data.split(":")[2])
         except (ValueError, IndexError):
             return
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             "📅 Jamoa adminining muddatini o'zgartiring:\n\n"
             "**+** — muddatni uzaytirish.\n"
             "**−** — muddatni kamaytirish.\n\n"
@@ -162,7 +168,7 @@ async def handle_admin_callback(update: Update, uid: int, data: str) -> None:
         current = format_expires(
             admin.get("admin_expires_at") if admin else None
         )
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             "⏳ Muddatni kamaytirish\n\n"
             f"📅 Hozirgi muddat: {current}\n\n"
             "Kamaytirmoqchi bo'lgan kunni tanlang.",
@@ -182,7 +188,7 @@ async def handle_admin_callback(update: Update, uid: int, data: str) -> None:
             target = int(data.split(":")[2])
         except (ValueError, IndexError):
             return
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             "👥 Jamoa adminining sig'imini o'zgartiring:\n\n"
             "Bu — jamoasiga qo'shilishi mumkin bo'lgan foydalanuvchilar "
             "maksimal soni.",
@@ -241,7 +247,7 @@ async def handle_admin_callback(update: Update, uid: int, data: str) -> None:
     # DB panel
     if data == "adm:db":
         action_tokens.clear(uid, "db:clearlogs")
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             "💾 MA'LUMOTLAR BAZASI\n\nKerakli amalni tanlang:",
             reply_markup=KB.kb_db_panel(),
         )
@@ -297,7 +303,7 @@ async def show_panel(update: Update) -> None:
         "Bo'limni tanlang:"
     )
     with contextlib.suppress(Exception):
-        await q.edit_message_text(text, reply_markup=KB.kb_admin_panel())
+        await edit_text_safe(q, text, reply_markup=KB.kb_admin_panel())
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -310,7 +316,7 @@ async def show_users(update: Update, page: int = 0) -> None:
 
     if not users:
         with contextlib.suppress(Exception):
-            await q.edit_message_text(
+            await edit_text_safe(q, 
                 "👥 Foydalanuvchilar yo'q.",
                 reply_markup=KB.kb_admin_back(),
             )
@@ -328,7 +334,7 @@ async def show_users(update: Update, page: int = 0) -> None:
     )
     kb = KB.kb_users_list(users, page=page)
     with contextlib.suppress(Exception):
-        await q.edit_message_text(text, reply_markup=kb)
+        await edit_text_safe(q, text, reply_markup=kb)
 
 
 async def show_pending(update: Update, page: int = 0) -> None:
@@ -336,12 +342,12 @@ async def show_pending(update: Update, page: int = 0) -> None:
     q = update.callback_query
     users = await db.get_pending_users()
     if not users:
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             "✅ Tasdiq kutilayotgan arizalar yo'q.",
             reply_markup=KB.kb_admin_back(),
         )
         return
-    await q.edit_message_text(
+    await edit_text_safe(q, 
         f"⏳ TASDIQ KUTILAYOTGANLAR ({len(users)} ta)\n\n"
         "Arizani ochib, ism va telefonni tekshiring:",
         reply_markup=KB.kb_pending_users(users, page=page),
@@ -361,7 +367,7 @@ async def show_expired(update: Update) -> None:
 
     if not expired:
         with contextlib.suppress(Exception):
-            await q.edit_message_text(
+            await edit_text_safe(q, 
                 "✅ Muddati tugagan foydalanuvchilar yo'q.",
                 reply_markup=KB.kb_admin_back(),
             )
@@ -373,7 +379,7 @@ async def show_expired(update: Update) -> None:
     )
     kb = KB.kb_users_list(expired)
     with contextlib.suppress(Exception):
-        await q.edit_message_text(text, reply_markup=kb)
+        await edit_text_safe(q, text, reply_markup=kb)
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -413,7 +419,7 @@ async def show_stats(update: Update) -> None:
     )
 
     with contextlib.suppress(Exception):
-        await q.edit_message_text(text, reply_markup=KB.kb_admin_back())
+        await edit_text_safe(q, text, reply_markup=KB.kb_admin_back())
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -427,7 +433,7 @@ async def show_blocked(update: Update, page: int = 0) -> None:
 
     if not blocked:
         with contextlib.suppress(Exception):
-            await q.edit_message_text(
+            await edit_text_safe(q, 
                 "✅ Bloklangan foydalanuvchilar yo'q.",
                 reply_markup=KB.kb_admin_back(),
             )
@@ -436,7 +442,7 @@ async def show_blocked(update: Update, page: int = 0) -> None:
     text = f"🚫 BLOKLANGANLAR ({len(blocked)} ta)\n\nBlokdan chiqarish uchun bosing:"
     kb = KB.kb_blocked_list(blocked, page=page)
     with contextlib.suppress(Exception):
-        await q.edit_message_text(text, reply_markup=kb)
+        await edit_text_safe(q, text, reply_markup=kb)
 
 
 async def handle_unblock(update: Update, admin_uid: int, data: str) -> None:
@@ -477,7 +483,7 @@ async def show_system(update: Update) -> None:
     text = format_status_message(uptime, w_stats, p_stats, memory)
 
     with contextlib.suppress(Exception):
-        await q.edit_message_text(text, reply_markup=KB.kb_admin_back())
+        await edit_text_safe(q, text, reply_markup=KB.kb_admin_back())
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -514,13 +520,13 @@ async def handle_db_callback(update: Update, admin_uid: int, data: str) -> None:
                         "🔒 session va pending_session chiqarib tashlangan"
                     ),
                 )
-            await q.edit_message_text(
+            await edit_text_safe(q, 
                 "✅ Sanitized baza yuborildi.",
                 reply_markup=KB.kb_db_panel(),
             )
         except Exception as exc:
             log(f"DB eksport xatosi: {type(exc).__name__}", "error")
-            await q.edit_message_text(
+            await edit_text_safe(q, 
                 "❌ Eksport yaratilmadi.",
                 reply_markup=KB.kb_db_panel(),
             )
@@ -547,14 +553,14 @@ async def handle_db_callback(update: Update, admin_uid: int, data: str) -> None:
             )
             for old in backups[BACKUP_RETENTION:]:
                 old.unlink(missing_ok=True)
-            await q.edit_message_text(
+            await edit_text_safe(q, 
                 f"✅ Izchil zaxira yaratildi: `{backup.name}`",
                 reply_markup=KB.kb_db_panel(),
                 parse_mode="Markdown",
             )
         except Exception as exc:
             log(f"DB backup xatosi: {type(exc).__name__}", "error")
-            await q.edit_message_text(
+            await edit_text_safe(q, 
                 "❌ Zaxira yaratilmadi.",
                 reply_markup=KB.kb_db_panel(),
             )
@@ -563,7 +569,7 @@ async def handle_db_callback(update: Update, admin_uid: int, data: str) -> None:
     # Loglarni tozalash
     if data == "db:clearlogs:ask":
         token = action_tokens.issue(admin_uid, "db:clearlogs")
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             "⚠️ Server loglari qaytarib bo'lmaydigan tarzda tozalansinmi?",
             reply_markup=KB.kb_clear_logs_confirm(token),
         )
@@ -572,7 +578,7 @@ async def handle_db_callback(update: Update, admin_uid: int, data: str) -> None:
     if data.startswith("db:clearlogs:confirm:"):
         token = data.rsplit(":", 1)[-1]
         if not action_tokens.consume(admin_uid, "db:clearlogs", token):
-            await q.edit_message_text(
+            await edit_text_safe(q, 
                 "⚠️ Bu tasdiqlash oynasi eskirgan.",
                 reply_markup=KB.kb_db_panel(),
             )
@@ -587,18 +593,18 @@ async def handle_db_callback(update: Update, admin_uid: int, data: str) -> None:
                 # Faylni tashqaridan ustidan yozish handler'ni buzadi; ochiq
                 # oqimni truncate qilamiz.
                 await asyncio.to_thread(clear_log_file)
-                await q.edit_message_text(
+                await edit_text_safe(q, 
                     f"✅ Log tozalandi ({size_mb:.1f} MB).",
                     reply_markup=KB.kb_db_panel(),
                 )
             else:
-                await q.edit_message_text(
+                await edit_text_safe(q, 
                     "❌ Log fayli topilmadi.",
                     reply_markup=KB.kb_db_panel(),
                 )
         except OSError as exc:
             log(f"Log tozalash xatosi: {type(exc).__name__}", "error")
-            await q.edit_message_text(
+            await edit_text_safe(q, 
                 "❌ Log faylini tozalab bo'lmadi.",
                 reply_markup=KB.kb_db_panel(),
             )
@@ -712,7 +718,7 @@ async def show_team_admins(update: Update) -> None:
     if not admins:
         # Bo'sh ro'yxatda ham «➕ Admin qo'shish» tugmasi ko'rinishi kerak —
         # aks holda super admin birinchi jamoa adminini qo'shira olmaydi.
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             "👑 Hozircha jamoa admini yo'q.\n\n"
             "Jamoa adminini **faqat siz** tayyorlaysiz — «➕ Admin "
             "qo'shish» tugmasi orqali telefon raqamini kiriting.\n\n"
@@ -748,7 +754,7 @@ async def show_team_admins(update: Update) -> None:
         "tugmasini bosing (telefon raqamini kiriting)."
     )
 
-    await q.edit_message_text(
+    await edit_text_safe(q, 
         "\n".join(lines),
         reply_markup=KB.kb_team_admins(admins),
     )
@@ -759,7 +765,7 @@ async def show_team_admin_card(update: Update, target: int) -> None:
     q = update.callback_query
     admin = await db.get_user(target)
     if not admin or not admin.get("is_team_admin"):
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             "❌ Jamoa admini topilmadi.",
             reply_markup=KB.kb_admin_back(),
         )
@@ -786,7 +792,7 @@ async def show_team_admin_card(update: Update, target: int) -> None:
         f"👥 Sig'im: {limit_text}\n\n"
         "Kerakli amalni tanlang:"
     )
-    await q.edit_message_text(text, reply_markup=KB.kb_team_admin_card(target))
+    await edit_text_safe(q, text, reply_markup=KB.kb_team_admin_card(target))
 
 
 async def set_team_admin_term(update: Update, target: int, days: int) -> None:
@@ -798,7 +804,7 @@ async def set_team_admin_term(update: Update, target: int, days: int) -> None:
     q = update.callback_query
     admin = await db.get_user(target)
     if not admin or not admin.get("is_team_admin"):
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             "❌ Jamoa admini topilmadi.",
             reply_markup=KB.kb_admin_back(),
         )
@@ -811,7 +817,7 @@ async def set_team_admin_term(update: Update, target: int, days: int) -> None:
     # ``None`` qaytaradi. Aks holda muddat "kamaytirish" o'rniga
     # **darhol tugatilardi**, bu esa tasdig'emas edi.
     if expires is None:
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             "❌ Cheksiz muddatni kamaytirib bo'lmaydi.\n\n"
             "💡 Avval muddat bering (+ tugmasi), keyin kamaytiring.",
             reply_markup=KB.kb_team_admin_card(target),
@@ -828,7 +834,7 @@ async def set_team_admin_term(update: Update, target: int, days: int) -> None:
     await db.set_user_limits(target, tariff_expires_at=expires)
 
     verb = "uzaytirildi" if days > 0 else "kamaytirildi"
-    await q.edit_message_text(
+    await edit_text_safe(q, 
         f"✅ Muddat {verb}: {admin.get('name') or target}\n\n"
         f"📅 Yangi muddat: {format_expires(expires)}",
         reply_markup=KB.kb_team_admin_card(target),
@@ -841,7 +847,7 @@ async def set_team_admin_limit(update: Update, target: int, size: int) -> None:
     q = update.callback_query
     admin = await db.get_user(target)
     if not admin or not admin.get("is_team_admin"):
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             "❌ Jamoa admini topilmadi.",
             reply_markup=KB.kb_admin_back(),
         )
@@ -852,7 +858,7 @@ async def set_team_admin_limit(update: Update, target: int, size: int) -> None:
     if teams:
         await db.update_team(int(teams[0]["id"]), max_users=size)
 
-    await q.edit_message_text(
+    await edit_text_safe(q, 
         f"✅ Sig'im yangilandi: {admin.get('name') or target}\n\n"
         f"👥 Yangi sig'im: {size} ta foydalanuvchi\n"
         "ℹ️ Jamoada hozirgi a'zolar soni limitdan ko'p bo'lsa, "
@@ -867,7 +873,7 @@ async def begin_team_handover(update: Update, target: int) -> None:
     q = update.callback_query
     admin = await db.get_user(target)
     if not admin or not admin.get("is_team_admin"):
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             "❌ Jamoa admini topilmadi.",
             reply_markup=KB.kb_admin_back(),
         )
@@ -881,7 +887,7 @@ async def begin_team_handover(update: Update, target: int) -> None:
         if int(a.get("uid") or 0) != int(target)
     ]
     if not admins:
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             "ℹ️ Topshirish uchun boshqa jamoa admini yo'q.\n\n"
             "Avval «➕ Admin qo'shish» orqali yangi jamoa adminini tayinlang, "
             "keyin jamoani topshirishingiz mumkin.",
@@ -889,7 +895,7 @@ async def begin_team_handover(update: Update, target: int) -> None:
         )
         return
 
-    await q.edit_message_text(
+    await edit_text_safe(q, 
         f"🔄 <b>{team_name}</b> jamoasini kimga topshiramiz?\n\n"
         "ℹ️ Tanlangan admin jamoaning egasi bo'ladi — a'zolar va jamoa "
         "muddatiga ega bo'ladi. Eski admin jamoa boshqaruvidan chiqadi.",
@@ -904,19 +910,19 @@ async def set_team_handover(update: Update, target: int, new_admin: int) -> None
     old_admin = await db.get_user(target)
     new = await db.get_user(new_admin)
     if not old_admin or not old_admin.get("is_team_admin"):
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             "❌ Jamoa admini topilmadi.",
             reply_markup=KB.kb_admin_back(),
         )
         return
     if not new or not new.get("is_team_admin"):
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             "❌ Yangi admin jamoa admini emas.",
             reply_markup=KB.kb_team_admin_card(target),
         )
         return
     if int(new_admin) == int(target):
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             "ℹ️ Bu jamoa allaqachon shu adminning.",
             reply_markup=KB.kb_team_admin_card(target),
         )
@@ -924,7 +930,7 @@ async def set_team_handover(update: Update, target: int, new_admin: int) -> None
 
     teams = await db.get_teams(target)
     if not teams:
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             "❌ Topshiriladigan jamoa topilmadi.",
             reply_markup=KB.kb_team_admin_card(target),
         )
@@ -956,7 +962,7 @@ async def set_team_handover(update: Update, target: int, new_admin: int) -> None
     # Barcha a'zolar yangi admin ostiga o'tadi.
     await db.reassign_team_members(team_id, new_admin)
 
-    await q.edit_message_text(
+    await edit_text_safe(q, 
         f"✅ Jamoa topshirildi!\n\n"
         f"📋 Jamoa: {team_name}\n"
         f"👤 Yangi admin: {new.get('name') or new_admin}\n"

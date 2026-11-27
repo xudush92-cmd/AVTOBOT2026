@@ -14,6 +14,7 @@ from config.config import SUPER_ADMIN
 from core import database as db
 from core.logger import log
 from core.update_locks import user_update_lock
+from core.utils import edit_text_safe
 
 application = None
 broadcast_pending: dict[int, dict] = {}
@@ -62,7 +63,7 @@ async def begin_broadcast(update: Update) -> None:
         return
     job = broadcast_jobs.get(uid)
     if job and job.task and not job.task.done():
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             _progress_text(job),
             reply_markup=KB.kb_broadcast_progress(),
         )
@@ -72,7 +73,7 @@ async def begin_broadcast(update: Update) -> None:
 
     broadcast_pending.pop(uid, None)
     user_states[uid] = {"step": "admin_broadcast", "ts": __import__("time").time()}
-    await q.edit_message_text(
+    await edit_text_safe(q, 
         "📢 BROADCAST\n\n"
         "Yubormoqchi bo'lgan xabaringizni yuboring.\n\n"
         "Matn, rasm yoki rasm+matn qo'llab-quvvatlanadi.",
@@ -117,7 +118,7 @@ async def handle_broadcast_callback(update: Update, uid: int, data: str) -> None
 
     if data == "bc:cancel":
         broadcast_pending.pop(uid, None)
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             T.ACTION_CANCELLED,
             reply_markup=KB.kb_admin_back(),
         )
@@ -126,13 +127,13 @@ async def handle_broadcast_callback(update: Update, uid: int, data: str) -> None
     if data == "bc:stop":
         job = broadcast_jobs.get(uid)
         if not job or not job.task or job.task.done():
-            await q.edit_message_text(
+            await edit_text_safe(q, 
                 "ℹ️ Faol broadcast yo'q.",
                 reply_markup=KB.kb_admin_back(),
             )
             return
         job.cancel.set()
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             _progress_text(job) + "\n\n⏳ To'xtatilmoqda...",
             reply_markup=KB.kb_broadcast_progress(),
         )
@@ -141,11 +142,11 @@ async def handle_broadcast_callback(update: Update, uid: int, data: str) -> None
     if data == "bc:status":
         job = broadcast_jobs.get(uid)
         if not job:
-            await q.edit_message_text(
+            await edit_text_safe(q, 
                 "ℹ️ Broadcast topilmadi.", reply_markup=KB.kb_admin_back()
             )
             return
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             _progress_text(job, finished=bool(job.task and job.task.done())),
             reply_markup=(
                 KB.kb_admin_back()
@@ -159,26 +160,29 @@ async def handle_broadcast_callback(update: Update, uid: int, data: str) -> None
         return
     content = broadcast_pending.pop(uid, None)
     if not content:
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             "❌ Broadcast ma'lumoti eskirgan. Qaytadan boshlang.",
             reply_markup=KB.kb_admin_back(),
         )
         return
     current = broadcast_jobs.get(uid)
     if current and current.task and not current.task.done():
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             _progress_text(current), reply_markup=KB.kb_broadcast_progress()
         )
         return
 
     users = await db.get_broadcast_users()
+    # ⚠️ ``q.message`` — inline callback'da mavjud, lekin himoyalanadi
+    # (callback xabari o'chirilgan/eskigan bo'lishi mumkin).
+    source = getattr(q, "message", None)
     job = BroadcastJob(
         total=len(users),
-        chat_id=q.message.chat_id,
-        message_id=q.message.message_id,
+        chat_id=getattr(source, "chat_id", uid),
+        message_id=getattr(source, "message_id", 0),
     )
     broadcast_jobs[uid] = job
-    await q.edit_message_text(
+    await edit_text_safe(q, 
         _progress_text(job), reply_markup=KB.kb_broadcast_progress()
     )
     job.task = asyncio.create_task(
