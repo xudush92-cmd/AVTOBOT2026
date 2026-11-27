@@ -33,7 +33,7 @@ from config.config import (
 from core import database as db
 from core.errlog import log_error, log_gap
 from core.logger import log
-from core.utils import format_expires, reply_text_safe
+from core.utils import edit_text_safe, format_expires, reply_text_safe
 
 application = None
 
@@ -149,7 +149,7 @@ async def handle_team_pick_callback(update: Update, uid: int, data: str) -> None
         return
 
     if action == "back":
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             "🎯 Jamoa tanlash bekor qilindi.\n\nDavom etish uchun 🔑 Login bosing.",
             reply_markup=KB.kb_login(),
         )
@@ -157,7 +157,7 @@ async def handle_team_pick_callback(update: Update, uid: int, data: str) -> None
 
     if action == "skip":
         # Foydalanuvchi jamoasiz davom etmoqchi — ro'yxatdan o'tishga o'tadi.
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             T.TEAM_PICK_SKIPPED,
             reply_markup=KB.kb_login(),
         )
@@ -172,7 +172,7 @@ async def handle_team_pick_callback(update: Update, uid: int, data: str) -> None
         except (ValueError, IndexError):
             page = 0
         teams = await db.get_all_teams()
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             T.team_pick_text(teams, page=page, page_size=TEAM_LIST_PAGE_SIZE),
             reply_markup=KB.kb_team_pick(
                 teams, page=page, page_size=TEAM_LIST_PAGE_SIZE
@@ -214,7 +214,7 @@ async def handle_team_pick_callback(update: Update, uid: int, data: str) -> None
             return
 
         name = team.get("name") or "Noma'lum"
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             T.TEAM_SELECTED.format(name=name),
             reply_markup=KB.kb_login(),
         )
@@ -359,7 +359,7 @@ async def show_team_invites(
         q = update.callback_query
         if q is not None:
             with contextlib.suppress(Exception):
-                await q.edit_message_text(text, reply_markup=markup)
+                await edit_text_safe(q, text, reply_markup=markup)
                 return
     await reply_text_safe(update, text, reply_markup=markup)
 
@@ -740,14 +740,14 @@ async def handle_team_member_callback(update: Update, uid: int, data: str) -> No
     team_name = (team or {}).get("name") or "Jamoa"
 
     if action == "leaveask":
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             T.TEAM_MEMBER_LEAVE_CONFIRM.format(name=team_name),
             reply_markup=KB.kb_team_leave_confirm(),
         )
         return
 
     if action == "leavecancel":
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             T.TEAM_MEMBER_LEAVE_CANCELLED,
             reply_markup=KB.kb_team_member_self_card(),
         )
@@ -783,7 +783,7 @@ async def handle_team_member_callback(update: Update, uid: int, data: str) -> No
                     parse_mode="HTML",
                 )
 
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             T.TEAM_MEMBER_LEFT.format(name=team_name),
             reply_markup=await KB.kb_main_for(uid),
         )
@@ -808,7 +808,7 @@ async def handle_team_admin_callback(update: Update, uid: int, data: str) -> Non
             extra=f"data={data!r}",
         )
         with contextlib.suppress(Exception):
-            await update.callback_query.edit_message_text(T.GENERIC_ERROR)
+            await edit_text_safe(update.callback_query, T.GENERIC_ERROR)
 
 
 async def _handle_team_admin_callback_inner(
@@ -880,7 +880,7 @@ async def _handle_team_admin_callback_inner(
             await q.answer(T.TEAM_ADMIN_RENAME_NO_TEAM, show_alert=True)
             return
         user_states[uid] = {"step": "team_admin_rename", "ts": time.time()}
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             T.TEAM_ADMIN_RENAME_ASK,
             # Inline kontekstda Reply klaviatura qabul qilinmaydi
             # ("BadRequest: Inline keyboard expected") — inline variant.
@@ -894,7 +894,7 @@ async def _handle_team_admin_callback_inner(
             log_gap(uid, "Jamoa topilmadi", action=data)
             await q.answer(T.TEAM_ADMIN_NO_TEAM, show_alert=True)
             return
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             "🔗 <b>Jamoangiz havolasi</b>\n\n"
             "Do'stlaringizga yuboring — ular avtomatik sizning jamoangizga "
             "birikadi va siz tasdiqlaysiz.\n\n"
@@ -918,7 +918,7 @@ async def _handle_team_admin_callback_inner(
         # Jamoa asosi (jamoa admini) o'z ro'yxatida ko'rinmaydi — u jamoaning
         # egasi, xabarni allaqachon o'zi yuboradi.
         members = [m for m in members if int(m.get("uid") or 0) != int(uid)]
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             T.team_members_text(members),
             reply_markup=KB.kb_team_members(members, page=page),
         )
@@ -938,7 +938,7 @@ async def _handle_team_admin_callback_inner(
         if int(member.get("owner_admin_uid") or 0) != uid:
             await q.answer("Bu foydalanuvchi sizning jamoangizda emas", show_alert=True)
             return
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             T.TEAM_ADMIN_MEMBER_INFO.format(
                 name=member.get("name") or "Noma'lum",
                 uid=target,
@@ -981,7 +981,7 @@ async def _handle_team_admin_callback_inner(
         )
         if note:
             text += f"\n\n{note}"
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             text,
             reply_markup=KB.kb_team_term_options(target, options),
         )
@@ -1015,7 +1015,7 @@ async def _handle_team_admin_callback_inner(
         await db.set_user_limits(target, tariff_expires_at=expires)
         await db.approve_user(target, expires)
         team = await primary_team(uid)
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             T.TEAM_ADMIN_TERM_SET.format(
                 name=member.get("name") or "Noma'lum",
                 expires=_expiry_text(expires),
@@ -1123,7 +1123,7 @@ async def _handle_team_admin_callback_inner(
             f"🚪 {member.get('name') or target} jamoadan chiqarildi",
             show_alert=True,
         )
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             f"🚪 <b>{member.get('name') or target}</b> jamoadan chiqarildi.\n\n"
             f"📋 Jamoa: {team_name}\n"
             "ℹ️ Uning jamoa muddati ham tugdi.",
@@ -1164,7 +1164,7 @@ async def _handle_team_admin_callback_inner(
             "groups": groups_total,
             "posts": posts_total,
         }
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             T.TEAM_ADMIN_STATS.format(**stats),
             reply_markup=KB.kb_team_stats_back(),
         )
@@ -1179,7 +1179,7 @@ async def _handle_team_admin_callback_inner(
             await q.answer(T.TEAM_ADMIN_NO_TEAM, show_alert=True)
             return
         user_states[uid] = {"step": "team_admin_message", "ts": time.time()}
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             T.TEAM_ADMIN_MESSAGE,
             # Inline kontekstda Reply klaviatura qabul qilinmaydi
             # ("BadRequest: Inline keyboard expected") — inline variant.
@@ -1200,7 +1200,7 @@ async def _handle_team_admin_callback_inner(
         text = "📅 Muddatni tanlang — foydalanuvchiga qancha kun beriladi?"
         if note:
             text += f"\n{note}"
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             text,
             reply_markup=KB.kb_team_approve_term_options(target, options),
         )
@@ -1284,7 +1284,7 @@ async def approve_team_member(
     await db.approve_user(target, expires)
 
     team_name = (team or {}).get("name") or "Jamoangiz"
-    await q.edit_message_text(
+    await edit_text_safe(q, 
         T.TEAM_ADMIN_TERM_SET.format(
             name=member.get("name") or "Noma'lum",
             expires=_expiry_text(expires),

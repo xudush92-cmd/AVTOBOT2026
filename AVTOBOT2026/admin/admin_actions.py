@@ -55,6 +55,7 @@ from core.session_manager import (
 from core.update_locks import user_operation_lock, user_update_lock
 from core.utils import (
     calc_expires,
+    edit_text_safe,
     format_expires,
     is_valid_interval,
     safe_unlink,
@@ -106,7 +107,7 @@ async def begin_add_user(update: Update, admin_uid: int) -> None:
         "step": "admin_new_user_full_name",
         "ts": time.time(),
     }
-    await update.callback_query.edit_message_text(
+    await edit_text_safe(update.callback_query, 
         T.ADMIN_ADD_USER_FULL_NAME,
         reply_markup=KB.kb_admin_add_user_cancel(),
     )
@@ -130,7 +131,7 @@ async def cancel_add_user(update: Update, admin_uid: int) -> None:
     else:
         text = "ℹ️ Faol foydalanuvchi qo'shish jarayoni yo'q."
 
-    await update.callback_query.edit_message_text(
+    await edit_text_safe(update.callback_query, 
         text,
         reply_markup=KB.kb_admin_panel(),
     )
@@ -286,14 +287,14 @@ async def handle_user_card(update: Update, admin_uid: int, data: str) -> None:
     # Super admin oddiy user kartasi orqali boshqarilmaydi. Eski xabar yoki
     # qo'lda tuzilgan callback ham adminning sessiyasini qayta ochmasin.
     if target == SUPER_ADMIN:
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             "🛡 Super admin oddiy foydalanuvchilardan alohida boshqariladi.",
             reply_markup=KB.kb_admin_back(),
         )
         return
 
     if not await db.get_user(target):
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             "❌ Foydalanuvchi topilmadi.",
             reply_markup=KB.kb_admin_back(),
         )
@@ -321,7 +322,7 @@ async def _handle_user_card_target_locked(
     """Admin va target update locklari ichidagi selected-user dispatcher."""
     q = update.callback_query
     if not await db.get_user(target):
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             "❌ Foydalanuvchi endi mavjud emas.",
             reply_markup=KB.kb_admin_back(),
         )
@@ -349,7 +350,7 @@ async def _handle_user_card_target_locked(
         return
     if action == "logoutask":
         token = action_tokens.issue(admin_uid, f"uc:logout:{target}")
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             "⚠️ Telegram sessiyasi uzilsinmi?\n\n"
             "Bu authorization Telegram Devices ro'yxatidan ham bekor qilinadi.",
             reply_markup=KB.kb_user_confirm(
@@ -363,7 +364,7 @@ async def _handle_user_card_target_locked(
     if action == "logoutconfirm":
         token = parts[3] if len(parts) > 3 else ""
         if not action_tokens.consume(admin_uid, f"uc:logout:{target}", token):
-            await q.edit_message_text("⚠️ Bu tasdiqlash oynasi eskirgan.")
+            await edit_text_safe(q, "⚠️ Bu tasdiqlash oynasi eskirgan.")
             return
         await action_logout(update, admin_uid, target)
         return
@@ -414,7 +415,7 @@ async def _handle_user_card_target_locked(
         return
     if action == "rejectask":
         token = action_tokens.issue(admin_uid, f"uc:reject:{target}")
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             "⚠️ Ariza rad etilsinmi? Kiritilgan ism va telefon ham o'chiriladi.",
             reply_markup=KB.kb_user_confirm(
                 target, "rejectconfirm", "❌ Rad etish", token
@@ -424,13 +425,13 @@ async def _handle_user_card_target_locked(
     if action == "rejectconfirm":
         token = parts[3] if len(parts) > 3 else ""
         if not action_tokens.consume(admin_uid, f"uc:reject:{target}", token):
-            await q.edit_message_text("⚠️ Bu tasdiqlash oynasi eskirgan.")
+            await edit_text_safe(q, "⚠️ Bu tasdiqlash oynasi eskirgan.")
             return
         await action_reject(update, admin_uid, target)
         return
     if action == "blockask":
         token = action_tokens.issue(admin_uid, f"uc:block:{target}")
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             "⚠️ Foydalanuvchi bloklansinmi? Faol posting darhol to'xtaydi.",
             reply_markup=KB.kb_user_confirm(
                 target, "blockconfirm", "🚫 Bloklash", token
@@ -440,7 +441,7 @@ async def _handle_user_card_target_locked(
     if action == "blockconfirm":
         token = parts[3] if len(parts) > 3 else ""
         if not action_tokens.consume(admin_uid, f"uc:block:{target}", token):
-            await q.edit_message_text("⚠️ Bu tasdiqlash oynasi eskirgan.")
+            await edit_text_safe(q, "⚠️ Bu tasdiqlash oynasi eskirgan.")
             return
         await action_block(update, admin_uid, target)
         return
@@ -449,7 +450,7 @@ async def _handle_user_card_target_locked(
         return
     if action == "deleteask":
         token = action_tokens.issue(admin_uid, f"uc:delete:{target}")
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             "⚠️ FOYDALANUVCHINI BUTUNLAY O'CHIRISH\n\n"
             "Sessiya Telegramda bekor qilinadi; guruh, post, rasm va referral "
             "ma'lumotlari qaytarib bo'lmaydigan tarzda o'chadi.",
@@ -461,7 +462,7 @@ async def _handle_user_card_target_locked(
     if action == "deleteconfirm":
         token = parts[3] if len(parts) > 3 else ""
         if not action_tokens.consume(admin_uid, f"uc:delete:{target}", token):
-            await q.edit_message_text("⚠️ Bu tasdiqlash oynasi eskirgan.")
+            await edit_text_safe(q, "⚠️ Bu tasdiqlash oynasi eskirgan.")
             return
         await action_delete(update, admin_uid, target)
         return
@@ -484,7 +485,7 @@ async def show_user_card(update: Update, target: int) -> None:
 
     if not user:
         with contextlib.suppress(Exception):
-            await q.edit_message_text(
+            await edit_text_safe(q, 
                 "❌ Foydalanuvchi topilmadi.",
                 reply_markup=KB.kb_admin_back(),
             )
@@ -544,7 +545,7 @@ async def show_user_card(update: Update, target: int) -> None:
         awaiting=awaiting,
     )
     with contextlib.suppress(Exception):
-        await q.edit_message_text(text, reply_markup=kb)
+        await edit_text_safe(q, text, reply_markup=kb)
 
 
 # ─────────────────────────────────────────────────────────────────────────
@@ -561,14 +562,14 @@ async def _action_start_locked(update: Update, admin_uid: int, target: int) -> N
     from bot.menu import worker_manager
 
     if not worker_manager:
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             "❌ Worker manager topilmadi.",
             reply_markup=await user_card_markup(target),
         )
         return
 
     if worker_manager.is_running(target):
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             "⚠️ Allaqachon ishlamoqda.",
             reply_markup=await user_card_markup(target, running=True),
         )
@@ -576,27 +577,27 @@ async def _action_start_locked(update: Update, admin_uid: int, target: int) -> N
 
     user = await db.get_user(target)
     if not user or not user.get("is_admin"):
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             "❌ Avval foydalanuvchini tasdiqlang.",
             reply_markup=await user_card_markup(target),
         )
         return
     if not user.get("session"):
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             "❌ Avval Telegram sessiyasini ulang.",
             reply_markup=await user_card_markup(target, has_session=False),
         )
         return
 
     if await db.is_blocked(target):
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             "🚫 Avval foydalanuvchini blokdan chiqaring.",
             reply_markup=await user_card_markup(target, blocked=True),
         )
         return
 
     if await db.is_tariff_expired(target):
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             "⏸ Foydalanuvchi muddati tugagan.",
             reply_markup=await user_card_markup(target),
         )
@@ -605,7 +606,7 @@ async def _action_start_locked(update: Update, admin_uid: int, target: int) -> N
     chats = await db.get_chats(target)
     posts = await db.get_posts(target)
     if not chats or not posts:
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             "❌ Guruh yoki post yo'q.",
             reply_markup=await user_card_markup(target),
         )
@@ -615,7 +616,7 @@ async def _action_start_locked(update: Update, admin_uid: int, target: int) -> N
 
     valid, reason = await check_start_session(target, user["session"])
     if not valid:
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             reason,
             reply_markup=await user_card_markup(target, running=False),
         )
@@ -625,13 +626,13 @@ async def _action_start_locked(update: Update, admin_uid: int, target: int) -> N
     started = await worker_manager.start_worker(target)
     if not started:
         await db.set_running(target, False)
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             "⚠️ Tizim band. Qaytadan urinib ko'ring.",
             reply_markup=await user_card_markup(target),
         )
         return
     log(f"▶️ Admin {admin_uid} → Start {target}")
-    await q.edit_message_text(
+    await edit_text_safe(q, 
         f"✅ {target} uchun posting boshlandi.",
         reply_markup=await user_card_markup(target, running=True),
     )
@@ -656,7 +657,7 @@ async def _action_stop_locked(update: Update, admin_uid: int, target: int) -> No
     await db.set_running(target, False)
 
     log(f"⛔ Admin {admin_uid} → Stop {target}")
-    await q.edit_message_text(
+    await edit_text_safe(q, 
         f"⛔ {target} uchun posting to'xtatildi.",
         reply_markup=await user_card_markup(target, running=False),
     )
@@ -678,7 +679,7 @@ async def action_open_session(update: Update, admin_uid: int, target: int) -> No
     if admin_uid != SUPER_ADMIN:
         return
     if target == SUPER_ADMIN:
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             "🛡 Super admin uchun bu yerdan sessiya ochib bo'lmaydi.",
             reply_markup=KB.kb_admin_back(),
         )
@@ -687,11 +688,11 @@ async def action_open_session(update: Update, admin_uid: int, target: int) -> No
     user = await db.get_user(target)
 
     if not user:
-        await q.edit_message_text("❌ Foydalanuvchi topilmadi.")
+        await edit_text_safe(q, "❌ Foydalanuvchi topilmadi.")
         return
 
     if user.get("session"):
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             "ℹ️ Bu foydalanuvchida sessiya allaqachon mavjud.\n\n"
             "Yangi sessiya kerak bo'lsa, avval eskisini o'chiring.",
             reply_markup=await user_card_markup(target, has_session=True),
@@ -700,7 +701,7 @@ async def action_open_session(update: Update, admin_uid: int, target: int) -> No
 
     phone = user.get("phone")
     if not phone:
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             "❌ Foydalanuvchining telefon raqami yo'q.",
             reply_markup=await user_card_markup(target, has_session=False),
         )
@@ -758,7 +759,7 @@ async def action_open_session(update: Update, admin_uid: int, target: int) -> No
             "admin_session_target": target,
         }
 
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             "🔑 Sessiyani ulash\n\n"
             "Kod alohida xavfsiz kanal orqali olingan bo'lsa, uni keyingi "
             "oynadagi raqamli tugmalar bilan kiriting. Kod xabarda ochiq "
@@ -781,7 +782,7 @@ async def action_open_session(update: Update, admin_uid: int, target: int) -> No
                     await client.disconnect()
             login_states.pop(admin_uid, None)
         log(f"❌ action_open_session xato: {type(e).__name__}", "error")
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             f"❌ Kod so'ralmadi: {type(e).__name__}\n\nQaytadan urinib ko'ring.",
             reply_markup=await user_card_markup(target, has_session=False),
         )
@@ -797,7 +798,7 @@ async def _action_logout_locked(update: Update, admin_uid: int, target: int) -> 
     q = update.callback_query
     session = await db.get_session(target)
     if not session:
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             "ℹ️ Sessiya allaqachon yo'q.",
             reply_markup=await user_card_markup(target, has_session=False),
         )
@@ -812,7 +813,7 @@ async def _action_logout_locked(update: Update, admin_uid: int, target: int) -> 
     await db.set_running(target, False)
 
     if not await revoke_telegram_session(session, target):
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             "❌ Telegram bilan ulanish bo'lmadi. Posting to'xtatildi, lekin "
             "authorizationni keyin bekor qilish imkonini saqlash uchun sessiya "
             "o'chirilmadi.",
@@ -823,7 +824,7 @@ async def _action_logout_locked(update: Update, admin_uid: int, target: int) -> 
     await db.del_session(target)
 
     log(f"🚪 Admin {admin_uid} → Logout {target}")
-    await q.edit_message_text(
+    await edit_text_safe(q, 
         f"🚪 {target} sessiyasi o'chirildi.",
         reply_markup=await user_card_markup(target, has_session=False),
     )
@@ -862,7 +863,7 @@ async def action_show_groups(update: Update, target: int, page: int = 0) -> None
         lines.append("\n🗑 guruhni o'chiradi, ⏱ intervalini sozlaydi.")
     else:
         lines.append(T.GROUPS_EMPTY)
-    await q.edit_message_text(
+    await edit_text_safe(q, 
         "\n".join(lines),
         reply_markup=KB.kb_admin_groups(target, groups, page, page_size),
     )
@@ -877,7 +878,7 @@ async def _render_group_interval(
     q = update.callback_query
     group = await db.get_chat_record(target, group_id)
     if not group:
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             "❌ Guruh topilmadi yoki o'chirilgan.",
             reply_markup=await user_card_markup(target),
         )
@@ -900,7 +901,7 @@ async def _render_group_interval(
     )
     if note:
         text = f"{note}\n\n{text}"
-    await q.edit_message_text(
+    await edit_text_safe(q, 
         text,
         reply_markup=KB.kb_admin_group_interval(
             target, group_id, custom_interval
@@ -921,12 +922,12 @@ async def action_group_interval(
     try:
         group_id = int(parts[3])
     except ValueError:
-        await q.edit_message_text("❌ Guruh ID noto'g'ri.")
+        await edit_text_safe(q, "❌ Guruh ID noto'g'ri.")
         return
 
     group = await db.get_chat_record(target, group_id)
     if not group:
-        await q.edit_message_text("❌ Guruh topilmadi yoki o'chirilgan.")
+        await edit_text_safe(q, "❌ Guruh topilmadi yoki o'chirilgan.")
         return
 
     if len(parts) == 4:
@@ -941,7 +942,7 @@ async def action_group_interval(
             "target_uid": target,
             "group_id": group_id,
         }
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             "✏️ GURUH INTERVALINI KIRITISH\n\n"
             f"Foydalanuvchi: {target}\n"
             f"Guruh: {group['value']}\n\n"
@@ -959,7 +960,7 @@ async def action_group_interval(
         except ValueError:
             return
         if not is_valid_interval(minutes):
-            await q.edit_message_text(
+            await edit_text_safe(q, 
                 f"❌ Interval {T.MIN_INTERVAL_MIN}–{MAX_INTERVAL_MIN} daqiqa bo'lishi kerak.",
                 reply_markup=KB.kb_admin_group_interval(
                     target, group_id, group.get("interval_min")
@@ -975,7 +976,7 @@ async def action_group_interval(
             else False
         )
     if not exists or not saved:
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             "❌ Foydalanuvchi yoki guruh endi mavjud emas.",
             reply_markup=KB.kb_admin_back(),
         )
@@ -1012,7 +1013,7 @@ async def action_show_posts(update: Update, target: int, page: int = 0) -> None:
         lines.append("\nPostni o'chirish uchun uning 🗑 tugmasini bosing.")
     else:
         lines.append(T.POSTS_EMPTY)
-    await q.edit_message_text(
+    await edit_text_safe(q, 
         "\n".join(lines),
         reply_markup=KB.kb_admin_posts(target, posts, page, page_size),
     )
@@ -1036,7 +1037,7 @@ async def action_delete_group(
         exists = bool(await db.get_user(target))
         removed = await db.remove_chat_by_id(target, group_id) if exists else None
     if not exists:
-        await update.callback_query.edit_message_text(
+        await edit_text_safe(update.callback_query, 
             "❌ Foydalanuvchi endi mavjud emas.",
             reply_markup=KB.kb_admin_back(),
         )
@@ -1068,7 +1069,7 @@ async def action_delete_post(
             await delete_post_by_id(target, post_id) if exists else (False, "")
         )
     if not exists:
-        await update.callback_query.edit_message_text(
+        await edit_text_safe(update.callback_query, 
             "❌ Foydalanuvchi endi mavjud emas.",
             reply_markup=KB.kb_admin_back(),
         )
@@ -1086,7 +1087,7 @@ async def action_add_group(update: Update, admin_uid: int, target: int) -> None:
         "ts": time.time(),
         "target_uid": target,
     }
-    await q.edit_message_text(
+    await edit_text_safe(q, 
         "➕ Guruh qo'shish\n\n"
         f"Foydalanuvchi: {target}\n\n"
         "@username, public/post/private t.me havolasi yoki -100... ID'ni har "
@@ -1105,7 +1106,7 @@ async def action_add_post(update: Update, admin_uid: int, target: int) -> None:
         "ts": time.time(),
         "target_uid": target,
     }
-    await q.edit_message_text(
+    await edit_text_safe(q, 
         f"📝 Post qo'shish\n\n"
         f"Foydalanuvchi: {target}\n\n"
         f"Post matni yoki rasm yuboring.",
@@ -1120,7 +1121,7 @@ async def action_show_interval(update: Update, target: int) -> None:
     """Tanlangan userning posting oralig'i sozlamalarini ko'rsatadi."""
     q = update.callback_query
     current = await db.get_interval(target)
-    await q.edit_message_text(
+    await edit_text_safe(q, 
         "⏱ UMUMIY POSTING ORALIG'I\n\n"
         f"Foydalanuvchi: {target}\n"
         f"Hozirgi umumiy oraliq: taxminan {current} daqiqa\n\n"
@@ -1202,7 +1203,7 @@ async def _handle_plan_panel(update: Update, admin_uid: int, parts: list[str]) -
         await q.answer("Super admin paketlari boshqarilmaydi.", show_alert=True)
         return
     if not await db.get_user(target):
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             "❌ Foydalanuvchi topilmadi.", reply_markup=KB.kb_admin_back()
         )
         return
@@ -1268,7 +1269,7 @@ async def _handle_plan_panel(update: Update, admin_uid: int, parts: list[str]) -
     user = await db.get_user(target) or {}
     markup = KB.kb_admin_plan(target, plan=(user.get("plan") or "").strip())
     with contextlib.suppress(Exception):
-        await q.edit_message_text(await _panel_text(target), reply_markup=markup)
+        await edit_text_safe(q, await _panel_text(target), reply_markup=markup)
 
 
 async def handle_interval(update: Update, admin_uid: int, data: str) -> None:
@@ -1284,7 +1285,7 @@ async def handle_interval(update: Update, admin_uid: int, data: str) -> None:
     except ValueError:
         return
     if target == SUPER_ADMIN or not await db.get_user(target):
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             "❌ Foydalanuvchi topilmadi.",
             reply_markup=KB.kb_admin_back(),
         )
@@ -1296,7 +1297,7 @@ async def handle_interval(update: Update, admin_uid: int, data: str) -> None:
             "ts": time.time(),
             "target_uid": target,
         }
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             "✏️ UMUMIY POSTING ORALIG'INI KIRITISH\n\n"
             f"Foydalanuvchi: {target}\n\n"
             f"Oraliqni daqiqada kiriting (5–{MAX_INTERVAL_MIN}).\n"
@@ -1310,7 +1311,7 @@ async def handle_interval(update: Update, admin_uid: int, data: str) -> None:
     except ValueError:
         return
     if minutes < 5 or minutes > MAX_INTERVAL_MIN:
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             f"❌ Posting oralig'i 5–{MAX_INTERVAL_MIN} daqiqa bo'lishi kerak.",
             reply_markup=KB.kb_admin_interval(target),
         )
@@ -1321,13 +1322,13 @@ async def handle_interval(update: Update, admin_uid: int, data: str) -> None:
         if exists:
             await db.set_interval(target, minutes)
     if not exists:
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             "❌ Foydalanuvchi endi mavjud emas.",
             reply_markup=KB.kb_admin_back(),
         )
         return
     log(f"⏱ Admin {admin_uid} → {target} interval={minutes}")
-    await q.edit_message_text(
+    await edit_text_safe(q, 
         f"✅ Umumiy posting oralig'i {minutes} daqiqaga o'rnatildi.\n"
         "Alohida sozlangan guruhlar o'z intervalini saqlaydi.\n"
         "Anti-spam uchun real vaqt 5 daqiqagacha farq qiladi.",
@@ -1343,7 +1344,7 @@ async def action_show_expire(update: Update, admin_uid: int, target: int) -> Non
     q = update.callback_query
     expires = await db.get_tariff_expires(target)
 
-    await q.edit_message_text(
+    await edit_text_safe(q, 
         "⏰ Tarif muddati\n\n"
         f"Foydalanuvchi: {target}\n"
         f"Hozirgi muddat: {format_expires(expires)}\n\n"
@@ -1405,7 +1406,7 @@ async def handle_expire_shift(update: Update, admin_uid: int, data: str) -> None
     except (ValueError, IndexError):
         return
     if target == SUPER_ADMIN or not await db.get_user(target):
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             "❌ Foydalanuvchi topilmadi.",
             reply_markup=KB.kb_admin_back(),
         )
@@ -1420,7 +1421,7 @@ async def handle_expire_shift(update: Update, admin_uid: int, data: str) -> None
         if sign > 0
         else "Mavjud muddatdan ayiriladi."
     )
-    await q.edit_message_text(
+    await edit_text_safe(q, 
         f"{title}\n\n"
         f"📅 Hozirgi muddat: {current}\n\n"
         f"{hint}\n"
@@ -1446,7 +1447,7 @@ async def handle_expire(update: Update, admin_uid: int, data: str) -> None:
     except (ValueError, IndexError):
         return
     if target == SUPER_ADMIN or not await db.get_user(target):
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             "❌ Foydalanuvchi topilmadi.",
             reply_markup=KB.kb_admin_back(),
         )
@@ -1464,7 +1465,7 @@ async def handle_expire(update: Update, admin_uid: int, data: str) -> None:
         async with user_operation_lock(target):
             user = await db.get_user(target)
             if not user:
-                await q.edit_message_text(
+                await edit_text_safe(q, 
                     "❌ Foydalanuvchi topilmadi.",
                     reply_markup=KB.kb_admin_back(),
                 )
@@ -1475,7 +1476,7 @@ async def handle_expire(update: Update, admin_uid: int, data: str) -> None:
             # ``None`` qaytaradi. Aks holda muddat "kamaytirish" o'rniga
             # **darhol tugatilardi**, bu esa tasdig'emas edi.
             if expires is None:
-                await q.edit_message_text(
+                await edit_text_safe(q, 
                     "❌ Cheksiz muddatni kamaytirib bo'lmaydi.\n\n"
                     "💡 Avval muddat bering (+ tugmasi), keyin kamaytiring.",
                     reply_markup=await user_card_markup(target),
@@ -1483,7 +1484,7 @@ async def handle_expire(update: Update, admin_uid: int, data: str) -> None:
                 return
             await db.set_tariff_expires(target, expires)
         verb = "ko'paytirildi" if sign > 0 else "kamaytirildi"
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             f"✅ Muddat {verb}: {user.get('name') or target}\n\n"
             f"📅 Yangi muddat: {format_expires(expires)}",
             reply_markup=await user_card_markup(target),
@@ -1500,12 +1501,12 @@ async def handle_expire(update: Update, admin_uid: int, data: str) -> None:
             if exists:
                 await db.set_tariff_expires(target, None)
         if not exists:
-            await q.edit_message_text(
+            await edit_text_safe(q, 
                 "❌ Foydalanuvchi endi mavjud emas.",
                 reply_markup=KB.kb_admin_back(),
             )
             return
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             "✅ Tarif cheklanmagan muddatga o'rnatildi.",
             reply_markup=await user_card_markup(target),
         )
@@ -1518,7 +1519,7 @@ async def handle_expire(update: Update, admin_uid: int, data: str) -> None:
             "ts": time.time(),
             "target_uid": target,
         }
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             f"✏️ Muddatni qo'lda kiritish\n\n"
             f"Foydalanuvchi: {target}\n\n"
             "Necha kun muddat bermoqchisiz? (raqamda)\n"
@@ -1534,7 +1535,7 @@ async def handle_expire(update: Update, admin_uid: int, data: str) -> None:
     except ValueError:
         return
     if not 1 <= days <= 3650:
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             "❌ Muddat 1–3650 kun oralig'ida bo'lishi kerak.",
             reply_markup=KB.kb_expire_options(target),
         )
@@ -1543,14 +1544,14 @@ async def handle_expire(update: Update, admin_uid: int, data: str) -> None:
     async with user_operation_lock(target):
         result = await give_new_term(admin_uid, target, days)
     if result is None:
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             "❌ Foydalanuvchi endi mavjud emas.",
             reply_markup=KB.kb_admin_back(),
         )
         return
 
     previous, new_expires = result
-    await q.edit_message_text(
+    await edit_text_safe(q, 
         T.new_term_admin_text(days, new_expires, previous),
         reply_markup=await user_card_markup(target),
     )
@@ -1626,7 +1627,7 @@ async def _action_approve_locked(
     q = update.callback_query
     user = await db.get_user(target)
     if not user or not user.get("awaiting_approval"):
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             "⚠️ Ariza eskirgan yoki allaqachon ko'rib chiqilgan.",
             reply_markup=await user_card_markup(target) if user else KB.kb_admin_back(),
         )
@@ -1636,7 +1637,7 @@ async def _action_approve_locked(
     # Super admin jamoalarni tasdiqlamaydi.
     owner_uid = int(user.get("owner_admin_uid") or 0)
     if owner_uid and owner_uid != SUPER_ADMIN:
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             "ℹ️ Bu foydalanuvchi jamoaga tegishli — uni tasdiqlash "
             "jamoa adminining vazifasi.",
             reply_markup=await user_card_markup(target),
@@ -1658,7 +1659,7 @@ async def _action_approve_locked(
         if verdict == TEMPORARY:
             # FloodWait/tarmoq xatosi: pending sessiya saqlanadi va revoke
             # qilinmaydi — admin keyinroq yana tasdiqlashi mumkin.
-            await q.edit_message_text(
+            await edit_text_safe(q, 
                 "⏳ Telegram vaqtincha javob bermadi (FloodWait/tarmoq).\n\n"
                 "Pending sessiya va ariza saqlab qolindi. Birozdan keyin "
                 "yana ✅ Tasdiqlash tugmasini bosing.",
@@ -1670,7 +1671,7 @@ async def _action_approve_locked(
             # Pending authorization boshqa akkauntga tegishli: avval uni
             # Telegramda bekor qilamiz, keyin pending holatni tozalaymiz.
             if not await revoke_telegram_session(pending, target):
-                await q.edit_message_text(
+                await edit_text_safe(q, 
                     "❌ Pending authorization Telegramda bekor qilinmadi. "
                     "Xavfsizlik uchun ariza hozircha tasdiqlanmadi.",
                     reply_markup=await user_card_markup(target),
@@ -1682,7 +1683,7 @@ async def _action_approve_locked(
                 "boshqa akkauntga tegishli edi, revoke qilindi",
                 "warning",
             )
-            await q.edit_message_text(
+            await edit_text_safe(q, 
                 "⚠️ Pending sessiya boshqa Telegram akkauntiga tegishli edi.\n\n"
                 "Authorization Telegramda bekor qilindi, pending holat "
                 "tozalandi. Foydalanuvchi qaytadan Login qilishi kerak.",
@@ -1702,7 +1703,7 @@ async def _action_approve_locked(
             if not await db.approve_pending_user(
                 target, expires
             ):
-                await q.edit_message_text(
+                await edit_text_safe(q, 
                     "⚠️ Ariza eskirgan yoki allaqachon ko'rib chiqilgan.",
                     reply_markup=await user_card_markup(target),
                 )
@@ -1712,7 +1713,7 @@ async def _action_approve_locked(
                 f"({duration_days} kun) "
                 "(pending sessiya faollashtirildi)"
             )
-            await q.edit_message_text(
+            await edit_text_safe(q, 
                 T.approval_result_text(target, session_activated=True)
                 + f"\n📅 Muddat: {format_expires(expires)}",
                 reply_markup=await user_card_markup(target),
@@ -1733,7 +1734,7 @@ async def _action_approve_locked(
     # ── Legacy tasdiqlash: pending sessiya yo'q (yoki yaroqsiz) ──
     await db.approve_user(target, expires)
     log(f"✅ Admin {admin_uid} → Approve {target} ({duration_days} kun)")
-    await q.edit_message_text(
+    await edit_text_safe(q, 
         T.approval_result_text(target, session_activated=False)
         + f"\n📅 Muddat: {format_expires(expires)}",
         reply_markup=await user_card_markup(target),
@@ -1756,7 +1757,7 @@ async def _action_reject_locked(update: Update, admin_uid: int, target: int) -> 
     q = update.callback_query
     user = await db.get_user(target)
     if not user or not user.get("awaiting_approval"):
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             "⚠️ Ariza eskirgan yoki allaqachon ko'rib chiqilgan.",
             reply_markup=await user_card_markup(target) if user else KB.kb_admin_back(),
         )
@@ -1766,7 +1767,7 @@ async def _action_reject_locked(update: Update, admin_uid: int, target: int) -> 
         # Avval Telegramda xavfsiz revoke qilamiz; FloodWait/tarmoq xatosida
         # user va pending ma'lumotlari saqlanadi (keyin qayta urinish mumkin).
         if not await revoke_telegram_session(pending, target):
-            await q.edit_message_text(
+            await edit_text_safe(q, 
                 "❌ Pending Telegram authorization bekor qilinmadi. "
                 "Xavfsizlik uchun ariza hozircha o'chirilmadi.",
                 reply_markup=await user_card_markup(target),
@@ -1777,7 +1778,7 @@ async def _action_reject_locked(update: Update, admin_uid: int, target: int) -> 
     await db.delete_user(target)
     wipe_directory(MEDIA_DIR / str(target))
     log(f"❌ Admin {admin_uid} → Reject {target}")
-    await q.edit_message_text(
+    await edit_text_safe(q, 
         f"❌ {target} arizasi rad etildi va ma'lumotlari o'chirildi.",
         reply_markup=KB.kb_admin_back(),
     )
@@ -1873,7 +1874,7 @@ async def _action_block_locked(update: Update, admin_uid: int, target: int) -> N
             f"\n\n⛔️ Jamoa admini bloklandi — uning {team_stopped} ta "
             "jamoa a'zosi ham to'xtatildi."
         )
-    await q.edit_message_text(
+    await edit_text_safe(q, 
         f"🚫 {target} bloklandi.{note}",
         reply_markup=await user_card_markup(target, blocked=True),
     )
@@ -1938,7 +1939,7 @@ async def _action_unblock_locked(update: Update, admin_uid: int, target: int) ->
         for referred_uid in await db.pending_referrals_of(target):
             await on_referral_counted(referred_uid)
 
-    await q.edit_message_text(
+    await edit_text_safe(q, 
         f"🔓 {target} blokdan chiqarildi.",
         reply_markup=await user_card_markup(target, blocked=False),
     )
@@ -1967,7 +1968,7 @@ async def _action_delete_locked(update: Update, admin_uid: int, target: int) -> 
     q = update.callback_query
     user = await db.get_user(target)
     if not user:
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             "⚠️ Foydalanuvchi allaqachon o'chirilgan.", reply_markup=KB.kb_admin_back()
         )
         return
@@ -1989,7 +1990,7 @@ async def _action_delete_locked(update: Update, admin_uid: int, target: int) -> 
     ]
     for session in dict.fromkeys(sessions):
         if not await revoke_telegram_session(session, target):
-            await q.edit_message_text(
+            await edit_text_safe(q, 
                 "❌ Telegram authorization bekor qilinmadi. Posting to'xtatildi, "
                 "lekin xavfsizlik uchun foydalanuvchi hozircha o'chirilmadi.",
                 reply_markup=await user_card_markup(target),
@@ -1998,7 +1999,7 @@ async def _action_delete_locked(update: Update, admin_uid: int, target: int) -> 
 
     posts = await db.get_posts(target)
     if not await db.delete_user(target):
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             "⚠️ Foydalanuvchi allaqachon o'chirilgan.",
             reply_markup=KB.kb_admin_back(),
         )
@@ -2009,7 +2010,7 @@ async def _action_delete_locked(update: Update, admin_uid: int, target: int) -> 
     wipe_directory(MEDIA_DIR / str(target))
     log(f"🗑 Admin {admin_uid} → Delete {target}")
 
-    await q.edit_message_text(
+    await edit_text_safe(q, 
         f"🗑 {target} butunlay o'chirildi.",
         reply_markup=KB.kb_admin_back(),
     )
@@ -2032,7 +2033,7 @@ async def action_send_message(update: Update, admin_uid: int, target: int) -> No
         "ts": time.time(),
         "target_uid": target,
     }
-    await q.edit_message_text(
+    await edit_text_safe(q, 
         f"✉️ XABAR YUBORISH\n\n"
         f"Foydalanuvchi: {target}\n\n"
         f"Yubormoqchi bo'lgan matnni shu yerning o'ziga yozing.\n"
@@ -2054,13 +2055,13 @@ async def action_team_bind_choose(update: Update, target: int) -> None:
     q = update.callback_query
     admins = await db.get_team_admins()
     if not admins:
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             T.ADMIN_TEAMBIND_NO_ADMINS,
             reply_markup=KB.kb_admin_back(),
         )
         return
 
-    await q.edit_message_text(
+    await edit_text_safe(q, 
         T.ADMIN_TEAMBIND_CHOOSE,
         reply_markup=KB.kb_team_bind_choose(target, admins),
     )
@@ -2074,7 +2075,7 @@ async def action_team_bind_go(
 
     user = await db.get_user(target)
     if not user:
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             "❌ Foydalanuvchi endi mavjud emas.",
             reply_markup=KB.kb_admin_back(),
         )
@@ -2082,7 +2083,7 @@ async def action_team_bind_go(
 
     owner = await db.get_user(owner_uid)
     if not owner or not owner.get("is_team_admin"):
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             "👑 Bu jamoa admini topilmadi.",
             reply_markup=KB.kb_admin_back(),
         )
@@ -2090,7 +2091,7 @@ async def action_team_bind_go(
 
     team_id = int(owner.get("team_id") or 0)
     if not team_id:
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             "👑 Bu jamoa adminining jamoasi yo'q.",
             reply_markup=KB.kb_admin_back(),
         )
@@ -2098,7 +2099,7 @@ async def action_team_bind_go(
 
     team = await db.get_team(team_id)
     if not team:
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             "👑 Jamoa topilmadi.",
             reply_markup=KB.kb_admin_back(),
         )
@@ -2108,7 +2109,7 @@ async def action_team_bind_go(
     current_team_id = int(user.get("team_id") or 0)
     if current_team_id and current_team_id != team_id:
         old = await db.get_team(current_team_id)
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             T.ADMIN_TEAMBIND_ALREADY.format(
                 team=(old or {}).get("name") or "boshqa jamoa"
             ),
@@ -2117,7 +2118,7 @@ async def action_team_bind_go(
         return
 
     if not await db.team_has_free_slot(team_id):
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             T.ADMIN_TEAMBIND_NO_SLOT.format(
                 team=team.get("name") or "Jamoa"
             ),
@@ -2134,7 +2135,7 @@ async def action_team_bind_go(
         username=user.get("username") or "",
     )
     if not saved:
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             "❌ Jamoaga biriktirib bo'lmadi. Qayta urinib ko'ring.",
             reply_markup=await user_card_markup(target),
         )
@@ -2164,7 +2165,7 @@ async def action_team_bind_go(
         f"jamoa #{team_id} (admin {owner_uid})"
     )
 
-    await q.edit_message_text(
+    await edit_text_safe(q, 
         T.ADMIN_TEAMBIND_DONE.format(
             name=user.get("name") or f"uid {target}",
             team=team.get("name") or "Jamoangiz",
@@ -2181,7 +2182,7 @@ async def action_detail(update: Update, admin_uid: int, target: int) -> None:
     q = update.callback_query
     user = await db.get_user(target)
     if not user:
-        await q.edit_message_text("❌ Topilmadi.")
+        await edit_text_safe(q, "❌ Topilmadi.")
         return
 
     chats = await db.get_chats(target)
@@ -2212,7 +2213,7 @@ async def action_detail(update: Update, admin_uid: int, target: int) -> None:
         lines.append(f"  ... yana {len(posts) - 5} ta")
 
     with contextlib.suppress(Exception):
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             "\n".join(lines),
             reply_markup=await user_card_markup(target),
         )
