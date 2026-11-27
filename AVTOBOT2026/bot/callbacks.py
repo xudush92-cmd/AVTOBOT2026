@@ -32,7 +32,7 @@ from core import database as db
 from core.logger import log
 from core.session_manager import revoke_telegram_session
 from core.update_locks import user_operation_lock, user_update_lock
-from core.utils import reply_text_safe, safe_unlink
+from core.utils import edit_text_safe, reply_text_safe, safe_unlink
 
 application = None
 
@@ -65,7 +65,7 @@ async def _handle_callback_locked(update: Update, uid: int) -> None:
         if uid != SUPER_ADMIN and await db.is_blocked(uid):
             await cleanup_login(uid)
             with contextlib.suppress(Exception):
-                await q.edit_message_text(T.BLOCKED)
+                await edit_text_safe(q, T.BLOCKED)
             await application.bot.send_message(
                 uid,
                 T.BLOCKED,
@@ -81,7 +81,7 @@ async def _handle_callback_locked(update: Update, uid: int) -> None:
             return
         if data == "auth:cancel":
             await cleanup_login(uid)
-            await q.edit_message_text(T.CODE_CANCELLED)
+            await edit_text_safe(q, T.CODE_CANCELLED)
             await application.bot.send_message(
                 uid,
                 "Login bekor qilindi.",
@@ -189,7 +189,7 @@ async def _handle_callback_locked(update: Update, uid: int) -> None:
                         if blocked
                         else "❌ Hisob yoki sessiya endi faol emas. Qaytadan Login qiling."
                     )
-                    await q.edit_message_text(stale_text)
+                    await edit_text_safe(q, stale_text)
                     await application.bot.send_message(
                         uid,
                         stale_text,
@@ -314,7 +314,7 @@ async def _handle_callback_locked(update: Update, uid: int) -> None:
             extra=f"data={data!r}",
         )
         with contextlib.suppress(Exception):
-            await q.edit_message_text(T.GENERIC_ERROR)
+            await edit_text_safe(q, T.GENERIC_ERROR)
 
 
 # ─────────────────────────────────────────
@@ -325,7 +325,7 @@ async def handle_numpad(update: Update, uid: int, data: str) -> None:
     state = user_states.get(uid, {})
 
     if state.get("step") != "code":
-        await q.edit_message_text("⚠️ Bu kod oynasi eskirgan. Qaytadan Login bosing.")
+        await edit_text_safe(q, "⚠️ Bu kod oynasi eskirgan. Qaytadan Login bosing.")
         return
 
     expected_message = state.get("numpad_msg_id")
@@ -342,7 +342,7 @@ async def handle_numpad(update: Update, uid: int, data: str) -> None:
         target = state.get("admin_session_target")
         await cleanup_login(uid)
         log_gap(uid, "Kod oynasi vaqti tugadi", action=data)
-        await q.edit_message_text(T.CODE_TIMEOUT)
+        await edit_text_safe(q, T.CODE_TIMEOUT)
         if target:
             from admin.admin_actions import user_card_markup
 
@@ -363,7 +363,7 @@ async def handle_numpad(update: Update, uid: int, data: str) -> None:
     if action == "cancel":
         target = state.get("admin_session_target")
         await cleanup_login(uid)
-        await q.edit_message_text(T.CODE_CANCELLED)
+        await edit_text_safe(q, T.CODE_CANCELLED)
         if target:
             from admin.admin_actions import user_card_markup
 
@@ -379,13 +379,13 @@ async def handle_numpad(update: Update, uid: int, data: str) -> None:
 
     if action == "qr":
         if admin_add_user:
-            await q.edit_message_text(
+            await edit_text_safe(q, 
                 "⚠️ Admin user yaratish jarayonida QR ishlatilmaydi. "
                 "Kodni tugmalar orqali kiriting.",
                 reply_markup=KB.kb_numpad(admin_add_user=True),
             )
             return
-        await q.edit_message_text(T.QR_PREPARING)
+        await edit_text_safe(q, T.QR_PREPARING)
         await begin_qr_login(uid)
         return
 
@@ -397,13 +397,13 @@ async def handle_numpad(update: Update, uid: int, data: str) -> None:
     elif action == "ok":
         if len(buffer) < expected_length:
             hint = f"❌ Kamida {expected_length} ta raqam kiriting."
-            await q.edit_message_text(
+            await edit_text_safe(q, 
                 T.numpad_text(buffer, hint, expected_length),
                 reply_markup=KB.kb_numpad(admin_add_user=admin_add_user),
             )
             return
         # Kod hech qachon Telegram xabari matniga chiqarilmaydi.
-        await q.edit_message_text("⏳ Kod xavfsiz tekshirilmoqda...")
+        await edit_text_safe(q, "⏳ Kod xavfsiz tekshirilmoqda...")
         await attempt_signin(uid, buffer, update=update)
         return
     else:
@@ -411,7 +411,7 @@ async def handle_numpad(update: Update, uid: int, data: str) -> None:
             return
         if len(buffer) >= allowed_length:
             hint = f"❌ Maksimal {allowed_length} ta raqam."
-            await q.edit_message_text(
+            await edit_text_safe(q, 
                 T.numpad_text(buffer, hint, expected_length),
                 reply_markup=KB.kb_numpad(admin_add_user=admin_add_user),
             )
@@ -421,7 +421,7 @@ async def handle_numpad(update: Update, uid: int, data: str) -> None:
     state["code_buffer"] = buffer
     state["ts"] = time.time()
     user_states[uid] = state
-    await q.edit_message_text(
+    await edit_text_safe(q, 
         T.numpad_text(
             buffer,
             state.get("code_hint", ""),
@@ -436,7 +436,7 @@ async def handle_qr_cancel(update: Update, uid: int) -> None:
     state = user_states.get(uid, {})
     ctx = login_ctx.get(uid)
     if state.get("step") != "qr" or not ctx or ctx.mode != "qr":
-        await q.edit_message_text("⚠️ Bu QR oynasi eskirgan.")
+        await edit_text_safe(q, "⚠️ Bu QR oynasi eskirgan.")
         return
     await cleanup_login(uid)
     await application.bot.send_message(
@@ -466,17 +466,17 @@ async def _handle_start_confirmation_locked(
     action = data.split(":", 2)[1]
     token = _confirmation_token(data)
     if not action_tokens.consume(uid, "start", token):
-        await q.edit_message_text("⚠️ Bu Start tasdiqlash oynasi eskirgan.")
+        await edit_text_safe(q, "⚠️ Bu Start tasdiqlash oynasi eskirgan.")
         return
     if action == "no":
         log_gap(uid, "Amal bekor qilindi", action=data)
-        await q.edit_message_text(T.ACTION_CANCELLED)
+        await edit_text_safe(q, T.ACTION_CANCELLED)
         return
     if action != "yes":
-        await q.edit_message_text("⚠️ Noto'g'ri Start amali.")
+        await edit_text_safe(q, "⚠️ Noto'g'ri Start amali.")
         return
     ok, text = await confirm_start(uid)
-    await q.edit_message_text(text)
+    await edit_text_safe(q, text)
     from bot.menu import current_state
 
     running = current_state(uid)
@@ -498,16 +498,16 @@ async def _handle_stop_confirmation_locked(update: Update, uid: int, data: str) 
     action = data.split(":", 2)[1]
     token = _confirmation_token(data)
     if not action_tokens.consume(uid, "stop", token):
-        await q.edit_message_text("⚠️ Bu Stop tasdiqlash oynasi eskirgan.")
+        await edit_text_safe(q, "⚠️ Bu Stop tasdiqlash oynasi eskirgan.")
         return
     if action == "no":
-        await q.edit_message_text("✅ Posting davom etmoqda.")
+        await edit_text_safe(q, "✅ Posting davom etmoqda.")
         return
     if action != "yes":
-        await q.edit_message_text("⚠️ Noto'g'ri Stop amali.")
+        await edit_text_safe(q, "⚠️ Noto'g'ri Stop amali.")
         return
     _, text = await confirm_stop(uid)
-    await q.edit_message_text(text)
+    await edit_text_safe(q, text)
     from bot.menu import current_state
 
     running = current_state(uid)
@@ -543,14 +543,14 @@ async def _handle_intv_confirmation_locked(
         or state.get("token") != token
         or not action_tokens.consume(uid, "interval", token)
     ):
-        await q.edit_message_text("⚠️ Bu interval tasdig'i eskirgan.")
+        await edit_text_safe(q, "⚠️ Bu interval tasdig'i eskirgan.")
         return
 
     user_states.pop(uid, None)
     user = await db.get_user(uid)
     if action == "no":
         log_gap(uid, "Amal bekor qilindi", action=data)
-        await q.edit_message_text(T.ACTION_CANCELLED)
+        await edit_text_safe(q, T.ACTION_CANCELLED)
         from bot.menu import current_state
 
         await application.bot.send_message(
@@ -569,11 +569,11 @@ async def _handle_intv_confirmation_locked(
         or not user.get("is_admin")
         or not user.get("session")
     ):
-        await q.edit_message_text("⚠️ Bu interval tasdig'i eskirgan.")
+        await edit_text_safe(q, "⚠️ Bu interval tasdig'i eskirgan.")
         return
     await db.set_interval(uid, int(minutes))
     log(f"⏰ Interval: {uid} → {minutes}")
-    await q.edit_message_text(T.interval_set(int(minutes)))
+    await edit_text_safe(q, T.interval_set(int(minutes)))
     from bot.menu import current_state
 
     await application.bot.send_message(
@@ -595,17 +595,17 @@ async def _handle_del_group_locked(update: Update, uid: int, data: str) -> None:
     q = update.callback_query
     user = await db.get_user(uid)
     if not user or not user.get("is_admin") or not user.get("session"):
-        await q.edit_message_text("❌ Sessiya yoki ruxsat topilmadi.")
+        await edit_text_safe(q, "❌ Sessiya yoki ruxsat topilmadi.")
         return
     if data == "delg:cancel":
         log_gap(uid, "Amal bekor qilindi", action=data)
-        await q.edit_message_text(T.ACTION_CANCELLED)
+        await edit_text_safe(q, T.ACTION_CANCELLED)
         return
     parts = data.split(":")
     if len(parts) == 3 and parts[1] == "page":
         page = max(0, int(parts[2]))
         groups = await db.get_chat_records(uid)
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             T.groups_delete_text(groups, page),
             reply_markup=KB.kb_groups_delete(groups, page),
         )
@@ -620,11 +620,11 @@ async def _handle_del_group_locked(update: Update, uid: int, data: str) -> None:
         log(f"🗑 {uid} guruh o'chirildi (tugma): {removed}")
     groups = await db.get_chat_records(uid)
     if not groups:
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             f"🗑 O'chirildi: {removed}" if removed else "❌ Guruh topilmadi."
         )
         return
-    await q.edit_message_text(
+    await edit_text_safe(q, 
         T.groups_delete_text(
             groups,
             page,
@@ -643,17 +643,17 @@ async def _handle_del_post_locked(update: Update, uid: int, data: str) -> None:
     q = update.callback_query
     user = await db.get_user(uid)
     if not user or not user.get("is_admin") or not user.get("session"):
-        await q.edit_message_text("❌ Sessiya yoki ruxsat topilmadi.")
+        await edit_text_safe(q, "❌ Sessiya yoki ruxsat topilmadi.")
         return
     if data == "delp:cancel":
         log_gap(uid, "Amal bekor qilindi", action=data)
-        await q.edit_message_text(T.ACTION_CANCELLED)
+        await edit_text_safe(q, T.ACTION_CANCELLED)
         return
     parts = data.split(":")
     if len(parts) == 3 and parts[1] == "page":
         page = max(0, int(parts[2]))
         posts = await db.get_posts(uid)
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             T.ASK_DEL_POST,
             reply_markup=KB.kb_posts_delete(posts, page),
         )
@@ -666,9 +666,9 @@ async def _handle_del_post_locked(update: Update, uid: int, data: str) -> None:
         safe_unlink(post["photo"])
     posts = await db.get_posts(uid)
     if not posts:
-        await q.edit_message_text("🗑 Post o'chirildi." if post else T.POST_NOT_FOUND)
+        await edit_text_safe(q, "🗑 Post o'chirildi." if post else T.POST_NOT_FOUND)
         return
-    await q.edit_message_text(
+    await edit_text_safe(q, 
         ("🗑 Post o'chirildi.\n\n" if post else "⚠️ Post eskirgan.\n\n") + T.ASK_DEL_POST,
         reply_markup=KB.kb_posts_delete(posts, page),
     )
@@ -686,11 +686,11 @@ async def _handle_self_account_locked(update: Update, uid: int, data: str) -> No
     q = update.callback_query
     if data == "self:close":
         action_tokens.clear(uid, "self:logout")
-        await q.edit_message_text("✅ Hisob oynasi yopildi.")
+        await edit_text_safe(q, "✅ Hisob oynasi yopildi.")
         return
     if data == "self:logoutask":
         token = action_tokens.issue(uid, "self:logout")
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             "⚠️ Telegram sessiyasi haqiqatan uzilsinmi?\n\n"
             "Posting to'xtaydi va qayta Login qilish kerak bo'ladi.",
             reply_markup=KB.kb_account_logout_confirm(token),
@@ -699,14 +699,14 @@ async def _handle_self_account_locked(update: Update, uid: int, data: str) -> No
     if data.startswith("self:logoutconfirm:"):
         token = data.split(":", 2)[2]
         if not action_tokens.consume(uid, "self:logout", token):
-            await q.edit_message_text("⚠️ Bu tasdiqlash oynasi eskirgan.")
+            await edit_text_safe(q, "⚠️ Bu tasdiqlash oynasi eskirgan.")
             return
     else:
         return
 
     session = await db.get_session(uid)
     if not session:
-        await q.edit_message_text("ℹ️ Faol sessiya yo'q.")
+        await edit_text_safe(q, "ℹ️ Faol sessiya yo'q.")
         return
     from bot.menu import worker_manager
     from worker.worker import client_pool
@@ -718,7 +718,7 @@ async def _handle_self_account_locked(update: Update, uid: int, data: str) -> No
     await db.set_running(uid, False)
 
     if not await revoke_telegram_session(session, uid):
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             "❌ Telegram bilan ulanish bo'lmadi. Posting to'xtatildi, lekin "
             "sessiya keyin revoke qilish uchun saqlandi.",
             reply_markup=KB.kb_account(),
@@ -726,7 +726,7 @@ async def _handle_self_account_locked(update: Update, uid: int, data: str) -> No
         return
 
     await db.del_session(uid)
-    await q.edit_message_text("✅ Telegram sessiyasi xavfsiz uzildi.")
+    await edit_text_safe(q, "✅ Telegram sessiyasi xavfsiz uzildi.")
     await application.bot.send_message(
         uid,
         "Qayta foydalanish uchun Login qiling.",
@@ -752,7 +752,7 @@ async def handle_admin_approve(update: Update, uid: int, data: str) -> None:
 
     user = await db.get_user(target)
     if not user or not user.get("awaiting_approval"):
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             "⚠️ Bu ariza eskirgan yoki allaqachon ko'rib chiqilgan."
         )
         return
@@ -761,7 +761,7 @@ async def handle_admin_approve(update: Update, uid: int, data: str) -> None:
         from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
         token = action_tokens.issue(uid, f"app:reject:{target}")
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             "⚠️ Ariza rad etilsinmi? Ism, telefon va pending authorization "
             "qaytarib bo'lmaydigan tarzda o'chiriladi.",
             reply_markup=InlineKeyboardMarkup(
@@ -781,7 +781,7 @@ async def handle_admin_approve(update: Update, uid: int, data: str) -> None:
         return
     if action == "cancel":
         action_tokens.clear(uid, f"app:reject:{target}")
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             "ℹ️ Ariza rad etilmadi. Pending bo'limida qoladi.",
             reply_markup=KB.kb_admin_back(),
         )
@@ -795,7 +795,7 @@ async def handle_admin_approve(update: Update, uid: int, data: str) -> None:
             from core.duration_policy import options_within_cap
 
             options = options_within_cap(DURATION_OPTIONS, is_super_admin=True)
-            await q.edit_message_text(
+            await edit_text_safe(q, 
                 "📅 Muddatni tanlang — foydalanuvchiga qancha kun beriladi?",
                 reply_markup=KB.kb_approve_term_options(target, options),
             )
@@ -808,7 +808,7 @@ async def handle_admin_approve(update: Update, uid: int, data: str) -> None:
         elif action == "rejectconfirm":
             token = parts[3] if len(parts) > 3 else ""
             if not action_tokens.consume(uid, f"app:reject:{target}", token):
-                await q.edit_message_text("⚠️ Bu tasdiqlash oynasi eskirgan.")
+                await edit_text_safe(q, "⚠️ Bu tasdiqlash oynasi eskirgan.")
                 return
             await admin_actions.action_reject(update, uid, target)
 
@@ -851,12 +851,12 @@ async def _handle_album_locked(update: Update, uid: int, data: str) -> None:
     state = user_states.get(uid) or {}
     album = state.get("album") or {}
     if not album.get("items") and not (album.get("text") or "").strip():
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             "⚠️ Yig'ilgan media yo'q. ➕ Post qo'shishni qaytadan bosing."
         )
         return
     saved, info = await finalize_pending_album(uid)
-    await q.edit_message_text(
+    await edit_text_safe(q, 
         f"✅ Post saqlandi ({info})." if saved else "⚠️ Post saqlanmadi."
     )
 
@@ -869,7 +869,7 @@ async def _handle_post_picker_locked(
     parts = data.split(":")
 
     if len(parts) >= 2 and parts[1] in {"cancel", "back"}:
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             T.ACTION_CANCELLED, reply_markup=await KB.kb_main_for(uid)
         )
         return
@@ -884,7 +884,7 @@ async def _handle_post_picker_locked(
             if action == "edit"
             else KB.kb_posts_preview(posts, page)
         )
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             T.ASK_EDIT_POST if action == "edit" else T.ASK_PREVIEW_POST,
             reply_markup=markup,
         )
@@ -898,9 +898,9 @@ async def _handle_post_picker_locked(
 
         text = await begin_edit_post_state(uid, post_id)
         if not text:
-            await q.edit_message_text(T.POST_NOT_FOUND)
+            await edit_text_safe(q, T.POST_NOT_FOUND)
             return
-        await q.edit_message_text("✏️ Tahrirlash oynasi ochildi — quyidagi xabarga qarang:")
+        await edit_text_safe(q, "✏️ Tahrirlash oynasi ochildi — quyidagi xabarga qarang:")
         await application.bot.send_message(uid, text, reply_markup=KB.kb_input_cancel())
         return
 
@@ -909,9 +909,9 @@ async def _handle_post_picker_locked(
     ok, kind = await preview_post(uid, post_id)
     post = await db.get_post(post_id, uid)
     if not ok:
-        await q.edit_message_text(kind or T.POST_NOT_FOUND)
+        await edit_text_safe(q, kind or T.POST_NOT_FOUND)
         return
-    await q.edit_message_text(
+    await edit_text_safe(q, 
         T.preview_sent_text(kind), reply_markup=KB.kb_post_options(post or {})
     )
 
@@ -928,12 +928,12 @@ async def _handle_link_preview_locked(update: Update, uid: int, data: str) -> No
         return
     post = await db.get_post(post_id, uid)
     if not post:
-        await q.edit_message_text(T.POST_NOT_FOUND)
+        await edit_text_safe(q, T.POST_NOT_FOUND)
         return
     enabled = not bool(post.get("link_preview", True))
     await db.set_post_link_preview(uid, post_id, enabled)
     post["link_preview"] = enabled
-    await q.edit_message_text(
+    await edit_text_safe(q, 
         T.link_preview_changed(enabled), reply_markup=KB.kb_post_options(post)
     )
 
@@ -943,7 +943,7 @@ async def _handle_test_pick_locked(update: Update, uid: int, data: str) -> None:
     q = update.callback_query
     parts = data.split(":")
     if len(parts) >= 2 and parts[1] in {"cancel", "back"}:
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             "📝 Postlar menyusi", reply_markup=await KB.kb_main_for(uid)
         )
         return
@@ -953,7 +953,7 @@ async def _handle_test_pick_locked(update: Update, uid: int, data: str) -> None:
         except ValueError:
             page = 0
         posts = await db.get_posts(uid)
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             T.ASK_TEST_PICK, reply_markup=KB.kb_posts_test(posts, page)
         )
         return
@@ -963,11 +963,11 @@ async def _handle_test_pick_locked(update: Update, uid: int, data: str) -> None:
 
     groups = await db.get_chat_records(uid)
     if not groups:
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             T.GROUPS_EMPTY_HINT, reply_markup=await KB.kb_main_for(uid)
         )
         return
-    await q.edit_message_text(
+    await edit_text_safe(q, 
         T.ask_test_group(), reply_markup=KB.kb_test_group_picker(groups, post_id, 0)
     )
 
@@ -977,7 +977,7 @@ async def _handle_test_group_locked(update: Update, uid: int, data: str) -> None
     q = update.callback_query
     parts = data.split(":")
     if len(parts) >= 2 and parts[1] == "back":
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             "📝 Postlar menyusi", reply_markup=await KB.kb_main_for(uid)
         )
         return
@@ -988,7 +988,7 @@ async def _handle_test_group_locked(update: Update, uid: int, data: str) -> None
         except ValueError:
             return
         groups = await db.get_chat_records(uid)
-        await q.edit_message_text(
+        await edit_text_safe(q, 
             T.ask_test_group(),
             reply_markup=KB.kb_test_group_picker(groups, post_id, page),
         )
@@ -1004,11 +1004,11 @@ async def _handle_test_group_locked(update: Update, uid: int, data: str) -> None
     post = await db.get_post(post_id, uid)
     record = await db.get_chat_record(uid, group_id)
     if not post or not record:
-        await q.edit_message_text("❌ Post yoki guruh topilmadi.")
+        await edit_text_safe(q, "❌ Post yoki guruh topilmadi.")
         return
 
     token = action_tokens.issue(uid, f"tst:{post_id}:{group_id}")
-    await q.edit_message_text(
+    await edit_text_safe(q, 
         T.test_send_ask(str(record["value"]), truncate_text(post.get("text"))),
         reply_markup=KB.kb_test_send_confirm(post_id, group_id, token),
     )
@@ -1033,11 +1033,11 @@ async def handle_test_send_confirm(update: Update, uid: int, data: str) -> None:
     except ValueError:
         return
     if not action_tokens.consume(uid, f"tst:{post_id}:{group_id}", parts[4]):
-        await q.edit_message_text("⚠️ Bu sinov oynasi eskirgan.")
+        await edit_text_safe(q, "⚠️ Bu sinov oynasi eskirgan.")
         return
     from bot.posts import send_test_to_group
 
-    await q.edit_message_text("⏳ Yuborilmoqda...")
+    await edit_text_safe(q, "⏳ Yuborilmoqda...")
     _, message = await send_test_to_group(uid, post_id, group_id)
     await application.bot.send_message(
         uid, message, reply_markup=await KB.kb_main_for(uid)

@@ -1129,14 +1129,13 @@ async def ask_apply_confirmation(update: Update, uid: int, selected) -> bool:
         list="\n".join(lines),
     )
     markup = _confirm_apply_markup()
-    shown = False
-    with contextlib.suppress(Exception):
-        await q.edit_message_text(
-            text,
-            parse_mode="HTML",
-            reply_markup=markup,
-        )
-        shown = True
+    # ⚠️ ``edit_text_safe`` — xatoni o'zi ushlaydi va ``False`` qaytaradi.
+    shown = await edit_text_safe(
+        q,
+        text,
+        parse_mode="HTML",
+        reply_markup=markup,
+    )
     if not shown:
         # ⚠️ ``reply_text_safe`` — inline kontekstda ham ishlaydi
         # (``q.message`` inline callback'da None bo'lishi mumkin).
@@ -1254,13 +1253,14 @@ async def apply_selected_groups(update: Update, uid: int, selected) -> None:
     shown = False
     if groups_text:
         # Birinchi urinish — skaner xabarini shu oyna bilan almashtirish.
-        with contextlib.suppress(Exception):
-            await q.edit_message_text(
-                groups_text,
-                parse_mode="HTML",
-                reply_markup=groups_markup,
-            )
-            shown = True
+        # ⚠️ ``edit_text_safe`` — xatoni o'zi ushlaydi va ``False``
+        # qaytaradi, shuning uchun natijani tekshiramiz.
+        shown = await edit_text_safe(
+            q,
+            groups_text,
+            parse_mode="HTML",
+            reply_markup=groups_markup,
+        )
         if not shown:
             # Xabar tahrirlab bo'lmasa (eskirgan/klaviyurasiz) —
             # yangi xabar yuboramiz, shunda foydalanuvchi guruhlarini
@@ -1278,12 +1278,12 @@ async def apply_selected_groups(update: Update, uid: int, selected) -> None:
 
     if not shown:
         # Hisobotni ko'rsatishning oxirgi urinishlari.
-        with contextlib.suppress(Exception):
-            await q.edit_message_text(
-                report,
-                parse_mode="HTML",
-                reply_markup=await KB.kb_main_for(uid),
-            )
+        await edit_text_safe(
+            q,
+            report,
+            parse_mode="HTML",
+            reply_markup=await KB.kb_main_for(uid),
+        )
         await reply_text_safe(
             update,
             report,
@@ -1323,7 +1323,7 @@ async def handle_discover_callback(update: Update, uid: int, data: str) -> None:
             groups_text, groups_markup = None, None
         if groups_text:
             with contextlib.suppress(Exception):
-                await q.edit_message_text(
+                await edit_text_safe(q, 
                     groups_text,
                     parse_mode="HTML",
                     reply_markup=groups_markup,
@@ -1338,7 +1338,7 @@ async def handle_discover_callback(update: Update, uid: int, data: str) -> None:
             return
         # Xabar tahrirlab bo'lmasa — asosiy menyuni ko'rsatamiz.
         with contextlib.suppress(Exception):
-            await q.edit_message_text(
+            await edit_text_safe(q, 
                 "💬 <b>GURUHLAR</b>",
                 parse_mode="HTML",
                 reply_markup=await KB.kb_main_for(uid),
@@ -1349,7 +1349,7 @@ async def handle_discover_callback(update: Update, uid: int, data: str) -> None:
     if selection is None:
         await q.answer(T.DISCOVER_PICK_EXPIRED, show_alert=True)
         with contextlib.suppress(Exception):
-            await q.edit_message_text(
+            await edit_text_safe(q, 
                 T.DISCOVER_PICK_EXPIRED,
                 reply_markup=await KB.kb_main_for(uid),
             )
@@ -1417,7 +1417,7 @@ async def handle_discover_callback(update: Update, uid: int, data: str) -> None:
             await q.answer("Bekor qilindi")
             discover_sessions.clear_session(uid)
             with contextlib.suppress(Exception):
-                await q.edit_message_text(
+                await edit_text_safe(q, 
                     "🚫 Tanlangan guruhlar saqlanmadi.",
                     reply_markup=await KB.kb_main_for(uid),
                 )

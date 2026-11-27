@@ -1129,6 +1129,95 @@ ham yutib o'tiladi.
 
 ---
 
+## 🔧 PR #51 — "Message is not modified" xatosi: barcha callback oynalari
+
+PR #50 da `edit_text_safe` yordamchisi `gint:` / `mg:` / `gchk:`
+callback'larida ishlatildi. Audit natijasida **250 ta** raw
+`q.edit_message_text` joyi qoldi.
+
+### Sabab
+
+Telegram yangi matn va klaviatura avvalgisi bilan **bir xil** bo'lsa
+`BadRequest: Message is not modified` beradi. Bu normal holat —
+foydalanuvchi bir xil tugmani ikki marta bosadi.
+
+**Statik** oynalarda bu tez-tez bo'ladi: matn o'zgarmaydi:
+
+| Oyna | Tugma |
+|---|---|
+| `adm:stats` | 📊 Statistika |
+| `adm:teamadmins` | 👑 Jamoa adminlari |
+| `adm:pending` | ⏳ Tasdiq kutilmoqda |
+
+### Dalil
+
+`tests/live_sim_not_modified.py` — haqiqiy `telegram.error.BadRequest`
+bilan tekshiriladi:
+
+**Eski kod (main):**
+```
+adm:stats:      ✅ xatosiz
+adm:expired:    ✅ xatosiz
+adm:teamadmins: ❌ BadRequest: Message is not modified
+adm:users:      ✅ xatosiz
+adm:blocked:    ✅ xatosiz
+adm:pending:    ❌ BadRequest: Message is not modified
+```
+
+**Yangi kod:**
+```
+6/6 — xatosiz
+```
+
+### Tuzatish
+
+**250 ta** raw `q.edit_message_text` → `edit_text_safe(q, ...)`:
+
+| Fayl | O'zgarish |
+|---|---|
+| `bot/callbacks.py` | 67 |
+| `bot/groups.py` | 7 |
+| `bot/my_groups.py` | 6 |
+| `bot/teams.py` | 20 |
+| `admin/admin_panel.py` | 41 |
+| `admin/admin_actions.py` | 99 |
+| `admin/broadcast.py` | 10 |
+
+Qo'shimcha tuzatishlar:
+
+- `bot/groups.py::apply_selected_groups()` — `edit_text_safe` **natijasi**
+  tekshiriladi. Aks holda `contextlib.suppress` ichida chaqirilganda
+  «xabar ko'rsatildi» deb hisoblanib, foydalanuvchi natijani
+  ko'rmaydi.
+- `admin/broadcast.py` — `q.message.chat_id` / `q.message.message_id`
+  `getattr` bilan himoyalandi (callback xabari o'chirilgan bo'lishi mumkin).
+
+> 📌 **Telegram API o'zgarmadi** — bir xil `editMessageText` chaqiriladi.
+> 📌 **Tugmalar, matnlar va klaviaturalar o'zgarmadi**.
+> 📌 `edit_text_safe` "not modified" ni muvaffaqiyat deb hisoblaydi —
+> foydalanuvchi uchun hech nicha ko'rinmaydi.
+
+### Tekshiruv
+
+**Yangi test fayl** — `tests/test_edit_text_safe_windows.py` (11 ta test):
+
+- `edit_text_safe` natijasi (`True`/`False`) — 4 ta test;
+- statik oynalar "not modified" ga chidamli — 6 ta test;
+- skaner natijasi xabar tahrirlamasa yangi xabar yuboradi — 1 ta test.
+
+**Dalil:** eski kodda 2 ta test yiqiladi (`test_show_team_admins`,
+`test_show_pending`), yangi kodda o'tadi.
+
+| Tekshiruv | Natija |
+|---|---|
+| Yangi testlar | **11 passed** |
+| To'liq pytest | **776 passed**, 65 subtest |
+| To'liq unittest | **776 OK** |
+| Ruff (baseline diff) | **bo'sh** — 293 = 293 |
+| `compileall` + import | **OK** |
+
+---
+
 ## 🔐 PR #52 — Maxfiylik: 2FA parol logga tushmasligi
 
 ### Xavf
