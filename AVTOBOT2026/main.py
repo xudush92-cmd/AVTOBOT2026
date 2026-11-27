@@ -347,11 +347,41 @@ async def _cmd_start_locked(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 # ─────────────────────────────────────────────────────────────────────────
 # MESSAGE HANDLER
 # ─────────────────────────────────────────────────────────────────────────
+def _safe_action_label(uid: int) -> str | None:
+    """Log uchun xavfsiz «nima bosildi» yorlig'i.
+
+    ⚠️ Foydalanuvchining kiritgan matni **hech qachon** logga yozilmaydi.
+    2FA parol, Telegram tasdiqlash kodi va telefon raqam — maxfiy
+    ma'lumot; ular log faylida saqlanmasligi kerak.
+
+    Qaytaradi: ``"step=password"`` yoki ``"step=matn"`` — faqat
+    **bosqich turi**, qiymat emas.
+    """
+    try:
+        from bot.login import user_states
+
+        state = user_states.get(uid, {}) or {}
+        step = str(state.get("step") or "")
+    except Exception:  # noqa: BLE001 — yorliq topilmasa ham bot ishlashi kerak
+        step = ""
+
+    if not step:
+        return "step=matn"
+    # Bosqich nomi — qiymat emas — xavfsiz. Maxfiy bosqichlar
+    # (``password``, ``code``, ``phone``) ham shunday ko'rinadi.
+    return f"step={step}"
+
+
 async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Private chatdagi xabarlar.
 
     Xato yuz bersa — foydalanuvchi javob olmay qolmasin: logga to'liq
     traceback yoziladi va foydalanuvchiga «Xatolik yuz berdi» yuboriladi.
+
+    ⚠️ **Maxfiylik:** logga foydalanuvchining kiritgan matni yozilmaydi.
+    Avval shu yerda ``update.message.text`` yozilardi — 2FA parol va
+    Telegram tasdiqlash kodi shu yerda logga tushishi mumkin edi.
+    Endi o'rniga **bosqich nomi** yoziladi (``step=password``).
     """
     uid = update.effective_user.id
     try:
@@ -362,7 +392,7 @@ async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
             uid,
             "Matnli xabarni qayta ishlash",
             exc,
-            action=(update.message.text or "")[:40] if update.message else None,
+            action=_safe_action_label(uid),
         )
         with contextlib.suppress(Exception):
             await update.effective_message.reply_text(T.GENERIC_ERROR)
