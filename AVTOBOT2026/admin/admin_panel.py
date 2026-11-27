@@ -69,11 +69,13 @@ async def handle_admin_callback(update: Update, uid: int, data: str) -> None:
         await q.answer()
         await close_admin_window(update)
         # Yo'lni ko'rsatamiz — admin panelga qaytish ochiq qoladi.
-        with contextlib.suppress(Exception):
-            await q.message.reply_text(
-                "✅ Admin panel yopildi.",
-                reply_markup=KB.kb_admin_panel(),
-            )
+        # ⚠️ ``reply_text_safe`` — inline kontekstda ham ishlaydi
+        # (``q.message`` inline callback'da None bo'lishi mumkin).
+        await reply_text_safe(
+            update,
+            "✅ Admin panel yopildi.",
+            reply_markup=KB.kb_admin_panel(),
+        )
         return
 
     # Yangi foydalanuvchi qo'shish / jarayonni to'xtatish
@@ -121,11 +123,11 @@ async def handle_admin_callback(update: Update, uid: int, data: str) -> None:
         await q.answer()
         # Oyna yopiladi — ro'yxat yangi xabarda ochiladi.
         await close_admin_window(update)
-        with contextlib.suppress(Exception):
-            await q.message.reply_text(
-                "👑 Jamoa adminlari",
-                reply_markup=KB.kb_team_admins(await db.get_team_admins()),
-            )
+        await reply_text_safe(
+            update,
+            "👑 Jamoa adminlari",
+            reply_markup=KB.kb_team_admins(await db.get_team_admins()),
+        )
         return
     if data == "adm:addteamadmin":
         await begin_add_team_admin(update)

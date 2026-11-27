@@ -55,6 +55,7 @@ from core import database as db
 from core.errlog import log_gap
 from core.logger import log
 from core.utils import (
+    edit_text_safe,
     group_label,
     group_reference_key,
     normalize_group_reference,
@@ -343,8 +344,10 @@ async def handle_group_check_callback(
         except ValueError:
             page = 0
         groups = await db.get_chat_records(uid)
-        await q.edit_message_text(
-            T.GROUP_PICKER_CHECK, reply_markup=KB.kb_group_check_picker(groups, page)
+        await edit_text_safe(
+            q,
+            T.GROUP_PICKER_CHECK,
+            reply_markup=KB.kb_group_check_picker(groups, page),
         )
         return
     if len(parts) != 4 or parts[1] != "id":
@@ -355,14 +358,15 @@ async def handle_group_check_callback(
     except ValueError:
         return
 
-    await q.edit_message_text("⏳ Telegram orqali tekshirilmoqda...")
+    await edit_text_safe(q, "⏳ Telegram orqali tekshirilmoqda...")
     value, ok, reason = await check_one_group(uid, group_id)
     if not value:
-        await q.edit_message_text("❌ Guruh topilmadi (ro'yxatdan o'chirilgan).")
+        await edit_text_safe(q, "❌ Guruh topilmadi (ro'yxatdan o'chirilgan).")
         return
 
     groups = await db.get_chat_records(uid)
-    await q.edit_message_text(
+    await edit_text_safe(
+        q,
         T.group_check_result(value, ok, reason),
         reply_markup=KB.kb_group_check_picker(groups, page),
     )
@@ -1134,13 +1138,14 @@ async def ask_apply_confirmation(update: Update, uid: int, selected) -> bool:
         )
         shown = True
     if not shown:
-        with contextlib.suppress(Exception):
-            await q.message.reply_text(
-                text,
-                parse_mode="HTML",
-                reply_markup=markup,
-            )
-            shown = True
+        # ⚠️ ``reply_text_safe`` — inline kontekstda ham ishlaydi
+        # (``q.message`` inline callback'da None bo'lishi mumkin).
+        shown = await reply_text_safe(
+            update,
+            text,
+            parse_mode="HTML",
+            reply_markup=markup,
+        )
     return shown
 
 
@@ -1261,12 +1266,12 @@ async def apply_selected_groups(update: Update, uid: int, selected) -> None:
             # yangi xabar yuboramiz, shunda foydalanuvchi guruhlarini
             # ko'ra oladi. Eskirgan skaner xabari esa o'chiriladi —
             # aks holda chatda ikkita xabar qolib ketadi.
-            with contextlib.suppress(Exception):
-                await q.message.reply_text(
-                    groups_text,
-                    parse_mode="HTML",
-                    reply_markup=groups_markup,
-                )
+            if await reply_text_safe(
+                update,
+                groups_text,
+                parse_mode="HTML",
+                reply_markup=groups_markup,
+            ):
                 shown = True
             with contextlib.suppress(Exception):
                 await q.delete_message()
@@ -1279,12 +1284,12 @@ async def apply_selected_groups(update: Update, uid: int, selected) -> None:
                 parse_mode="HTML",
                 reply_markup=await KB.kb_main_for(uid),
             )
-        with contextlib.suppress(Exception):
-            await q.message.reply_text(
-                report,
-                parse_mode="HTML",
-                reply_markup=await KB.kb_main_for(uid),
-            )
+        await reply_text_safe(
+            update,
+            report,
+            parse_mode="HTML",
+            reply_markup=await KB.kb_main_for(uid),
+        )
     log(
         f"✅ Tanlangan guruhlar qo'shildi: {uid} → +{len(added)} "
         f"(takror {duplicates}, o'tkazildi {skipped}, bazada {stored_count})"
@@ -1324,13 +1329,13 @@ async def handle_discover_callback(update: Update, uid: int, data: str) -> None:
                     reply_markup=groups_markup,
                 )
                 return
-            with contextlib.suppress(Exception):
-                await q.message.reply_text(
-                    groups_text,
-                    parse_mode="HTML",
-                    reply_markup=groups_markup,
-                )
-                return
+            await reply_text_safe(
+                update,
+                groups_text,
+                parse_mode="HTML",
+                reply_markup=groups_markup,
+            )
+            return
         # Xabar tahrirlab bo'lmasa — asosiy menyuni ko'rsatamiz.
         with contextlib.suppress(Exception):
             await q.edit_message_text(

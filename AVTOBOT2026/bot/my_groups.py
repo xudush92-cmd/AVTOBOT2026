@@ -39,8 +39,8 @@ from config.config import API_HASH, API_ID
 from core import database as db
 from core.errlog import log_gap
 from core.logger import log
+from core.utils import edit_text_safe, is_valid_interval, reply_text_safe
 from core.utils import group_label as _group_label
-from core.utils import is_valid_interval
 
 # Sahifada nechta guruh ko'rsatiladi.
 PAGE_SIZE = 10
@@ -209,13 +209,15 @@ async def render_groups_inline(
     """
     text, markup = await build_groups_window(uid, note=note, page=page)
     if edit and update.callback_query is not None:
-        with contextlib.suppress(Exception):
-            await update.callback_query.edit_message_text(
-                text, parse_mode="HTML", reply_markup=markup
-            )
-            return
-    await update.message.reply_text(
-        text, parse_mode="HTML", reply_markup=markup
+        await edit_text_safe(
+            update.callback_query, text, parse_mode="HTML", reply_markup=markup
+        )
+        return
+    # ⚠️ ``reply_text_safe`` — inline kontekstda ham ishlaydi. Oddiy
+    # ``update.message.reply_text`` inline callback'da ``AttributeError``
+    # berardi (``update.message`` None bo'ladi).
+    await reply_text_safe(
+        update, text, parse_mode="HTML", reply_markup=markup
     )
 
 # «Qo'lda kiritish» uchun state step nomi.
@@ -337,8 +339,7 @@ async def show_group_interval(
     q = update.callback_query
     group = await db.get_chat_record(uid, group_id)
     if not group:
-        with contextlib.suppress(Exception):
-            await q.edit_message_text("❌ Guruh topilmadi yoki o'chirilgan.")
+        await edit_text_safe(q, "❌ Guruh topilmadi yoki o'chirilgan.")
         return
 
     global_interval = await db.get_interval(uid)
@@ -356,14 +357,14 @@ async def show_group_interval(
     )
     if note:
         text = f"{note}\n\n{text}"
-    with contextlib.suppress(Exception):
-        await q.edit_message_text(
-            text,
-            parse_mode="HTML",
-            reply_markup=KB.kb_my_group_interval(
-                group_id, custom_interval
-            ),
-        )
+    await edit_text_safe(
+        q,
+        text,
+        parse_mode="HTML",
+        reply_markup=KB.kb_my_group_interval(
+            group_id, custom_interval
+        ),
+    )
 
 
 async def handle_interval_choice_callback(
@@ -626,12 +627,15 @@ async def handle_my_groups_callback(
         }
         await q.answer()
         group = await db.get_chat_record(uid, group_id)
-        with contextlib.suppress(Exception):
-            await q.edit_message_text(
-                f"✏️ {group_label(group) if group else 'Guruh'} uchun "
-                "intervalni daqiqada kiriting."
-            )
-        await update.message.reply_text(
+        await edit_text_safe(
+            q,
+            f"✏️ {group_label(group) if group else 'Guruh'} uchun "
+            "intervalni daqiqada kiriting.",
+        )
+        # ⚠️ ``reply_text_safe`` — inline kontekstda ham ishlaydi
+        # (``update.message`` inline callback'da None bo'ladi).
+        await reply_text_safe(
+            update,
             f"{T.MIN_INTERVAL_MIN}–{T.MAX_INTERVAL_MIN} daqiqada "
             "butun son kiriting:",
             reply_markup=KB.kb_input_cancel(),

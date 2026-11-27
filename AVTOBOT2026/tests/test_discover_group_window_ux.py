@@ -205,7 +205,10 @@ class DiscoverGroupWindowUXTests(unittest.IsolatedAsyncioTestCase):
             SimpleNamespace(
                 callback_query=q,
                 effective_user=SimpleNamespace(id=UID),
-                message=SimpleNamespace(reply_text=AsyncMock()),
+                # Inline callback'da ``update.message`` = None (haqiqiy oqim).
+                # ``reply_text_safe`` shu sabab ``callback_query.message``'ni
+                # ishlatadi.
+                message=None,
             ),
             q,
         )
